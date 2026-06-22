@@ -45,11 +45,15 @@ const __dirname = dirname(__filename)
 
 // Redis Cloud via ioredis
 const _ioredis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: 1,
-  commandTimeout: 4000,
-  connectTimeout: 5000,
-  retryStrategy: (times) => Math.min(times * 300, 3000)
+  maxRetriesPerRequest: 3,
+  commandTimeout: 8000,
+  connectTimeout: 10000,
+  retryStrategy: (times) => Math.min(times * 500, 5000)
 })
+
+// Cache session di memory agar tidak logout saat Redis timeout
+const _sessionCache = new Map() // sessionId -> phone, TTL 5 menit
+const SESSION_CACHE_TTL = 5 * 60 * 1000
 _ioredis.on('error', () => {})
 
 // Wrapper agar API-nya kompatibel dengan kode lama (hset object form, hgetall null)
@@ -64,14 +68,33 @@ const redis = {
     return _ioredis.del(key)
   },
   async hget(key, field) {
-    return _ioredis.hget(key, field)
+    try {
+      const val = await _ioredis.hget(key, field)
+      if (key === 'gold:sessions' && val) {
+        _sessionCache.set(field, { phone: val, exp: Date.now() + SESSION_CACHE_TTL })
+      }
+      return val
+    } catch (e) {
+      // Redis timeout: pakai cache memory agar user tidak logout
+      if (key === 'gold:sessions') {
+        const cached = _sessionCache.get(field)
+        if (cached && cached.exp > Date.now()) return cached.phone
+      }
+      throw e
+    }
   },
   async hset(key, fields) {
     const args = []
     for (const [f, v] of Object.entries(fields)) args.push(f, v)
+    if (key === 'gold:sessions') {
+      for (const [f, v] of Object.entries(fields)) {
+        _sessionCache.set(f, { phone: v, exp: Date.now() + SESSION_CACHE_TTL })
+      }
+    }
     return _ioredis.hset(key, ...args)
   },
   async hdel(key, field) {
+    if (key === 'gold:sessions') _sessionCache.delete(field)
     return _ioredis.hdel(key, field)
   },
   async hgetall(key) {
