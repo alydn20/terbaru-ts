@@ -223,6 +223,9 @@ let lowestOnPendingTimeout = null // Timeout 20 detik sebelum update titik ON te
 let lowestOnPendingPrice = null   // Harga kandidat yang sedang menunggu konfirmasi
 let lowestOnResetTimeout = null   // Timeout 20 detik sebelum reset titik ON saat OFF
 let prevUsdIdrRate = null         // USD/IDR rate sebelumnya untuk tampilkan perubahan
+let lastLoggedUsdIdr = null       // USD/IDR terakhir yang sudah di-log saat berubah
+const usdIdrHistory = []          // In-memory only, tidak disimpan ke Redis
+const MAX_USD_IDR_HISTORY = 500
 let dailyHighBuy = null           // Harga beli tertinggi hari ini (WIB)
 let dailyLowBuy = null            // Harga beli terendah hari ini (WIB)
 let dailyStatDate = null          // Tanggal WIB (YYYY-MM-DD) saat high/low dicatat
@@ -768,6 +771,17 @@ setInterval(async () => {
       try {
         usdIdr = await fetchUSDIDRFromGoogle();
         cachedMarketData.lastUsdIdrFetch = now
+        if (usdIdr?.rate) {
+          if (lastLoggedUsdIdr !== null && lastLoggedUsdIdr !== usdIdr.rate) {
+            const diff = usdIdr.rate - lastLoggedUsdIdr
+            pushLog(`USD/IDR | Berubah: ${formatRupiah(lastLoggedUsdIdr)}→${formatRupiah(usdIdr.rate)} (${diff > 0 ? '+' : ''}${formatRupiah(diff)})`)
+            const _wibTime = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+            usdIdrHistory.push({ time: _wibTime, rate: usdIdr.rate, change: diff })
+            if (usdIdrHistory.length > MAX_USD_IDR_HISTORY) usdIdrHistory.shift()
+            broadcastSSE({ type: 'usd_idr', rate: usdIdr.rate, change: diff, time: _wibTime, xauUsd: cachedMarketData.xauUsd })
+          }
+          lastLoggedUsdIdr = usdIdr.rate
+        }
       } catch (e) {
         // Keep old USD/IDR if fetch fails
       } finally {
@@ -2835,7 +2849,8 @@ async function fastPoll() {
     if (isNewTimestamp) {
       lastKnownTimestamp = updateTime
       lastApiUpdateTime = treasuryData.data.updated_at
-      pushLog(`TREASURY | Timestamp baru: ${treasuryData.data.updated_at} | Buy Rp${formatRupiah(currentPrice.buy)} | Sell Rp${formatRupiah(currentPrice.sell)} | latency ${_fetchMs}ms`)
+      const _usdIdrLog = cachedMarketData.usdIdr?.rate ? ` | USD/IDR Rp${formatRupiah(cachedMarketData.usdIdr.rate)}` : ''
+      pushLog(`TREASURY | Timestamp baru: ${treasuryData.data.updated_at} | Buy Rp${formatRupiah(currentPrice.buy)} | Sell Rp${formatRupiah(currentPrice.sell)}${_usdIdrLog} | latency ${_fetchMs}ms`)
     }
 
     if (isPriceChanged) {
@@ -3809,6 +3824,10 @@ app.get('/price-history', async (req, res) => {
   // Include current USD/IDR for fallback on old entries
   history.currentUsdIdr = cachedMarketData.usdIdr?.rate || 0
   res.json(history)
+})
+
+app.get('/usd-idr-history', (req, res) => {
+  res.json({ items: [...usdIdrHistory].reverse(), total: usdIdrHistory.length })
 })
 
 // Clear price history (untuk reset data duplikat)
@@ -13835,7 +13854,13 @@ app.get('/monitoring', async (_req, res) => {
 
     <div class="history-section">
       <div class="history-header">
-        <h2><i data-lucide="history" style="width:13px;height:13px;vertical-align:middle;margin-right:5px;"></i>Riwayat Perubahan Harga</h2>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <h2 style="margin:0;"><i data-lucide="history" style="width:13px;height:13px;vertical-align:middle;margin-right:5px;"></i>Riwayat Perubahan Harga</h2>
+          <select id="historyModeSelect" onchange="switchHistoryMode(this.value)" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:7px;padding:3px 8px;color:#e6edf3;font-size:0.75em;cursor:pointer;outline:none;">
+            <option value="price">Harga Emas</option>
+            <option value="usdidr">USD/IDR</option>
+          </select>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="count" id="historyCount">0 records</span>
           <button id="historyFontSettingsBtn" onclick="toggleHistoryFontPanel()" title="Pengaturan Tampilan" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:4px 7px;cursor:pointer;color:#8b949e;font-size:0.75em;align-items:center;gap:4px;">
@@ -13896,7 +13921,7 @@ app.get('/monitoring', async (_req, res) => {
           </div>
         </div>
       </div>
-      <div class="history-table-wrap">
+      <div id="priceHistoryWrap" class="history-table-wrap">
       <table class="history-table">
         <thead>
           <tr id="historyHeaderRow">
@@ -13910,6 +13935,20 @@ app.get('/monitoring', async (_req, res) => {
         </thead>
         <tbody id="historyBody">
           <tr><td colspan="10" class="no-data">Menunggu data...</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div id="usdIdrHistoryWrap" class="history-table-wrap" style="display:none;">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>USD/IDR</th>
+            <th>Perubahan</th>
+          </tr>
+        </thead>
+        <tbody id="usdIdrHistoryBody">
+          <tr><td colspan="3" class="no-data">Belum ada data...</td></tr>
         </tbody>
       </table>
       </div>
@@ -14935,6 +14974,66 @@ app.get('/monitoring', async (_req, res) => {
         if (el) { el.style.padding = ''; el.style.gap = ''; }
       });
     };
+
+    let _historyMode = 'price'; // 'price' | 'usdidr'
+
+    function switchHistoryMode(mode) {
+      _historyMode = mode;
+      const priceWrap = document.getElementById('priceHistoryWrap');
+      const usdIdrWrap = document.getElementById('usdIdrHistoryWrap');
+      const fontBtn = document.getElementById('historyFontSettingsBtn');
+      const pagination = document.getElementById('historyPagination');
+      const fontPanel = document.getElementById('historyFontPanel');
+      if (mode === 'usdidr') {
+        priceWrap.style.display = 'none';
+        usdIdrWrap.style.display = '';
+        if (fontBtn) fontBtn.style.display = 'none';
+        if (pagination) pagination.style.display = 'none';
+        if (fontPanel) fontPanel.style.display = 'none';
+        loadUsdIdrHistory();
+      } else {
+        priceWrap.style.display = '';
+        usdIdrWrap.style.display = 'none';
+        if (fontBtn) fontBtn.style.display = '';
+        loadHistory();
+      }
+    }
+
+    function loadUsdIdrHistory() {
+      monFetch('/usd-idr-history')
+        .then(r => r.json())
+        .then(data => {
+          renderUsdIdrHistory(data.items || [], data.total || 0);
+        })
+        .catch(() => {
+          document.getElementById('usdIdrHistoryBody').innerHTML = '<tr><td colspan="3" class="no-data">Gagal memuat data</td></tr>';
+        });
+    }
+
+    function renderUsdIdrHistory(items, total) {
+      const tbody = document.getElementById('usdIdrHistoryBody');
+      const countEl = document.getElementById('historyCount');
+      if (countEl) countEl.textContent = total + ' records';
+      if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="no-data">Belum ada data perubahan USD/IDR</td></tr>';
+        return;
+      }
+      const _triUp = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:2px"><polygon points="5,0 10,10 0,10"/></svg>';
+      const _triDn = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:2px"><polygon points="0,0 10,0 5,10"/></svg>';
+      let html = '';
+      items.forEach(function(item) {
+        const timeStr = typeof item.time === 'string' ? item.time.substring(11, 19) : '-';
+        const rate = Math.round(item.rate).toLocaleString('id-ID');
+        const change = item.change || 0;
+        const changeHtml = change > 0
+          ? '<span style="color:#22c55e;font-weight:600;">' + _triUp + '+' + Math.round(change).toLocaleString('id-ID') + '</span>'
+          : change < 0
+          ? '<span style="color:#ef4444;font-weight:600;">' + _triDn + Math.round(change).toLocaleString('id-ID') + '</span>'
+          : '<span style="color:#8b949e;">-</span>';
+        html += '<tr><td>' + timeStr + '</td><td>Rp ' + rate + '</td><td>' + changeHtml + '</td></tr>';
+      });
+      tbody.innerHTML = html;
+    }
 
     function loadHistory() {
       const url = '/price-history?page=' + currentPage + '&perPage=' + _getPerPage();
@@ -16290,6 +16389,74 @@ app.get('/monitoring', async (_req, res) => {
             localStorage.removeItem('goldmonitor_session');
             window.location.href = '/login';
           }, 2000);
+          return;
+        }
+
+        if (data.type === 'usd_idr') {
+          const rate = data.rate;
+          if (!rate) return;
+          const usdIdrRounded = Math.round(rate);
+          const usdIdrEl = document.getElementById('usdIdr');
+          if (usdIdrEl) {
+            usdIdrEl.classList.remove('stat-val-skeleton');
+            usdIdrEl.textContent = 'Rp ' + usdIdrRounded.toLocaleString('id-ID');
+            if (usdIdrRounded !== lastUsdIdr && lastUsdIdr > 0) {
+              const change = usdIdrRounded - lastUsdIdr;
+              const sign = change > 0 ? '+' : '';
+              const cls = change > 0 ? 'up' : 'down';
+              document.getElementById('usdIdrChange').textContent = sign + change.toLocaleString('id-ID');
+              document.getElementById('usdIdrChange').className = 'stat-change ' + cls;
+              const usdIdrCard = document.getElementById('usdIdrCard');
+              if (usdIdrCard) { usdIdrCard.classList.remove('updated'); void usdIdrCard.offsetWidth; usdIdrCard.classList.add('updated'); }
+            }
+            lastUsdIdr = usdIdrRounded;
+          }
+          // Tambah ke tabel USD/IDR history jika mode aktif
+          if (_historyMode === 'usdidr' && data.time) {
+            const tbody = document.getElementById('usdIdrHistoryBody');
+            if (tbody) {
+              const noData = tbody.querySelector('.no-data');
+              if (noData) noData.parentElement.remove();
+              const _triUp = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:2px"><polygon points="5,0 10,10 0,10"/></svg>';
+              const _triDn = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:2px"><polygon points="0,0 10,0 5,10"/></svg>';
+              const ch = data.change || 0;
+              const changeHtml = ch > 0
+                ? '<span style="color:#22c55e;font-weight:600;">' + _triUp + '+' + Math.round(ch).toLocaleString('id-ID') + '</span>'
+                : ch < 0
+                ? '<span style="color:#ef4444;font-weight:600;">' + _triDn + Math.round(ch).toLocaleString('id-ID') + '</span>'
+                : '<span style="color:#8b949e;">-</span>';
+              const tr = document.createElement('tr');
+              tr.innerHTML = '<td>' + data.time.substring(11,19) + '</td><td>Rp ' + Math.round(data.rate).toLocaleString('id-ID') + '</td><td>' + changeHtml + '</td>';
+              tbody.insertBefore(tr, tbody.firstChild);
+              const countEl = document.getElementById('historyCount');
+              if (countEl) {
+                const cur = parseInt(countEl.textContent) || 0;
+                countEl.textContent = (cur + 1) + ' records';
+              }
+            }
+          }
+          // Recalculate markup with updated USD/IDR
+          const _d = window._lastPriceData;
+          const _xau = data.xauUsd;
+          if (_d && _d.buy && _d.sell && _xau) {
+            const _TROY = 31.1035;
+            const _base = (_xau * rate) / _TROY;
+            const _lower = _base * (1 + _markupMinMargin / 100);
+            const _upper = _base * (1 + _markupMaxMargin / 100);
+            const _mkOverlay = document.getElementById('markupOverlay');
+            const _mkOverlayVal = document.getElementById('markupOverlayValue');
+            if (_d.sell >= _lower && _d.sell <= _upper) {
+              if (_mkOverlay) _mkOverlay.style.display = 'none';
+            } else {
+              const _diff = _d.sell > _upper ? Math.round(_d.sell - _upper) : Math.round(_d.sell - _lower);
+              const _sign = _diff > 0 ? '+' : '';
+              const _mkLabel = document.getElementById('markupOverlayLabel');
+              if (_mkLabel) _mkLabel.textContent = _diff > 0 ? 'MARKUP' : 'MARKDOWN';
+              if (_mkOverlayVal) _mkOverlayVal.textContent = _sign + _diff.toLocaleString('id-ID');
+              if (_mkOverlay) _mkOverlay.style.display = 'flex';
+            }
+            updateStatCentering();
+          }
           return;
         }
 
