@@ -755,39 +755,38 @@ setInterval(() => {
 // Lock untuk mencegah double fetch USD/IDR
 let isUsdIdrFetching = false
 
-// Background task untuk pre-fetch market data
-// USD/IDR fetched setiap menit (sama seperti ketik "emas")
+// USD/IDR polling setiap 1 detik (dengan lock untuk mencegah double fetch)
+setInterval(async () => {
+  if (isUsdIdrFetching) return
+  isUsdIdrFetching = true
+  try {
+    const now = Date.now()
+    const usdIdr = await fetchUSDIDRFromGoogle();
+    cachedMarketData.lastUsdIdrFetch = now
+    if (usdIdr?.rate) {
+      cachedMarketData.usdIdr = usdIdr
+      if (lastLoggedUsdIdr !== null && lastLoggedUsdIdr !== usdIdr.rate) {
+        const diff = usdIdr.rate - lastLoggedUsdIdr
+        pushLog(`USD/IDR | Berubah: ${formatRupiah(lastLoggedUsdIdr)}→${formatRupiah(usdIdr.rate)} (${diff > 0 ? '+' : ''}${formatRupiah(diff)})`)
+        const _wibTime = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+        usdIdrHistory.push({ time: _wibTime, rate: usdIdr.rate, change: diff })
+        if (usdIdrHistory.length > MAX_USD_IDR_HISTORY) usdIdrHistory.shift()
+        broadcastSSE({ type: 'usd_idr', rate: usdIdr.rate, change: diff, time: _wibTime, xauUsd: cachedMarketData.xauUsd })
+      }
+      lastLoggedUsdIdr = usdIdr.rate
+    }
+  } catch (e) {
+    // Keep old USD/IDR if fetch fails
+  } finally {
+    isUsdIdrFetching = false
+  }
+}, 1000)
+
+// Background task untuk pre-fetch XAU/USD and economic calendar
 // XAU/USD and calendar updated every 5 seconds
 setInterval(async () => {
   try {
     const now = Date.now()
-    const currentMinute = Math.floor(now / 60000)
-    const lastFetchMinute = Math.floor(cachedMarketData.lastUsdIdrFetch / 60000)
-
-    // Fetch USD/IDR setiap ganti menit (dengan lock untuk mencegah double fetch)
-    let usdIdr = cachedMarketData.usdIdr;
-    if ((currentMinute !== lastFetchMinute || cachedMarketData.lastUsdIdrFetch === 0) && !isUsdIdrFetching) {
-      isUsdIdrFetching = true
-      try {
-        usdIdr = await fetchUSDIDRFromGoogle();
-        cachedMarketData.lastUsdIdrFetch = now
-        if (usdIdr?.rate) {
-          if (lastLoggedUsdIdr !== null && lastLoggedUsdIdr !== usdIdr.rate) {
-            const diff = usdIdr.rate - lastLoggedUsdIdr
-            pushLog(`USD/IDR | Berubah: ${formatRupiah(lastLoggedUsdIdr)}→${formatRupiah(usdIdr.rate)} (${diff > 0 ? '+' : ''}${formatRupiah(diff)})`)
-            const _wibTime = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
-            usdIdrHistory.push({ time: _wibTime, rate: usdIdr.rate, change: diff })
-            if (usdIdrHistory.length > MAX_USD_IDR_HISTORY) usdIdrHistory.shift()
-            broadcastSSE({ type: 'usd_idr', rate: usdIdr.rate, change: diff, time: _wibTime, xauUsd: cachedMarketData.xauUsd })
-          }
-          lastLoggedUsdIdr = usdIdr.rate
-        }
-      } catch (e) {
-        // Keep old USD/IDR if fetch fails
-      } finally {
-        isUsdIdrFetching = false
-      }
-    }
 
     // Always fetch XAU/USD and economic calendar
     const [xauUsd, economicEvents] = await Promise.all([
@@ -797,7 +796,6 @@ setInterval(async () => {
 
     cachedMarketData = {
       ...cachedMarketData,
-      usdIdr,
       xauUsd,
       economicEvents,
       lastUpdate: now
@@ -805,7 +803,7 @@ setInterval(async () => {
   } catch (e) {
     pushLog(`MARKET | Background interval error — ${e.message}`)
   }
-}, 5000) // Check every 5 seconds, USD/IDR setiap ganti menit
+}, 5000)
 
 const adminSseClients = new Set()
 
@@ -13047,6 +13045,48 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .sound-toggle-header, body.light-mode .theme-toggle-btn,
     body.light-mode .logout-btn, body.light-mode .indicator-btn { box-shadow: none !important; }
 
+    /* History mode select — dark mode default */
+    #historyModeSelect {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 7px;
+      padding: 3px 8px;
+      color: var(--text-primary, #e6edf3);
+      font-size: 0.75em;
+      cursor: pointer;
+      outline: none;
+      -webkit-appearance: auto;
+      appearance: auto;
+    }
+    body.light-mode #historyModeSelect {
+      background: #fff !important;
+      border-color: #d1d5db !important;
+      color: #374151 !important;
+    }
+    /* Mobile: sembunyikan select, tampilkan badge button */
+    #historyModeMobileBtn { display: none; }
+    @media (max-width: 480px) {
+      #historyModeSelect { display: none !important; }
+      #historyModeMobileBtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 3px 8px;
+        border-radius: 7px;
+        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,255,255,0.08);
+        color: var(--text-primary, #e6edf3);
+        font-size: 0.72em;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      body.light-mode #historyModeMobileBtn {
+        background: #fff !important;
+        border-color: #d1d5db !important;
+        color: #374151 !important;
+      }
+    }
+
     /* Font settings panel — override inline dark styles */
     body.light-mode #historyFontSettingsBtn { background: #fff !important; border-color: #d1d5db !important; color: #374151 !important; }
     body.light-mode #historyFontPanel { background: #fff !important; border-color: #e5e7eb !important; }
@@ -13856,10 +13896,14 @@ app.get('/monitoring', async (_req, res) => {
       <div class="history-header">
         <div style="display:flex;align-items:center;gap:8px;">
           <h2 style="margin:0;"><i data-lucide="history" style="width:13px;height:13px;vertical-align:middle;margin-right:5px;"></i>Riwayat Perubahan Harga</h2>
-          <select id="historyModeSelect" onchange="switchHistoryMode(this.value)" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:7px;padding:3px 8px;color:#e6edf3;font-size:0.75em;cursor:pointer;outline:none;">
+          <select id="historyModeSelect" onchange="switchHistoryMode(this.value)">
             <option value="price">Harga Emas</option>
             <option value="usdidr">USD/IDR</option>
           </select>
+          <button id="historyModeMobileBtn" onclick="cycleHistoryMode()">
+            <span id="historyModeBadgeLabel">Harga Emas</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="count" id="historyCount">0 records</span>
@@ -14984,6 +15028,9 @@ app.get('/monitoring', async (_req, res) => {
       const fontBtn = document.getElementById('historyFontSettingsBtn');
       const pagination = document.getElementById('historyPagination');
       const fontPanel = document.getElementById('historyFontPanel');
+      // Sync badge label
+      const badgeLabel = document.getElementById('historyModeBadgeLabel');
+      if (badgeLabel) badgeLabel.textContent = mode === 'price' ? 'Harga Emas' : 'USD/IDR';
       if (mode === 'usdidr') {
         priceWrap.style.display = 'none';
         usdIdrWrap.style.display = '';
@@ -14997,6 +15044,13 @@ app.get('/monitoring', async (_req, res) => {
         if (fontBtn) fontBtn.style.display = '';
         loadHistory();
       }
+    }
+
+    function cycleHistoryMode() {
+      const newMode = _historyMode === 'price' ? 'usdidr' : 'price';
+      const sel = document.getElementById('historyModeSelect');
+      if (sel) sel.value = newMode;
+      switchHistoryMode(newMode);
     }
 
     function loadUsdIdrHistory() {
@@ -15901,11 +15955,8 @@ app.get('/monitoring', async (_req, res) => {
             usdIdrCard.classList.remove('updated');
             void usdIdrCard.offsetWidth;
             usdIdrCard.classList.add('updated');
-          } else {
-            // Tidak ada perubahan — hapus indikator +/- agar tidak stale
-            document.getElementById('usdIdrChange').textContent = '';
-            document.getElementById('usdIdrChange').className = 'stat-change';
           }
+          // Jangan hapus badge usdIdrChange di sini — biarkan event usd_idr yang kontrol
           lastUsdIdr = usdIdrRounded;
         }
 
@@ -16638,11 +16689,8 @@ app.get('/monitoring', async (_req, res) => {
               usdIdrCard.classList.remove('updated');
               void usdIdrCard.offsetWidth;
               usdIdrCard.classList.add('updated');
-            } else {
-              // Tidak ada perubahan — hapus indikator +/- agar tidak stale
-              document.getElementById('usdIdrChange').textContent = '';
-              document.getElementById('usdIdrChange').className = 'stat-change';
             }
+            // Jangan hapus badge usdIdrChange di sini — biarkan event usd_idr yang kontrol
             lastUsdIdr = usdIdrRounded;
           }
 
