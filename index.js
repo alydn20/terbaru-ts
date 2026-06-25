@@ -765,15 +765,16 @@ setInterval(async () => {
     cachedMarketData.lastUsdIdrFetch = now
     if (usdIdr?.rate) {
       cachedMarketData.usdIdr = usdIdr
-      if (lastLoggedUsdIdr !== null && lastLoggedUsdIdr !== usdIdr.rate) {
-        const diff = usdIdr.rate - lastLoggedUsdIdr
-        pushLog(`USD/IDR | Berubah: ${formatRupiah(lastLoggedUsdIdr)}→${formatRupiah(usdIdr.rate)} (${diff > 0 ? '+' : ''}${formatRupiah(diff)})`)
+      const roundedRate = Math.round(usdIdr.rate)
+      if (lastLoggedUsdIdr !== null && lastLoggedUsdIdr !== roundedRate) {
+        const diff = roundedRate - lastLoggedUsdIdr
+        pushLog(`USD/IDR | Berubah: ${formatRupiah(lastLoggedUsdIdr)}→${formatRupiah(roundedRate)} (${diff > 0 ? '+' : ''}${formatRupiah(diff)})`)
         const _wibTime = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
-        usdIdrHistory.push({ time: _wibTime, rate: usdIdr.rate, change: diff })
+        usdIdrHistory.push({ time: _wibTime, rate: roundedRate, change: diff })
         if (usdIdrHistory.length > MAX_USD_IDR_HISTORY) usdIdrHistory.shift()
-        broadcastSSE({ type: 'usd_idr', rate: usdIdr.rate, change: diff, time: _wibTime, xauUsd: cachedMarketData.xauUsd })
+        broadcastSSE({ type: 'usd_idr', rate: roundedRate, change: diff, time: _wibTime, xauUsd: cachedMarketData.xauUsd })
       }
-      lastLoggedUsdIdr = usdIdr.rate
+      lastLoggedUsdIdr = roundedRate
     }
   } catch (e) {
     // Keep old USD/IDR if fetch fails
@@ -13047,20 +13048,28 @@ app.get('/monitoring', async (_req, res) => {
 
     /* History mode select — dark mode default */
     #historyModeSelect {
-      background: rgba(255,255,255,0.08);
+      background: #22272e;
       border: 1px solid rgba(255,255,255,0.15);
       border-radius: 7px;
       padding: 3px 8px;
-      color: var(--text-primary, #e6edf3);
+      color: #e6edf3;
       font-size: 0.75em;
       cursor: pointer;
       outline: none;
       -webkit-appearance: auto;
       appearance: auto;
     }
+    #historyModeSelect option {
+      background: #22272e;
+      color: #e6edf3;
+    }
     body.light-mode #historyModeSelect {
       background: #fff !important;
       border-color: #d1d5db !important;
+      color: #374151 !important;
+    }
+    body.light-mode #historyModeSelect option {
+      background: #fff !important;
       color: #374151 !important;
     }
     /* Mobile: sembunyikan select, tampilkan badge button */
