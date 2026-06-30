@@ -11676,7 +11676,9 @@ app.get('/monitoring', async (_req, res) => {
     /* Jam: bedakan warna jam / menit / detik agar jelas */
     .clk-h { color: #e6edf3; }
     .clk-m { color: #f7931a; }
-    .clk-s { color: #22c55e; display: inline-block; }
+    .clk-s { color: #22c55e; display: inline-block; transition: color 0.2s ease; }
+    .clk-s.clk-s-alert { color: #ef4444 !important; animation: clkSPulse 1s ease-in-out infinite; }
+    @keyframes clkSPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
     .clk-sep { color: rgba(255,255,255,0.35); margin: 0 1px; animation: clkBlink 1s steps(1,end) infinite; }
     @keyframes clkBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0.3; } }
     /* Animasi gerak saat detik berganti */
@@ -13292,6 +13294,7 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .clk-h { color: #0f172a; }
     body.light-mode .clk-m { color: #b45309; }
     body.light-mode .clk-s { color: #15803d; }
+    body.light-mode .clk-s.clk-s-alert { color: #dc2626 !important; }
     body.light-mode .clk-sep { color: rgba(15,23,42,0.4); }
     body.light-mode .info-date { color: #1e293b; }
     body.light-mode .price-high-overlay { background: #bbf7d0; border-color: #22c55e; box-shadow: none; }
@@ -13840,10 +13843,6 @@ app.get('/monitoring', async (_req, res) => {
 
     <!-- Nav Menu Dropdown (outside header to avoid backdrop-filter stacking context) -->
     <div class="nav-menu-dropdown" id="navMenuDropdown">
-      <button class="nav-menu-item install-nav" id="installBtn" onclick="installApp();closeNavMenu()" style="display:none;">
-        <i data-lucide="download" style="width:14px;height:14px;"></i>
-        Install App
-      </button>
       <button class="nav-menu-item" onclick="toggleTheme()">
         <i id="themeIconDark" data-lucide="moon" style="width:14px;height:14px;"></i>
         <i id="themeIconLight" data-lucide="sun" style="width:14px;height:14px;display:none;"></i>
@@ -15514,13 +15513,13 @@ app.get('/monitoring', async (_req, res) => {
     // Daily Statistics - fetch dari server
     // Sound Notification - menggunakan audio file dari admin
     function _loadSoundSettings() {
-      const defaults = { up: true, bigUp: true, down: true, bigDown: true, promo: true };
+      const defaults = { up: true, bigUp: true, down: true, bigDown: true, promo: true, countdown: true, vibrate: true };
       try {
         const saved = localStorage.getItem('soundSettings');
         if (saved) return { ...defaults, ...JSON.parse(saved) };
         // Backwards compat: jika ada soundEnabled=false lama, matikan semua
         if (localStorage.getItem('soundEnabled') === 'false')
-          return { up: false, bigUp: false, down: false, bigDown: false, promo: false };
+          return { up: false, bigUp: false, down: false, bigDown: false, promo: false, countdown: false, vibrate: false };
       } catch (e) {}
       return defaults;
     }
@@ -15542,7 +15541,7 @@ app.get('/monitoring', async (_req, res) => {
 
     // Initialize sound panel state on load
     function _updateSoundHeaderIcon() {
-      const types = ['up','bigUp','down','bigDown','promo'];
+      const types = ['up','bigUp','down','bigDown','promo','countdown'];
       const on = types.filter(t => soundSettings[t]).length;
       const toggle = document.getElementById('soundToggle');
       const iconOn = document.getElementById('soundIconOn');
@@ -15556,7 +15555,7 @@ app.get('/monitoring', async (_req, res) => {
       else { if (iconOn) iconOn.style.display = 'block'; }
     }
     function _initSoundCheckboxes() {
-      ['up','bigUp','down','bigDown','promo'].forEach(t => {
+      ['up','bigUp','down','bigDown','promo','countdown','vibrate'].forEach(t => {
         const el = document.getElementById('sw_' + t);
         if (el) el.checked = !!soundSettings[t];
       });
@@ -15755,7 +15754,7 @@ app.get('/monitoring', async (_req, res) => {
       _updateSoundHeaderIcon();
     }
     function setSoundAll(val) {
-      ['up','bigUp','down','bigDown','promo'].forEach(t => {
+      ['up','bigUp','down','bigDown','promo','countdown','vibrate'].forEach(t => {
         soundSettings[t] = val;
         const el = document.getElementById('sw_' + t);
         if (el) el.checked = val;
@@ -15827,6 +15826,42 @@ app.get('/monitoring', async (_req, res) => {
           });
         }
       } catch (e) {}
+    }
+
+    // Beep "titit" pendek untuk hitung mundur 5 detik terakhir
+    function playCountdownBeep(isFinal) {
+      try {
+        const ctx = getAudioContext();
+        if (ctx.state === 'suspended') ctx.resume();
+        // isFinal (detik 59): nada lebih tinggi + double-beep agar lebih menonjol
+        const freq = isFinal ? 1500 : 1000;
+        const beeps = isFinal ? [0, 0.13] : [0];
+        beeps.forEach(function(offset) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + offset);
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset);
+          gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + offset + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.09);
+          osc.start(ctx.currentTime + offset);
+          osc.stop(ctx.currentTime + offset + 0.1);
+        });
+      } catch (e) {}
+    }
+
+    // Dipanggil tiap pergantian detik 55-59 dari updateClock
+    let _lastCountdownSec = -1;
+    function triggerCountdownAlert(sec) {
+      if (sec < 55) { _lastCountdownSec = sec; return; }
+      if (sec === _lastCountdownSec) return; // hindari dobel di detik yang sama
+      _lastCountdownSec = sec;
+      const isFinal = sec === 59;
+      if (soundSettings.countdown) playCountdownBeep(isFinal);
+      if (soundSettings.vibrate && navigator.vibrate) {
+        try { navigator.vibrate(isFinal ? [90, 50, 90] : 60); } catch (e) {}
+      }
     }
 
     function playSound(direction) {
@@ -16027,10 +16062,23 @@ app.get('/monitoring', async (_req, res) => {
     // PWA Install Prompt
     let deferredPrompt = null;
 
+    function _isAppInstalled() {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+    function _updateInstallSub() {
+      var sub = document.getElementById('settingsInstallSub');
+      if (!sub) return;
+      if (_isAppInstalled()) sub.textContent = 'Sudah terpasang';
+      else if (deferredPrompt) sub.textContent = 'Pasang ke layar utama';
+      else sub.textContent = 'Pasang ke layar utama';
+    }
+
     window.addEventListener('beforeinstallprompt', function(e) {
       e.preventDefault();
       deferredPrompt = e;
-      document.getElementById('installBtn').style.display = 'flex';
+      var b = document.getElementById('installBtn');
+      if (b) b.style.display = 'flex';
+      _updateInstallSub();
     });
 
     function installApp() {
@@ -16038,17 +16086,44 @@ app.get('/monitoring', async (_req, res) => {
         deferredPrompt.prompt();
         deferredPrompt.userChoice.then(function(result) {
           if (result.outcome === 'accepted') {
-            document.getElementById('installBtn').style.display = 'none';
+            var b = document.getElementById('installBtn');
+            if (b) b.style.display = 'none';
           }
           deferredPrompt = null;
         });
       }
     }
 
+    // Install dari panel Setting (mobile & desktop). Fallback instruksi manual bila prompt tidak tersedia (mis. iOS Safari).
+    window.installFromSettings = function() {
+      if (typeof closeSettingsPanel === 'function') closeSettingsPanel();
+      if (_isAppInstalled()) {
+        showConfirm('Aplikasi sudah terpasang di perangkat ini.', 'Install Aplikasi');
+        return;
+      }
+      if (deferredPrompt) {
+        installApp();
+        return;
+      }
+      // Tidak ada prompt otomatis — beri instruksi sesuai platform
+      var ua = navigator.userAgent || '';
+      var isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      var msg;
+      if (isIOS) {
+        msg = 'Di iPhone/iPad (Safari): ketuk tombol Bagikan (kotak dengan panah ke atas) di bawah, lalu pilih "Tambahkan ke Layar Utama".';
+      } else {
+        msg = 'Buka menu browser (⋮) lalu pilih "Install aplikasi" / "Tambahkan ke Layar Utama". Jika tidak muncul, aplikasi mungkin sudah terpasang atau browser tidak mendukung.';
+      }
+      showConfirm(msg, 'Cara Install');
+    };
+
     window.addEventListener('appinstalled', function() {
-      document.getElementById('installBtn').style.display = 'none';
+      var b = document.getElementById('installBtn');
+      if (b) b.style.display = 'none';
       deferredPrompt = null;
+      _updateInstallSub();
     });
+    setTimeout(_updateInstallSub, 0);
 
     // Logout function
     async function logout() {
@@ -16162,6 +16237,12 @@ app.get('/monitoring', async (_req, res) => {
           clkS.classList.remove('clk-tick');
           void clkS.offsetWidth; // reflow agar animasi restart
           clkS.classList.add('clk-tick');
+          // Detik 50 ke atas: warna merah agar ternotice (harga akan segera update)
+          const _sec = parseInt(parts[2], 10);
+          if (_sec >= 50) clkS.classList.add('clk-s-alert');
+          else clkS.classList.remove('clk-s-alert');
+          // 5 detik terakhir (55-59): beep + getar
+          triggerCountdownAlert(_sec);
         }
       } else {
         const clock2 = document.getElementById('clock2');
@@ -17241,6 +17322,16 @@ app.get('/monitoring', async (_req, res) => {
       <div class="sound-row-label">Promo ON/OFF<span class="sound-row-sub">Status promo berubah</span></div>
       <label class="sound-sw"><input type="checkbox" id="sw_promo" onchange="toggleSoundType('promo',this)"><span class="sound-sw-track"></span></label>
     </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(96,165,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></div>
+      <div class="sound-row-label">Bunyi Hitung Mundur<span class="sound-row-sub">Beep 5 detik terakhir</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_countdown" onchange="toggleSoundType('countdown',this)"><span class="sound-sw-track"></span></label>
+    </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(167,139,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
+      <div class="sound-row-label">Getar (HP)<span class="sound-row-sub">Getar 5 detik terakhir</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_vibrate" onchange="toggleSoundType('vibrate',this)"><span class="sound-sw-track"></span></label>
+    </div>
     <div class="sound-panel-footer">
       <button class="sound-panel-btn" onclick="setSoundAll(true)">Nyalakan Semua</button>
       <button class="sound-panel-btn" onclick="setSoundAll(false)">Matikan Semua</button>
@@ -17260,6 +17351,11 @@ app.get('/monitoring', async (_req, res) => {
     <div class="sound-row" style="cursor:pointer" onclick="openNominalFromSettings()">
       <div class="sound-row-icon" style="background:rgba(96,165,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg></div>
       <div class="sound-row-label">Pilih Nominal<span class="sound-row-sub">Atur nominal investasi</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+    <div class="sound-row" id="settingsInstallRow" style="cursor:pointer" onclick="installFromSettings()">
+      <div class="sound-row-icon" style="background:rgba(34,197,94,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+      <div class="sound-row-label">Install Aplikasi<span class="sound-row-sub" id="settingsInstallSub">Pasang ke layar utama</span></div>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
   </div>
