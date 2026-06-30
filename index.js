@@ -4247,6 +4247,28 @@ app.get('/icon.png', (_req, res) => {
   }
 })
 
+// Rounded square icon (SVG) untuk PWA install — sudut membulat + padding safe-zone (maskable)
+app.get('/icon-rounded.svg', (_req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml')
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  const b64 = iconBuffer ? iconBuffer.toString('base64') : ''
+  // Canvas 512, sudut rx=112 (~22%), logo dalam area aman 352px di tengah
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c1626"/>
+      <stop offset="1" stop-color="#0a1322"/>
+    </linearGradient>
+    <clipPath id="r"><rect width="512" height="512" rx="112" ry="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    ${b64 ? `<image href="data:image/png;base64,${b64}" x="80" y="80" width="352" height="352" preserveAspectRatio="xMidYMid meet"/>` : ''}
+  </g>
+</svg>`
+  res.send(svg)
+})
+
 app.get('/favicon.ico', (_req, res) => {
   if (faviconBuffer) {
     res.setHeader('Content-Type', 'image/x-icon')
@@ -4263,14 +4285,20 @@ app.get('/favicon.ico', (_req, res) => {
 app.get('/manifest.json', (req, res) => {
   const host = req.get('host') || 'ts.muhamadaliyudin.xyz'
   res.json({
-    name: 'Gold Price Monitor',
-    short_name: 'Gold Monitor',
+    name: 'Treasury Price',
+    short_name: 'Treasury Price',
     description: 'Real-time Treasury Gold Price Monitor',
     start_url: '/monitoring',
     display: 'standalone',
     background_color: '#0f1419',
     theme_color: '#f7931a',
     icons: [
+      {
+        src: '/icon-rounded.svg',
+        sizes: 'any',
+        type: 'image/svg+xml',
+        purpose: 'any maskable'
+      },
       {
         src: '/icon.png',
         sizes: '192x192',
@@ -4299,7 +4327,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v9';
+    const CACHE_VERSION = 'gold-monitor-v10';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -6926,7 +6954,7 @@ app.get('/login', (_req, res) => {
         <div class="icon">
           <img src="/icon.png" alt="Gold Monitor">
         </div>
-        <h1><span>Gold</span> Price Monitor</h1>
+        <h1><span>Treasury</span> Price Monitor</h1>
         <p class="subtitle">Pantau harga emas real-time dengan akurat</p>
       </div>
 
@@ -10597,6 +10625,8 @@ app.get('/monitoring', async (_req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0e13">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Treasury Price">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.png">
@@ -10777,6 +10807,21 @@ app.get('/monitoring', async (_req, res) => {
     }
     .nav-menu-item:hover { background: rgba(255,255,255,0.06); color: #e7e9ea; }
     .nav-menu-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 3px 0; }
+    /* Install App: menonjol + kedip agar ternotice */
+    .install-nav { color: #4ade80 !important; font-weight: 700; }
+    .install-nav i { color: #4ade80; }
+    .install-blink { animation: installBlink 1.3s ease-in-out infinite; }
+    @keyframes installBlink {
+      0%, 100% { background: rgba(34,197,94,0.10); }
+      50% { background: rgba(34,197,94,0.30); }
+    }
+    body.light-mode .install-nav { color: #15803d !important; }
+    body.light-mode .install-nav i { color: #15803d; }
+    body.light-mode .install-blink { animation: installBlinkLight 1.3s ease-in-out infinite; }
+    @keyframes installBlinkLight {
+      0%, 100% { background: rgba(34,197,94,0.12); }
+      50% { background: rgba(34,197,94,0.30); }
+    }
     .nav-menu-logout { color: #f87171; }
     .nav-menu-logout:hover { background: rgba(239,68,68,0.1) !important; color: #f87171 !important; }
     .chart-title-header {
@@ -11679,6 +11724,18 @@ app.get('/monitoring', async (_req, res) => {
     .clk-s { color: #22c55e; display: inline-block; transition: color 0.2s ease; }
     .clk-s.clk-s-alert { color: #ef4444 !important; animation: clkSPulse 1s ease-in-out infinite; }
     @keyframes clkSPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+    /* Goyang layar (pengganti getar untuk iPhone/desktop) */
+    body.is-shaking { overflow-x: hidden; }
+    .screen-shake { animation: screenShake 0.4s cubic-bezier(.36,.07,.19,.97); }
+    @keyframes screenShake {
+      0%,100% { transform: translateX(0); }
+      15% { transform: translateX(-3px); }
+      30% { transform: translateX(3px); }
+      45% { transform: translateX(-2px); }
+      60% { transform: translateX(2px); }
+      75% { transform: translateX(-1px); }
+      90% { transform: translateX(1px); }
+    }
     .clk-sep { color: rgba(255,255,255,0.35); margin: 0 1px; animation: clkBlink 1s steps(1,end) infinite; }
     @keyframes clkBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0.3; } }
     /* Animasi gerak saat detik berganti */
@@ -11959,9 +12016,9 @@ app.get('/monitoring', async (_req, res) => {
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       z-index: 1000;
       align-items: center;
       justify-content: center;
@@ -13412,6 +13469,7 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .nominal-modal-actions .btn-save { background: #ffedd5; border-color: #f97316; border-top-color: #ea580c; color: #c2700f; }
     body.light-mode .nominal-modal-actions .btn-save:hover { background: #fed7aa; }
     /* Promo modal — solid */
+    body.light-mode .promo-suggestions-overlay { background: rgba(15,23,42,0.28); }
     body.light-mode .promo-suggestions-modal { background: #fff; border-color: #e0e0e0; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
     body.light-mode .promo-suggestions-modal h3 { color: #111; }
     body.light-mode .promo-card { background: #f9fafb; border-color: #e0e0e0; border-top-color: #e0e0e0; box-shadow: none; }
@@ -13843,6 +13901,10 @@ app.get('/monitoring', async (_req, res) => {
 
     <!-- Nav Menu Dropdown (outside header to avoid backdrop-filter stacking context) -->
     <div class="nav-menu-dropdown" id="navMenuDropdown">
+      <button class="nav-menu-item install-nav install-blink" id="installBtn" onclick="installFromSettings();closeNavMenu()" title="Install Aplikasi">
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
+        Install Aplikasi
+      </button>
       <button class="nav-menu-item" onclick="toggleTheme()">
         <i id="themeIconDark" data-lucide="moon" style="width:14px;height:14px;"></i>
         <i id="themeIconLight" data-lucide="sun" style="width:14px;height:14px;display:none;"></i>
@@ -15559,6 +15621,11 @@ app.get('/monitoring', async (_req, res) => {
         const el = document.getElementById('sw_' + t);
         if (el) el.checked = !!soundSettings[t];
       });
+      // Getar HP hanya di Android; di iPhone/desktop diganti goyang layar (jalan di semua perangkat)
+      if (!('vibrate' in navigator)) {
+        var vsub = document.getElementById('vibrateSub');
+        if (vsub) vsub.textContent = 'Goyang layar 5 detik terakhir';
+      }
       _updateSoundHeaderIcon();
     }
     // Panel HTML di-render setelah script, defer agar checkbox sudah ada di DOM
@@ -15851,6 +15918,22 @@ app.get('/monitoring', async (_req, res) => {
       } catch (e) {}
     }
 
+    // Goyang layar sebentar (pengganti getar di iPhone/desktop, juga jalan di Android)
+    let _shakeTimer = null;
+    function shakeScreen(strong) {
+      const el = document.querySelector('.container');
+      if (!el) return;
+      document.body.classList.add('is-shaking');
+      el.classList.remove('screen-shake');
+      void el.offsetWidth; // reflow agar animasi restart
+      el.classList.add('screen-shake');
+      if (_shakeTimer) clearTimeout(_shakeTimer);
+      _shakeTimer = setTimeout(function() {
+        el.classList.remove('screen-shake');
+        document.body.classList.remove('is-shaking');
+      }, strong ? 600 : 420);
+    }
+
     // Dipanggil tiap pergantian detik 55-59 dari updateClock
     let _lastCountdownSec = -1;
     function triggerCountdownAlert(sec) {
@@ -15859,8 +15942,11 @@ app.get('/monitoring', async (_req, res) => {
       _lastCountdownSec = sec;
       const isFinal = sec === 59;
       if (soundSettings.countdown) playCountdownBeep(isFinal);
-      if (soundSettings.vibrate && navigator.vibrate) {
-        try { navigator.vibrate(isFinal ? [90, 50, 90] : 60); } catch (e) {}
+      if (soundSettings.vibrate) {
+        // Getar fisik di perangkat yang mendukung (umumnya Android)
+        if (navigator.vibrate) { try { navigator.vibrate(isFinal ? [90, 50, 90] : 60); } catch (e) {} }
+        // Goyang layar (visual) — jalan di semua perangkat termasuk iPhone & desktop
+        shakeScreen(isFinal);
       }
     }
 
@@ -16065,20 +16151,17 @@ app.get('/monitoring', async (_req, res) => {
     function _isAppInstalled() {
       return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     }
-    function _updateInstallSub() {
-      var sub = document.getElementById('settingsInstallSub');
-      if (!sub) return;
-      if (_isAppInstalled()) sub.textContent = 'Sudah terpasang';
-      else if (deferredPrompt) sub.textContent = 'Pasang ke layar utama';
-      else sub.textContent = 'Pasang ke layar utama';
+    function _updateInstallVisibility() {
+      var b = document.getElementById('installBtn');
+      if (!b) return;
+      // Sembunyikan tombol install kalau app sudah terpasang
+      b.style.display = _isAppInstalled() ? 'none' : 'flex';
     }
 
     window.addEventListener('beforeinstallprompt', function(e) {
       e.preventDefault();
       deferredPrompt = e;
-      var b = document.getElementById('installBtn');
-      if (b) b.style.display = 'flex';
-      _updateInstallSub();
+      _updateInstallVisibility();
     });
 
     function installApp() {
@@ -16118,12 +16201,10 @@ app.get('/monitoring', async (_req, res) => {
     };
 
     window.addEventListener('appinstalled', function() {
-      var b = document.getElementById('installBtn');
-      if (b) b.style.display = 'none';
       deferredPrompt = null;
-      _updateInstallSub();
+      _updateInstallVisibility();
     });
-    setTimeout(_updateInstallSub, 0);
+    setTimeout(_updateInstallVisibility, 0);
 
     // Logout function
     async function logout() {
@@ -17294,7 +17375,7 @@ app.get('/monitoring', async (_req, res) => {
   <!-- Sound Panel — di luar header agar position:fixed tidak terkena backdrop-filter -->
   <div id="soundPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
     <div class="sound-panel-header">
-      Pengaturan Suara
+      Pengaturan Suara &amp; Getar
       <button class="sound-panel-close" onclick="closeSoundPanel()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sound-row">
@@ -17329,7 +17410,7 @@ app.get('/monitoring', async (_req, res) => {
     </div>
     <div class="sound-row">
       <div class="sound-row-icon" style="background:rgba(167,139,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
-      <div class="sound-row-label">Getar (HP)<span class="sound-row-sub">Getar 5 detik terakhir</span></div>
+      <div class="sound-row-label">Getar / Goyang Layar<span class="sound-row-sub" id="vibrateSub">Getar HP + goyang layar 5 detik terakhir</span></div>
       <label class="sound-sw"><input type="checkbox" id="sw_vibrate" onchange="toggleSoundType('vibrate',this)"><span class="sound-sw-track"></span></label>
     </div>
     <div class="sound-panel-footer">
@@ -17351,11 +17432,6 @@ app.get('/monitoring', async (_req, res) => {
     <div class="sound-row" style="cursor:pointer" onclick="openNominalFromSettings()">
       <div class="sound-row-icon" style="background:rgba(96,165,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg></div>
       <div class="sound-row-label">Pilih Nominal<span class="sound-row-sub">Atur nominal investasi</span></div>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-    </div>
-    <div class="sound-row" id="settingsInstallRow" style="cursor:pointer" onclick="installFromSettings()">
-      <div class="sound-row-icon" style="background:rgba(34,197,94,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-      <div class="sound-row-label">Install Aplikasi<span class="sound-row-sub" id="settingsInstallSub">Pasang ke layar utama</span></div>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
   </div>
