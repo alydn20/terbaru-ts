@@ -15692,12 +15692,13 @@ app.get('/monitoring', async (_req, res) => {
       if (!panel) return;
       if (_soundPanelOpen) {
         panel.style.display = 'block';
+        // Menu hamburger sudah ditutup, jadi pakai tombol hamburger sebagai acuan posisi
         const toggle = document.getElementById('soundToggle');
-        if (toggle) {
-          const rect = toggle.getBoundingClientRect();
+        const ref = toggle && toggle.getBoundingClientRect().width ? toggle : document.getElementById('navMenuBtn');
+        if (ref) {
+          const rect = ref.getBoundingClientRect();
           const panelW = 248;
-          let left = rect.left;
-          // Jangan keluar layar kanan
+          let left = rect.right - panelW; // sejajar tepi kanan tombol hamburger
           if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8;
           if (left < 8) left = 8;
           panel.style.top = (rect.bottom + 8) + 'px';
