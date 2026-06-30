@@ -6651,58 +6651,69 @@ app.get('/login', (_req, res) => {
       z-index: 1;
     }
     .card {
-      background: rgba(20, 26, 34, 0.9);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 40px 32px;
+      background: rgba(13, 21, 37, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-radius: 16px;
+      padding: 36px 30px;
       border: 1px solid rgba(255,255,255,0.08);
-      box-shadow: 0 25px 80px rgba(0,0,0,0.5),
-                  0 0 0 1px rgba(255,255,255,0.05) inset;
+      border-top: 2px solid rgba(247,147,26,0.55);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
     .logo-container { margin-bottom: 28px; }
     .icon {
-      width: 88px;
-      height: 88px;
+      width: 80px;
+      height: 80px;
       margin: 0 auto 16px;
-      border-radius: 22px;
+      border-radius: 16px;
       overflow: hidden;
-      box-shadow: 0 12px 40px rgba(247,147,26,0.35);
-      border: 2px solid rgba(247,147,26,0.3);
+      box-shadow: 0 6px 22px rgba(247,147,26,0.22);
+      border: 1px solid rgba(247,147,26,0.3);
       transition: transform 0.3s ease;
     }
     .icon:hover { transform: scale(1.05); }
     .icon img { width: 100%; height: 100%; object-fit: cover; }
-    h1 { color: #ffffff; font-size: 1.6em; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.02em; }
+    h1 { color: #ffffff; font-size: 1.5em; font-weight: 700; margin-bottom: 10px; letter-spacing: -0.01em; }
     h1 span { color: #f7931a; }
-    .subtitle { color: #8b949e; font-size: 0.9em; margin-bottom: 32px; line-height: 1.5; font-weight: 400; }
+    .subtitle {
+      color: #8b949e;
+      font-size: 0.72em;
+      margin-bottom: 30px;
+      line-height: 1.5;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
     .form-group { margin-bottom: 20px; text-align: left; }
-    .form-group label { display: block; color: #8b949e; font-size: 0.85em; margin-bottom: 10px; font-weight: 500; }
+    .form-group label { display: block; color: #8b949e; font-size: 0.72em; margin-bottom: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; }
     .form-group input {
       width: 100%;
-      padding: 16px 18px;
-      border: 2px solid rgba(255,255,255,0.08);
-      border-radius: 14px;
-      background: rgba(15, 20, 25, 0.8);
-      color: #e7e9ea;
+      padding: 14px 16px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      background: rgba(10, 17, 32, 0.7);
+      color: #e6edf3;
       font-size: 1em;
-      font-family: inherit;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.5px;
       transition: all 0.2s ease;
     }
     .form-group input:focus {
       outline: none;
       border-color: #f7931a;
-      background: rgba(15, 20, 25, 1);
-      box-shadow: 0 0 0 4px rgba(247,147,26,0.15);
+      background: rgba(10, 17, 32, 1);
+      box-shadow: 0 0 0 3px rgba(247,147,26,0.15);
     }
     .form-group input::placeholder { color: #4a5568; }
     .btn {
       width: 100%;
-      padding: 16px;
+      padding: 15px;
       border: none;
-      border-radius: 14px;
-      font-size: 1em;
-      font-weight: 600;
+      border-radius: 10px;
+      font-size: 0.95em;
+      font-weight: 700;
+      letter-spacing: 0.3px;
       cursor: pointer;
       transition: all 0.2s ease;
       margin-bottom: 12px;
@@ -6711,9 +6722,9 @@ app.get('/login', (_req, res) => {
     .btn-primary {
       background: linear-gradient(135deg, #f7931a 0%, #e8850f 100%);
       color: white;
-      box-shadow: 0 4px 20px rgba(247,147,26,0.35);
+      box-shadow: 0 3px 14px rgba(247,147,26,0.28);
     }
-    .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(247,147,26,0.45); }
+    .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(247,147,26,0.4); }
     .btn-primary:active:not(:disabled) { transform: translateY(0); }
     .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
     .btn-secondary {
@@ -6730,10 +6741,10 @@ app.get('/login', (_req, res) => {
     }
     .link-register:hover { color: #128C7E; text-decoration: underline; }
     .message {
-      padding: 14px 16px;
-      border-radius: 12px;
+      padding: 13px 15px;
+      border-radius: 10px;
       margin-bottom: 20px;
-      font-size: 0.9em;
+      font-size: 0.85em;
       display: none;
       text-align: left;
       font-weight: 500;
@@ -6747,13 +6758,14 @@ app.get('/login', (_req, res) => {
       gap: 12px;
     }
     .phone-prefix span {
-      background: linear-gradient(135deg, rgba(247,147,26,0.2), rgba(247,147,26,0.1));
-      padding: 16px 14px;
-      border-radius: 14px;
+      background: rgba(247,147,26,0.1);
+      padding: 14px 14px;
+      border-radius: 10px;
       color: #f7931a;
-      font-weight: 600;
-      border: 1px solid rgba(247,147,26,0.2);
+      font-weight: 700;
+      border: 1px solid rgba(247,147,26,0.25);
       font-size: 0.95em;
+      font-family: 'JetBrains Mono', monospace;
     }
     .phone-prefix input { flex: 1; }
     .loading {
@@ -6780,9 +6792,9 @@ app.get('/login', (_req, res) => {
       text-align: center;
       font-size: 1.5em;
       font-weight: 700;
-      border: 2px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      background: rgba(15, 20, 25, 0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      background: rgba(10, 17, 32, 0.7);
       color: #f7931a;
       font-family: 'JetBrains Mono', monospace;
       transition: all 0.2s ease;
@@ -6790,8 +6802,8 @@ app.get('/login', (_req, res) => {
     .pin-input:focus {
       outline: none;
       border-color: #f7931a;
-      background: rgba(15, 20, 25, 1);
-      box-shadow: 0 0 0 4px rgba(247,147,26,0.15);
+      background: rgba(10, 17, 32, 1);
+      box-shadow: 0 0 0 3px rgba(247,147,26,0.15);
     }
     .pin-hint {
       margin-top: 12px;
@@ -6868,9 +6880,9 @@ app.get('/login', (_req, res) => {
       font-size: 0.85em;
     }
     @media (max-width: 480px) {
-      .card { padding: 32px 24px; border-radius: 20px; }
-      .icon { width: 72px; height: 72px; }
-      h1 { font-size: 1.4em; }
+      .card { padding: 30px 22px; border-radius: 14px; }
+      .icon { width: 68px; height: 68px; }
+      h1 { font-size: 1.3em; }
       .subtitle { font-size: 0.85em; }
       .form-group input { padding: 14px 16px; }
       .btn { padding: 14px; }
@@ -6879,7 +6891,7 @@ app.get('/login', (_req, res) => {
     /* Light mode login — konsisten dengan monitoring page */
     body.light-mode { background: #ffffff; color: #111111; }
     body.light-mode::before { display: none; }
-    body.light-mode .card { background: #ffffff; border-color: #e0e0e0; box-shadow: 0 8px 32px rgba(0,0,0,0.1); backdrop-filter: none; }
+    body.light-mode .card { background: #ffffff; border-color: #e5e7eb; border-top-color: rgba(247,147,26,0.6); box-shadow: 0 4px 20px rgba(0,0,0,0.08); backdrop-filter: none; }
     body.light-mode h1 { color: #111111; }
     body.light-mode h1 span { color: #c2700f; }
     body.light-mode .subtitle { color: #444444; }
@@ -10590,7 +10602,10 @@ app.get('/monitoring', async (_req, res) => {
   <link rel="apple-touch-icon" href="/icon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" href="/icon.png">
-  <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
   <script src="/assets/lucide.min.js"></script>
   <title>Gold Price Monitor</title>
   <style>
@@ -10911,6 +10926,8 @@ app.get('/monitoring', async (_req, res) => {
       display: inline-flex;
       align-items: center;
     }
+    /* Dorong badge +/- ke kanan agar mepet ke tepi kotak, bukan ke font harga */
+    #buyCard .stat-change, #sellCard .stat-change, #usdIdrCard .stat-change { margin-left: auto; }
     .stat-item .stat-change.up {
       color: #4ade80;
       background: rgba(74,222,128,0.13);
@@ -11071,6 +11088,44 @@ app.get('/monitoring', async (_req, res) => {
       justify-content: center;
     }
     .nominal-modal-overlay.active { display: flex; }
+    .display-settings-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      z-index: 10000; display: none; align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    .display-settings-overlay.active { display: flex; }
+    .display-settings-modal {
+      background: rgba(14,20,30,0.92);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-top: 1px solid rgba(255,255,255,0.22);
+      max-width: 380px; width: 100%;
+      max-height: 86vh; overflow-y: auto;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .display-settings-modal > h3 {
+      color: #f7931a; font-size: 1em; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+      padding: 18px 20px 14px; margin: 0;
+      position: sticky; top: 0; z-index: 1;
+      background: rgba(14,20,30,0.95);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .display-settings-close {
+      margin-left: auto; background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12); color: #8b949e;
+      width: 28px; height: 28px; border-radius: 8px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .display-settings-close:hover { background: rgba(255,255,255,0.12); color: #e7e9ea; }
+    body.light-mode .display-settings-modal { background: #fff; border-color: #e0e0e0; border-top-color: rgba(247,147,26,0.6); }
+    body.light-mode .display-settings-modal > h3 { background: #fff; border-bottom-color: #eee; }
+    body.light-mode .display-settings-close { background: #f3f4f6; border-color: #e0e0e0; color: #6b7280; }
+    body.light-mode .display-settings-close:hover { background: #e5e7eb; color: #1f2937; }
     .nominal-modal {
       background: rgba(14,20,30,0.85);
       backdrop-filter: blur(24px);
@@ -13800,7 +13855,7 @@ app.get('/monitoring', async (_req, res) => {
         <i id="soundIconOff" data-lucide="volume-x" style="width:14px;height:14px;display:none;"></i>
         Pengaturan Suara
       </div>
-      <button class="nav-menu-item" onclick="toggleHistoryFontPanel();closeNavMenu()" title="Pengaturan Tampilan">
+      <button class="nav-menu-item" id="settingToggle" onclick="openSettingsPanel(event)" title="Pengaturan">
         <i data-lucide="settings" style="width:14px;height:14px;"></i>
         Setting
       </button>
@@ -13842,9 +13897,6 @@ app.get('/monitoring', async (_req, res) => {
           </div>
         </div>
         <div class="invest-stats">
-          <button class="nominal-settings-btn" onclick="openNominalSettings()" title="Pilih Nominal">
-            <i data-lucide="sliders-horizontal" style="width:13px;height:13px;"></i>
-          </button>
           <div id="investStatsList"></div>
         </div>
         <div class="chart-bottom-row">
@@ -14011,7 +14063,14 @@ app.get('/monitoring', async (_req, res) => {
           <span class="count" id="historyCount">0 records</span>
         </div>
       </div>
-      <div id="historyFontPanel" style="display:none;padding:10px 14px;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.07);">
+      <div class="display-settings-overlay" id="displaySettingsModal" onclick="if(event.target===this)closeDisplaySettings()">
+        <div class="display-settings-modal">
+          <h3>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Pengaturan Tampilan
+            <button class="display-settings-close" onclick="closeDisplaySettings()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          </h3>
+          <div id="historyFontPanel" style="padding:16px 20px 20px;background:transparent;border:none;">
         <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
           <span style="font-size:0.75em;color:#8b949e;font-weight:600;">UKURAN FONT MOBILE</span>
           <div style="display:flex;align-items:center;gap:6px;">
@@ -14068,6 +14127,8 @@ app.get('/monitoring', async (_req, res) => {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             Default (kembali ke semula)
           </button>
+        </div>
+          </div>
         </div>
       </div>
       <div id="priceHistoryWrap" class="history-table-wrap">
@@ -15009,13 +15070,7 @@ app.get('/monitoring', async (_req, res) => {
       if (cEl) cEl.textContent = Math.round(s.change / 1.0 * 100) + '%';
     }
     window.toggleHistoryFontPanel = function() {
-      var p = document.getElementById('historyFontPanel');
-      if (!p) return;
-      p.style.display = p.style.display === 'none' ? 'block' : 'none';
-      _updateHistoryFontDisplay();
-      _updateBuySellFontDisplay();
-      _updateBuySellCardDisplay();
-      _updatePerPageButtons();
+      if (typeof window.openDisplaySettings === 'function') window.openDisplaySettings();
     };
     window.adjustHistoryFont = function(type, delta) {
       var s = _getHistoryFontSettings();
@@ -15166,7 +15221,6 @@ app.get('/monitoring', async (_req, res) => {
       const usdIdrWrap = document.getElementById('usdIdrHistoryWrap');
       const fontBtn = document.getElementById('historyFontSettingsBtn');
       const pagination = document.getElementById('historyPagination');
-      const fontPanel = document.getElementById('historyFontPanel');
       // Sync badge label
       const badgeLabel = document.getElementById('historyModeBadgeLabel');
       if (badgeLabel) badgeLabel.textContent = mode === 'price' ? 'Harga Emas' : 'USD/IDR';
@@ -15175,7 +15229,7 @@ app.get('/monitoring', async (_req, res) => {
         usdIdrWrap.style.display = '';
         if (fontBtn) fontBtn.style.display = 'none';
         if (pagination) pagination.style.display = 'none';
-        if (fontPanel) fontPanel.style.display = 'none';
+        if (typeof window.closeDisplaySettings === 'function') window.closeDisplaySettings();
         loadUsdIdrHistory();
       } else {
         priceWrap.style.display = '';
@@ -15546,6 +15600,63 @@ app.get('/monitoring', async (_req, res) => {
       if (toggle && !toggle.contains(e.target) && panel && !panel.contains(e.target)) closeSoundPanel();
     });
 
+    // Settings chooser panel (Tampilan / Pilih Nominal)
+    let _settingsPanelOpen = false;
+    function openSettingsPanel(e) {
+      if (e) e.stopPropagation();
+      closeNavMenu();
+      _settingsPanelOpen = !_settingsPanelOpen;
+      const panel = document.getElementById('settingsPanel');
+      if (!panel) return;
+      if (_settingsPanelOpen) {
+        panel.style.display = 'block';
+        const toggle = document.getElementById('settingToggle');
+        const ref = toggle && toggle.getBoundingClientRect().width ? toggle : document.getElementById('navMenuBtn');
+        if (ref) {
+          const rect = ref.getBoundingClientRect();
+          const panelW = 248;
+          let left = rect.right - panelW;
+          if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8;
+          if (left < 8) left = 8;
+          panel.style.top = (rect.bottom + 8) + 'px';
+          panel.style.left = left + 'px';
+        }
+      } else {
+        panel.style.display = 'none';
+      }
+    }
+    window.openSettingsPanel = openSettingsPanel;
+    function closeSettingsPanel() {
+      _settingsPanelOpen = false;
+      const panel = document.getElementById('settingsPanel');
+      if (panel) panel.style.display = 'none';
+    }
+    window.closeSettingsPanel = closeSettingsPanel;
+    document.addEventListener('click', function(e) {
+      if (!_settingsPanelOpen) return;
+      const toggle = document.getElementById('settingToggle');
+      const panel = document.getElementById('settingsPanel');
+      if ((!toggle || !toggle.contains(e.target)) && panel && !panel.contains(e.target)) closeSettingsPanel();
+    });
+    window.openDisplaySettings = function() {
+      closeSettingsPanel();
+      const modal = document.getElementById('displaySettingsModal');
+      if (!modal) return;
+      modal.classList.add('active');
+      _updateHistoryFontDisplay();
+      _updateBuySellFontDisplay();
+      _updateBuySellCardDisplay();
+      _updatePerPageButtons();
+    };
+    window.closeDisplaySettings = function() {
+      const modal = document.getElementById('displaySettingsModal');
+      if (modal) modal.classList.remove('active');
+    };
+    window.openNominalFromSettings = function() {
+      closeSettingsPanel();
+      if (typeof openNominalSettings === 'function') openNominalSettings();
+    };
+
     // Nav Menu Dropdown
     let _navMenuOpen = false;
     function openNavMenu(e) {
@@ -15580,7 +15691,8 @@ app.get('/monitoring', async (_req, res) => {
       const dropdown = document.getElementById('navMenuDropdown');
       const btn = document.getElementById('navMenuBtn');
       const soundPanel = document.getElementById('soundPanel');
-      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && !(soundPanel && soundPanel.contains(e.target))) {
+      const settingsPanel = document.getElementById('settingsPanel');
+      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && !(soundPanel && soundPanel.contains(e.target)) && !(settingsPanel && settingsPanel.contains(e.target))) {
         closeNavMenu();
       }
     });
@@ -17132,6 +17244,23 @@ app.get('/monitoring', async (_req, res) => {
     <div class="sound-panel-footer">
       <button class="sound-panel-btn" onclick="setSoundAll(true)">Nyalakan Semua</button>
       <button class="sound-panel-btn" onclick="setSoundAll(false)">Matikan Semua</button>
+    </div>
+  </div>
+
+  <div id="settingsPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
+    <div class="sound-panel-header">
+      Pengaturan
+      <button class="sound-panel-close" onclick="closeSettingsPanel()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="sound-row" style="cursor:pointer" onclick="openDisplaySettings()">
+      <div class="sound-row-icon" style="background:rgba(247,147,26,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f7931a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></div>
+      <div class="sound-row-label">Tampilan<span class="sound-row-sub">Ukuran font &amp; baris tabel</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+    <div class="sound-row" style="cursor:pointer" onclick="openNominalFromSettings()">
+      <div class="sound-row-icon" style="background:rgba(96,165,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg></div>
+      <div class="sound-row-label">Pilih Nominal<span class="sound-row-sub">Atur nominal investasi</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
   </div>
 </body>
