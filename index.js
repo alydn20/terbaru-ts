@@ -4332,7 +4332,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v11';
+    const CACHE_VERSION = 'gold-monitor-v12';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -10887,6 +10887,15 @@ app.get('/monitoring', async (_req, res) => {
       transition: color 0.15s, background 0.15s;
     }
     .sound-panel-close:hover { color: #e7e9ea; background: rgba(255,255,255,0.07); }
+    /* Tombol kembali di sub-panel: area sentuh lebih besar & gampang diklik */
+    .sound-panel-back {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; padding: 0; margin: -4px 4px -4px -6px;
+      background: none; border: none; color: #9ca3af; cursor: pointer;
+      border-radius: 7px; flex-shrink: 0;
+      transition: color 0.15s, background 0.15s;
+    }
+    .sound-panel-back:hover, .sound-panel-back:active { color: #e7e9ea; background: rgba(255,255,255,0.1); }
     .sound-row {
       display: flex; align-items: center; gap: 11px;
       padding: 11px 16px; border-bottom: 1px solid rgba(255,255,255,0.04);
@@ -15617,6 +15626,14 @@ app.get('/monitoring', async (_req, res) => {
     function _loadSoundSettings() {
       const defaults = { up: true, bigUp: true, down: true, bigDown: true, promo: true, countdown: true, vibrate: true, shake: true };
       try {
+        // Reset satu kali untuk semua user: aktifkan semua Sound & Getar lagi (fresh).
+        // Setelah ini perilaku normal — pengaturan user tersimpan seperti biasa.
+        if (localStorage.getItem('soundResetV2') !== '1') {
+          localStorage.removeItem('soundSettings');
+          localStorage.removeItem('soundEnabled');
+          localStorage.setItem('soundResetV2', '1');
+          return defaults;
+        }
         const saved = localStorage.getItem('soundSettings');
         if (saved) return { ...defaults, ...JSON.parse(saved) };
         // Backwards compat: jika ada soundEnabled=false lama, matikan semua
@@ -16340,14 +16357,17 @@ app.get('/monitoring', async (_req, res) => {
 
     // ── Onboarding tour (pengenalan untuk user pertama kali) ──
     (function(){
-      var TOUR_KEY = 'onboardingDone_v1';
+      var TOUR_KEY = 'onboardingDone_v2';
       var steps = [
         { sel: '.header-logo', title: 'Treasury Price Monitor', body: 'Harga emas update tiap detik. Titik hijau berarti data live.', menu: false },
         { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator dan garis bantu di grafik.', menu: false },
         { sel: '#navNewsBtn', title: 'Berita', body: 'Berita terbaru. Titik merah berarti ada yang belum dibaca.', menu: false },
         { sel: '#promoBtnEl', title: 'Promo', body: 'Lihat promo yang sedang berjalan.', menu: false },
         { sel: '#navCalcBtn', title: 'Kalkulator', body: 'Hitung simulasi harga beli dan jual.', menu: false },
-        { sel: '#navMenuBtn', title: 'Menu', body: 'Menu utama ada di sini. Isinya kita lihat satu per satu.', menu: false },
+        { sel: '.clock-info', title: 'Jam & Kunci Harga', body: 'Jam ini menghitung detik berjalan. Saat <b>detik 50 ke atas berubah merah</b>, itu tandanya waktunya <b>KUNCI HARGA</b>.', menu: false, scroll: true },
+        { sel: '.price-highlow-group', title: 'Tertinggi & Terendah', body: '<b>TERTINGGI</b> = harga emas paling tinggi hari ini. <b>TERENDAH</b> = harga paling rendah hari ini.', menu: false, scroll: true, mobileOnly: true },
+        { sel: '.limit-markup-group', title: 'Limit, Markup & Spread', body: '<b>LIMIT</b> = sisa kuota promo. <b>MARKUP</b> = selisih harga dari acuan. <b>SPREAD</b> = selisih persen antara harga beli dan jual.', menu: false, scroll: true, mobileOnly: true },
+        { sel: '#navMenuBtn', title: 'Menu', body: 'Menu utama ada di sini. Isinya kita lihat satu per satu.', menu: false, scroll: true },
         { sel: '#installBtn', title: 'Install Aplikasi', body: 'Pasang aplikasi ke layar HP atau desktop.', menu: true },
         { sel: '#themeToggleItem', title: 'Ganti Mode', body: 'Ubah tampilan ke mode gelap atau terang.', menu: true },
         { sel: '#soundToggle', title: 'Sound & Getar', body: 'Ada 2 bagian: <b>Sound</b> (suara naik/turun, promo, hitung mundur) dan <b>Getar</b> (getar HP dan goyang layar).', menu: true },
@@ -16376,7 +16396,12 @@ app.get('/monitoring', async (_req, res) => {
         else { if (_navMenuOpen) closeNavMenu(); }
       }
 
+      function isMobile(){
+        try { return window.matchMedia('(max-width: 768px)').matches; }
+        catch(e){ return window.innerWidth <= 768; }
+      }
       function isStepAvailable(s){
+        if (s.mobileOnly && !isMobile()) return false; // keterangan stat hanya perlu di mobile (desktop sudah ada labelnya)
         var el = document.querySelector(s.sel);
         if (!el) return false;
         if (el.style && el.style.display === 'none') return false; // mis. installBtn saat sudah terpasang
@@ -16394,11 +16419,15 @@ app.get('/monitoring', async (_req, res) => {
 
       function render(){
         var s = steps[idx];
+        // item di dalam hamburger menempel ke tombol di header (position:relative), jadi pastikan halaman di atas
+        // sebelum dropdown dibuka supaya posisinya tidak melenceng saat sebelumnya scroll ke bawah.
+        if (s.menu) { try { window.scrollTo(0, 0); } catch(e){} }
         ensureMenu(!!s.menu);
         // beri waktu menu/dropdown muncul sebelum mengukur
         setTimeout(function(){
           var el = document.querySelector(s.sel);
           if (!el) { advance(1); return; }
+          if (s.scroll) { try { el.scrollIntoView({ block: 'center', behavior: 'auto' }); } catch(e){} }
           var r = el.getBoundingClientRect();
           var pad = 6;
           spot.style.top = (r.top - pad) + 'px';
@@ -17673,7 +17702,7 @@ app.get('/monitoring', async (_req, res) => {
   <!-- Sub-panel: Sound (efek suara) -->
   <div id="soundFxPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
     <div class="sound-panel-header">
-      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-close" style="margin:0 2px 0 0;" onclick="closeSoundFx();openSoundPanel()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Sound</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-back" title="Kembali" onclick="closeSoundFx();openSoundPanel()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Sound</span>
       <button class="sound-panel-close" onclick="closeSoundFx()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sound-row">
@@ -17715,7 +17744,7 @@ app.get('/monitoring', async (_req, res) => {
   <!-- Sub-panel: Getar -->
   <div id="getarPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
     <div class="sound-panel-header">
-      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-close" style="margin:0 2px 0 0;" onclick="closeGetar();openSoundPanel()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Getar</span>
+      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-back" title="Kembali" onclick="closeGetar();openSoundPanel()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Getar</span>
       <button class="sound-panel-close" onclick="closeGetar()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sound-row" id="vibrateRow">
