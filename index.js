@@ -4332,7 +4332,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v12';
+    const CACHE_VERSION = 'gold-monitor-v13';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -15628,10 +15628,10 @@ app.get('/monitoring', async (_req, res) => {
       try {
         // Reset satu kali untuk semua user: aktifkan semua Sound & Getar lagi (fresh).
         // Setelah ini perilaku normal — pengaturan user tersimpan seperti biasa.
-        if (localStorage.getItem('soundResetV2') !== '1') {
+        if (localStorage.getItem('soundResetV3') !== '1') {
           localStorage.removeItem('soundSettings');
           localStorage.removeItem('soundEnabled');
-          localStorage.setItem('soundResetV2', '1');
+          localStorage.setItem('soundResetV3', '1');
           return defaults;
         }
         const saved = localStorage.getItem('soundSettings');
@@ -16357,7 +16357,7 @@ app.get('/monitoring', async (_req, res) => {
 
     // ── Onboarding tour (pengenalan untuk user pertama kali) ──
     (function(){
-      var TOUR_KEY = 'onboardingDone_v2';
+      var TOUR_KEY = 'onboardingDone_v3';
       var steps = [
         { sel: '.header-logo', title: 'Treasury Price Monitor', body: 'Harga emas update tiap detik. Titik hijau berarti data live.', menu: false },
         { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator dan garis bantu di grafik.', menu: false },
