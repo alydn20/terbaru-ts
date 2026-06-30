@@ -1873,7 +1873,7 @@ async function doPromoBroadcast() {
     }
 
     // Track lowest ON price — hanya saat Treasury API konfirmasi status ON
-    // Update dengan delay 10 detik untuk menghindari fluktuasi sesaat
+    // Update dengan delay 40 detik untuk menghindari fluktuasi sesaat
     if (lowestOnPriceCache === undefined) {
       const storedVal = await redis.get(REDIS_KEYS.LOWEST_ON_PRICE)
       lowestOnPriceCache = storedVal !== null ? parseInt(storedVal, 10) : null
@@ -1884,13 +1884,13 @@ async function doPromoBroadcast() {
     if (currentStatus === 'ON' && lastKnownPrice?.buy) {
       const currentBuy = lastKnownPrice.buy
       if (lowestOnPriceCache === null || currentBuy < lowestOnPriceCache) {
-        // Harga lebih rendah — tunggu 10 detik sebelum commit
+        // Harga lebih rendah — tunggu 40 detik sebelum commit
         // Hanya reset timer jika harga lebih rendah dari pending sebelumnya (atau belum ada pending)
         if (!lowestOnPendingTimeout || currentBuy < (lowestOnPendingPrice ?? Infinity)) {
           if (lowestOnPendingTimeout) clearTimeout(lowestOnPendingTimeout)
           lowestOnPendingPrice = currentBuy
           lowestOnPendingTimeout = setTimeout(async () => {
-          // Setelah 20 detik: cek masih ON, lalu commit harga terendah
+          // Setelah 40 detik: cek masih ON, lalu commit harga terendah
           if (lastPromoStatus !== 'ON') return
           if (lowestOnPriceCache !== null && lowestOnPendingPrice >= lowestOnPriceCache) return
           lowestOnPriceCache = lowestOnPendingPrice
@@ -1899,10 +1899,10 @@ async function doPromoBroadcast() {
           await redis.set(REDIS_KEYS.LOWEST_ON_PRICE, String(lowestOnPendingPrice))
           await redis.set(REDIS_KEYS.LOWEST_ON_DATE, todayWIB)
           broadcastSSE({ type: 'lowest_on_price', price: lowestOnPendingPrice })
-          pushLog(`🏷️ Titik ON terendah: ${formatRupiah(lowestOnPendingPrice)} (konfirmasi 20 detik)`)
+          pushLog(`🏷️ Titik ON terendah: ${formatRupiah(lowestOnPendingPrice)} (konfirmasi 40 detik)`)
           lowestOnPendingPrice = null
           lowestOnPendingTimeout = null
-          }, 20000)
+          }, 40000)
         }
       }
     } else if (currentStatus !== 'ON') {
@@ -11554,10 +11554,22 @@ app.get('/monitoring', async (_req, res) => {
       .limit-label .limit-text, .markup-overlay-text, .spread-overlay-text,
       .price-highlow-text { display: none; }
       .markup-overlay > svg { display: none; }
+      /* 5 badge (TERTINGGI/TERENDAH/LIMIT/MARKUP/SPREAD) jadi 1 baris; clock pindah ke bawah */
+      .chart-bottom-row { flex-wrap: wrap; gap: 4px; }
+      .price-highlow-group, .limit-markup-group {
+        position: static;
+        transform: none;
+        flex-direction: row;
+        gap: 4px;
+        order: 1;
+      }
+      .chart-section .chart-bottom-row .chart-info-row { order: 2; flex: 1 1 100%; margin-top: 4px; }
     }
     @media (max-width: 480px) {
       .limit-label, .markup-overlay, .spread-overlay,
-      .price-high-overlay, .price-low-overlay { font-size: 0.58em; padding: 3px 6px; }
+      .price-high-overlay, .price-low-overlay { font-size: 0.55em; padding: 3px 5px; }
+      .price-highlow-group, .limit-markup-group { gap: 3px; }
+      .chart-bottom-row { gap: 3px; }
     }
 
     /* Info Row - Clock & User Phone */
@@ -11567,11 +11579,13 @@ app.get('/monitoring', async (_req, res) => {
       align-items: center;
       margin-top: 10px;
       padding: 10px 16px;
-      background: rgba(247,147,26,0.06);
-      border: 1px solid rgba(247,147,26,0.18);
-      border-left: 3px solid rgba(247,147,26,0.6);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-left: 3px solid rgba(255,255,255,0.18);
       border-radius: 10px;
-      transition: border-color 0.3s ease;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      transition: border-color 0.3s ease, background-color 0.3s ease;
     }
     .info-item {
       display: flex;
@@ -11587,12 +11601,12 @@ app.get('/monitoring', async (_req, res) => {
     .info-time {
       font-size: 1.25em;
       font-weight: 700;
-      color: #f7931a;
+      color: #e6edf3;
       font-family: 'JetBrains Mono', monospace;
       letter-spacing: 1px;
       text-align: center;
       display: block;
-      text-shadow: 0 0 16px rgba(247,147,26,0.5);
+      text-shadow: none;
     }
     .info-date {
       font-size: 0.85em;
@@ -12823,16 +12837,16 @@ app.get('/monitoring', async (_req, res) => {
         padding: 0 8px;
       }
       .chart-stats > .stat-item:not(.invest) {
-        padding: 7px 10px;
-        border-radius: 8px;
+        padding: 4px 8px;
+        border-radius: 7px;
         min-width: 0;
         overflow: hidden;
-        column-gap: 6px;
-        row-gap: 1px;
+        column-gap: 5px;
+        row-gap: 0;
       }
-      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.56em; flex: 0 0 100%; }
-      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.78em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.58em; padding: 1px 5px; min-height: 1.4em; }
+      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.5em; flex: 0 0 100%; }
+      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.72em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.52em; padding: 1px 4px; min-height: 1.3em; }
       #buyCard .stat-value, #sellCard .stat-value { white-space: nowrap; overflow: hidden; }
       /* Titik ON: sembunyikan teks "harga beli" di mobile agar nilai (Rp ...) tampil penuh */
       #lowestOnCard .stat-change { display: none; }
@@ -12913,7 +12927,8 @@ app.get('/monitoring', async (_req, res) => {
       /* Responsive buttons */
       .chart-bottom-row {
         flex-direction: row;
-        gap: 6px;
+        flex-wrap: wrap;
+        gap: 3px;
         margin-top: 4px;
         align-items: center;
         justify-content: center;
@@ -13159,10 +13174,10 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode #buyCard .stat-change.up, body.light-mode #sellCard .stat-change.up, body.light-mode #usdIdrCard .stat-change.up { color: #15803d !important; border-color: #86efac !important; }
     body.light-mode #buyCard .stat-change.down, body.light-mode #sellCard .stat-change.down, body.light-mode #usdIdrCard .stat-change.down { color: #b91c1c !important; border-color: #fca5a5 !important; }
 
-    /* Chart bottom row — clock/date/OFF box orange solid */
-    body.light-mode .chart-info-row { background: #fed7aa; border-color: #f97316; }
-    body.light-mode .info-time { color: #7c2d12; text-shadow: none; }
-    body.light-mode .info-date { color: #7c2d12; }
+    /* Chart bottom row — clock/date/OFF box netral (dark glass setara di light mode) */
+    body.light-mode .chart-info-row { background: #f1f5f9; border-color: #cbd5e1; }
+    body.light-mode .info-time { color: #0f172a; text-shadow: none; }
+    body.light-mode .info-date { color: #475569; }
     body.light-mode .price-high-overlay { background: #bbf7d0; border-color: #22c55e; box-shadow: none; }
     body.light-mode .price-high-overlay span:last-child { color: #14532d; }
     body.light-mode .price-low-overlay { background: #fecaca; border-color: #ef4444; box-shadow: none; }
