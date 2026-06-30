@@ -10792,70 +10792,66 @@ app.get('/monitoring', async (_req, res) => {
     /* Stat Items — Glassmorphism */
     .stat-item {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px 20px;
-      background: rgba(255,255,255,0.05);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-top: 1px solid rgba(255,255,255,0.2);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.08);
-      transition: all 0.25s ease;
+      flex-direction: column;
+      gap: 3px;
+      padding: 13px 16px;
+      background: #0d1525;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-top: 2.5px solid rgba(255,255,255,0.15);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+      transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
     }
     .stat-item:hover {
-      background: rgba(255,255,255,0.09);
-      border-color: rgba(255,255,255,0.22);
-      box-shadow: 0 12px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.14);
-      transform: translateY(-2px);
+      background: #111e33;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     .stat-item .stat-label {
-      font-size: 0.82em;
-      color: var(--header-text);
-      opacity: 0.55;
+      font-size: 0.63em;
+      font-weight: 700;
       text-transform: uppercase;
-      font-weight: 600;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.9px;
+      color: #9ca3af;
+      opacity: 1;
     }
     .stat-item .stat-value {
-      font-size: 1.22em;
+      font-size: 1.15em;
       font-weight: 700;
-      color: var(--header-text);
+      color: #f0f6ff;
       font-family: 'JetBrains Mono', monospace;
+      line-height: 1.25;
     }
-    .rp-prefix { font-size: 0.5em; font-weight: 500; opacity: 0.8; }
-    .stat-item .stat-value.green { color: #4ade80; text-shadow: 0 0 12px rgba(74,222,128,0.4); }
-    .stat-item .stat-value.blue { color: #60a5fa; text-shadow: 0 0 12px rgba(96,165,250,0.4); }
+    .rp-prefix { font-size: 0.52em; font-weight: 500; opacity: 0.7; }
+    .stat-item .stat-value.green { color: #4ade80; }
+    .stat-item .stat-value.blue { color: #60a5fa; }
     .stat-item .stat-change {
-      font-size: 0.88em;
-      padding: 3px 10px;
-      border-radius: 8px;
-      font-weight: 600;
-      backdrop-filter: blur(8px);
+      font-size: 0.7em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      width: fit-content;
+      margin-top: 3px;
+      letter-spacing: 0.2px;
     }
     .stat-item .stat-change.up {
       color: #4ade80;
-      background: rgba(74, 222, 128, 0.14);
-      border: 1px solid rgba(74,222,128,0.2);
+      background: rgba(74,222,128,0.13);
     }
     .stat-item .stat-change.down {
       color: #f87171;
-      background: rgba(248, 113, 113, 0.14);
-      border: 1px solid rgba(248,113,113,0.2);
+      background: rgba(248,113,113,0.13);
     }
     .stat-item.price-up {
-      border-color: rgba(74, 222, 128, 0.4);
-      border-top-color: rgba(74,222,128,0.6);
-      box-shadow: 0 0 20px rgba(74,222,128,0.12), 0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(74,222,128,0.15);
+      border-top-color: #4ade80;
+      box-shadow: 0 0 16px rgba(74,222,128,0.08), 0 2px 12px rgba(0,0,0,0.2);
     }
-    .stat-item.price-up .stat-value { color: #4ade80; text-shadow: 0 0 16px rgba(74,222,128,0.5); }
+    .stat-item.price-up .stat-value { color: #4ade80; }
     .stat-item.price-down {
-      border-color: rgba(248, 113, 113, 0.4);
-      border-top-color: rgba(248,113,113,0.6);
-      box-shadow: 0 0 20px rgba(248,113,113,0.12), 0 8px 24px rgba(0,0,0,0.25), inset 0 1px 0 rgba(248,113,113,0.15);
+      border-top-color: #f87171;
+      box-shadow: 0 0 16px rgba(248,113,113,0.08), 0 2px 12px rgba(0,0,0,0.2);
     }
-    .stat-item.price-down .stat-value { color: #f87171; text-shadow: 0 0 16px rgba(248,113,113,0.5); }
+    .stat-item.price-down .stat-value { color: #f87171; }
 
     /* ── Skeleton loading ──────────────────────────────────────── */
     .stat-val-skeleton {
@@ -10879,19 +10875,19 @@ app.get('/monitoring', async (_req, res) => {
     .flip-out-down { animation: flipOutDown 0.16s ease forwards; display:inline-block; }
     .flip-in       { animation: flipIn      0.18s ease forwards; display:inline-block; }
 
-    /* ── Per-card accent label colors ─────────────────────────── */
-    #buyCard    .stat-label { color: rgba(74,222,128,0.9)  !important; opacity:1 !important; }
-    #sellCard   .stat-label { color: rgba(96,165,250,0.9)  !important; opacity:1 !important; }
-    #usdIdrCard .stat-label { color: rgba(167,139,250,0.9) !important; opacity:1 !important; }
-    #promoLimitCard .stat-label { color: rgba(247,147,26,0.9) !important; opacity:1 !important; }
-    #lowestOnCard   .stat-label { color: rgba(34,197,94,0.9)  !important; opacity:1 !important; }
-    #markupCard     .stat-label { color: rgba(251,191,36,0.9) !important; opacity:1 !important; }
-    #buyCard    { border-left: 2px solid rgba(74,222,128,0.45) !important; }
-    #sellCard   { border-left: 2px solid rgba(96,165,250,0.45) !important; }
-    #usdIdrCard { border-left: 2px solid rgba(167,139,250,0.45) !important; }
-    #promoLimitCard { border-left: none !important; }
-    #lowestOnCard   { border-left: 2px solid rgba(34,197,94,0.45) !important; }
-    #markupCard     { border-left: 2px solid rgba(251,191,36,0.45) !important; }
+    /* ── Per-card accent colors ────────────────────────────────── */
+    #buyCard    .stat-label { color: #4ade80 !important; opacity:1 !important; }
+    #sellCard   .stat-label { color: #60a5fa !important; opacity:1 !important; }
+    #usdIdrCard .stat-label { color: #a78bfa !important; opacity:1 !important; }
+    #promoLimitCard .stat-label { color: #f7931a !important; opacity:1 !important; }
+    #lowestOnCard   .stat-label { color: #34d399 !important; opacity:1 !important; }
+    #markupCard     .stat-label { color: #fbbf24 !important; opacity:1 !important; }
+    #buyCard    { border-top-color: #4ade80 !important; border-left: none !important; }
+    #sellCard   { border-top-color: #60a5fa !important; border-left: none !important; }
+    #usdIdrCard { border-top-color: #a78bfa !important; border-left: none !important; }
+    #promoLimitCard { border-top-color: #f7931a !important; border-left: none !important; }
+    #lowestOnCard   { border-top-color: #34d399 !important; border-left: none !important; }
+    #markupCard     { border-top-color: #fbbf24 !important; border-left: none !important; }
 
     .stat-item.invest {
       border-left: 2px solid rgba(247,147,26,0.6);
@@ -11090,14 +11086,12 @@ app.get('/monitoring', async (_req, res) => {
 
     /* Chart Section */
     .chart-section {
-      background: rgba(8, 12, 22, 0.75);
-      backdrop-filter: blur(28px);
-      -webkit-backdrop-filter: blur(28px);
-      border-radius: 24px;
-      border: 1px solid rgba(255,255,255,0.1);
-      margin-bottom: 32px;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
-      transition: box-shadow 0.4s ease, border-color 0.4s ease;
+      background: #0d1525;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.07);
+      margin-bottom: 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
       position: relative;
     }
     /* Glow effect — border berwarna saat perubahan, tetap sampai harga berubah lagi */
@@ -11120,12 +11114,10 @@ app.get('/monitoring', async (_req, res) => {
       50% { box-shadow: 0 0 0 2px rgba(255,82,82,0.5), 0 0 50px rgba(255,82,82,0.5), 0 0 100px rgba(255,82,82,0.2), 0 24px 64px rgba(0,0,0,0.45); }
     }
     .chart-header {
-      padding: 14px 20px;
-      background: rgba(255,255,255,0.02);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      border-radius: 24px 24px 0 0;
+      padding: 14px 18px;
+      background: #0a1120;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px 16px 0 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -11529,15 +11521,12 @@ app.get('/monitoring', async (_req, res) => {
       justify-content: space-between;
       align-items: center;
       margin-top: 10px;
-      padding: 12px 18px;
-      background: rgba(247,147,26,0.05);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(247,147,26,0.2);
-      border-top: 1px solid rgba(247,147,26,0.35);
-      border-radius: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(247,147,26,0.12);
-      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      padding: 10px 16px;
+      background: rgba(247,147,26,0.06);
+      border: 1px solid rgba(247,147,26,0.18);
+      border-left: 3px solid rgba(247,147,26,0.6);
+      border-radius: 10px;
+      transition: border-color 0.3s ease;
     }
     .info-item {
       display: flex;
@@ -12564,36 +12553,30 @@ app.get('/monitoring', async (_req, res) => {
     /* History Table */
     .history-table-wrap { overflow-x: auto; }
     .history-section {
-      background: rgba(8,12,22,0.7);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border-radius: 24px;
-      border: 1px solid rgba(255,255,255,0.1);
+      background: #0d1525;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.07);
       overflow: hidden;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.07);
-      transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      transition: border-color 0.3s ease;
     }
     .history-header {
-      padding: 18px 24px;
-      background: rgba(255,255,255,0.03);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,0.07);
-      border-top: 1px solid rgba(255,255,255,0.0);
+      padding: 14px 20px;
+      background: #0a1120;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: background 0.3s ease;
     }
     .history-header h2 {
-      font-size: 0.95em;
+      font-size: 0.88em;
       font-weight: 700;
-      color: #ffffff;
-      letter-spacing: -0.02em;
+      color: #e7e9ea;
+      letter-spacing: -0.01em;
     }
     .history-header .count {
-      font-size: 0.72em;
-      color: #ffffff;
-      opacity: 0.6;
+      font-size: 0.7em;
+      color: #6b7280;
       font-weight: 500;
     }
     .history-table {
@@ -12652,36 +12635,30 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
       justify-content: center;
       align-items: center;
-      gap: 16px;
-      padding: 18px 24px;
-      border-top: 1px solid rgba(255,255,255,0.08);
-      background: rgba(255,255,255,0.02);
+      gap: 12px;
+      padding: 14px 20px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      background: #0a1120;
     }
     .page-btn {
-      background: rgba(255,255,255,0.05);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      color: #e7e9ea;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-top: 1px solid rgba(255,255,255,0.2);
-      padding: 10px 20px;
-      border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+      color: #d1d5db;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 8px 18px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 0.9em;
-      font-weight: 500;
-      transition: all 0.25s ease;
+      font-size: 0.85em;
+      font-weight: 600;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
       font-family: inherit;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08);
     }
     .page-btn:hover:not(:disabled) {
       background: rgba(247,147,26,0.1);
-      border-color: rgba(247,147,26,0.3);
-      border-top-color: rgba(247,147,26,0.5);
+      border-color: rgba(247,147,26,0.35);
       color: #f7931a;
-      box-shadow: 0 0 14px rgba(247,147,26,0.15), inset 0 1px 0 rgba(247,147,26,0.15);
     }
     .page-btn:disabled { opacity: 0.25; cursor: not-allowed; }
-    .page-info { color: #8b949e; font-size: 0.9em; font-weight: 500; }
+    .page-info { color: #6b7280; font-size: 0.85em; font-weight: 500; }
 
     /* Animations - color based on price direction */
     .price-card.updated-up {
@@ -12745,28 +12722,26 @@ app.get('/monitoring', async (_req, res) => {
       .header-search-wrap { max-width: 110px; padding: 4px 8px; font-size: 0.75em; }
       .nav-icon-btn { width: 28px; height: 28px; }
       .header-logo { width: 28px; height: 28px; border-radius: 6px; }
-      .chart-section { margin-bottom: 24px; border-radius: 16px; }
-      .chart-header { padding: 12px 14px; gap: 6px; }
-      .chart-header h2 { font-size: 1em; }
-      .chart-stats { gap: 8px; }
-      .chart-info-row { padding: 8px 14px; margin-top: 8px; border-radius: 10px; }
-      .info-time { font-size: 1.35em; }
-      .info-date { font-size: 0.78em; }
-      .stat-item { padding: 10px 14px; gap: 8px; border-radius: 10px; }
-      .stat-item .stat-label { font-size: 1.1em; }
-      .stat-item .stat-value { font-size: 1.35em; }
-      .stat-item .stat-change { font-size: 1.15em; padding: 3px 8px; }
-      #buyCard .stat-label, #sellCard .stat-label, #usdIdrCard .stat-label { font-size: 0.5em; }
-      #buyCard .stat-value, #sellCard .stat-value, #usdIdrCard .stat-value { font-size: 0.8em; white-space: nowrap; }
-      #buyCard .stat-change, #sellCard .stat-change, #usdIdrCard .stat-change { font-size: 0.5em; }
+      .chart-section { margin-bottom: 16px; border-radius: 14px; }
+      .chart-header { padding: 10px 14px; gap: 6px; border-radius: 14px 14px 0 0; }
+      .chart-stats { gap: 6px; }
+      .chart-info-row { padding: 8px 12px; margin-top: 8px; border-radius: 8px; }
+      .info-time { font-size: 1.2em; }
+      .info-date { font-size: 0.75em; }
+      .stat-item { padding: 10px 14px; gap: 2px; border-radius: 10px; }
+      .stat-item .stat-label { font-size: 0.6em; }
+      .stat-item .stat-value { font-size: 1em; }
+      .stat-item .stat-change { font-size: 0.68em; padding: 2px 6px; }
+      #buyCard .stat-label, #sellCard .stat-label, #usdIdrCard .stat-label { font-size: 0.6em; }
+      #buyCard .stat-value, #sellCard .stat-value, #usdIdrCard .stat-value { font-size: 0.95em; white-space: nowrap; }
+      #buyCard .stat-change, #sellCard .stat-change, #usdIdrCard .stat-change { font-size: 0.65em; }
       .tradingview-widget-container { height: 400px; }
-      .history-section { border-radius: 16px; }
-      .history-header { padding: 14px 18px; }
-      .history-header h2 { font-size: 0.88em; }
-      .history-table th { padding: 10px; font-size: 0.7em; }
-      .history-table td { padding: 12px 10px; font-size: 0.85em; }
-      .history-pagination { padding: 14px; gap: 12px; }
-      .page-btn { padding: 8px 16px; font-size: 0.85em; }
+      .history-section { border-radius: 14px; }
+      .history-header { padding: 12px 16px; }
+      .history-table th { padding: 8px; font-size: 0.68em; }
+      .history-table td { padding: 10px 8px; font-size: 0.82em; }
+      .history-pagination { padding: 12px; gap: 10px; }
+      .page-btn { padding: 7px 14px; font-size: 0.82em; }
     }
 
     /* Responsive - Mobile */
@@ -12787,37 +12762,35 @@ app.get('/monitoring', async (_req, res) => {
       .stat-item.clock-item .clock-date { font-size: 0.6em; }
 
       .chart-section {
-        margin-bottom: 20px;
-        border-radius: 14px;
+        margin-bottom: 14px;
+        border-radius: 12px;
       }
-      .chart-info-row { padding: 5px 10px; margin-top: 5px; border-radius: 8px; }
-      .info-time { font-size: 1.22em; }
-      .info-date { font-size: 0.72em; }
-      .chart-header { padding: 10px 12px; gap: 6px; }
+      .chart-info-row { padding: 6px 10px; margin-top: 6px; border-radius: 8px; }
+      .info-time { font-size: 1.1em; }
+      .info-date { font-size: 0.7em; }
+      .chart-header { padding: 10px 12px; gap: 6px; border-radius: 12px 12px 0 0; }
       .chart-title { gap: 8px; }
-      .chart-header h2 { font-size: 0.95em; }
-      .chart-header h2 svg { width: 14px; height: 14px; }
-      .live-badge { font-size: 0.6em; padding: 4px 10px; }
-      /* Mobile: 3 baris - Beli/Jual, Spread/USD, Nominal */
+      .chart-header h2 { font-size: 0.9em; }
+      .live-badge { font-size: 0.6em; padding: 3px 8px; }
+      /* Mobile: grid 2 kolom untuk stat cards */
       .chart-stats {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 4px;
+        gap: 5px;
         padding: 0 8px;
       }
       .chart-stats > .stat-item:not(.invest) {
-        padding: 5px 8px;
-        gap: 4px;
-        border-radius: 6px;
+        padding: 8px 10px;
+        gap: 2px;
+        border-radius: 8px;
         min-width: 0;
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
+        flex-direction: column;
+        align-items: flex-start;
         overflow: hidden;
       }
-      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.5em; flex-shrink: 0; }
-      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.6em; min-width: 0; overflow: hidden; white-space: nowrap; flex: 1; text-align: center; }
-      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.45em; padding: 1px 4px; border-radius: 3px; flex-shrink: 0; }
+      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.58em; }
+      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.82em; min-width: 0; overflow: hidden; white-space: nowrap; }
+      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.62em; padding: 1px 5px; border-radius: 4px; }
       #buyCard .stat-value, #sellCard .stat-value { white-space: nowrap; overflow: hidden; }
       /* Titik ON: sembunyikan teks "harga beli" di mobile agar nilai (Rp ...) tampil penuh */
       #lowestOnCard .stat-change { display: none; }
@@ -13093,8 +13066,22 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .header { background: #f8f9fc; backdrop-filter: none; -webkit-backdrop-filter: none; border-color: #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
 
     /* Chart section */
-    body.light-mode .chart-section { background: #fff; border-color: #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    body.light-mode .chart-header { background: #fff; border-color: #e0e0e0; }
+    body.light-mode .chart-section { background: #ffffff; border-color: #e5e7eb; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    body.light-mode .chart-header { background: #f9fafb; border-color: #e5e7eb; }
+    body.light-mode .history-section { background: #ffffff !important; border-color: #e5e7eb !important; box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important; }
+    body.light-mode .history-header { background: #f9fafb !important; border-color: #e5e7eb !important; }
+    body.light-mode .history-header h2 { color: #111827 !important; }
+    body.light-mode .history-header .count { color: #6b7280 !important; }
+    body.light-mode .history-pagination { background: #f9fafb; border-color: #e5e7eb; }
+    body.light-mode .page-btn { background: #fff; border-color: #d1d5db; color: #374151; }
+    body.light-mode .page-btn:hover:not(:disabled) { background: #fff7ed; border-color: #f7931a; color: #ea580c; }
+    body.light-mode .stat-item { background: #ffffff; border-color: #e5e7eb; border-top-width: 2.5px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
+    body.light-mode .stat-item:hover { background: #f9fafb; box-shadow: 0 3px 14px rgba(0,0,0,0.09); }
+    body.light-mode .stat-item .stat-value { color: #111827; }
+    body.light-mode .stat-item.price-up .stat-value { color: #15803d; }
+    body.light-mode .stat-item.price-down .stat-value { color: #dc2626; }
+    body.light-mode .stat-item .stat-change.up { color: #15803d; background: rgba(22,163,74,0.1); }
+    body.light-mode .stat-item .stat-change.down { color: #dc2626; background: rgba(239,68,68,0.1); }
     body.light-mode .chart-header h2 { color: #111; }
     body.light-mode .invest-stats { background: #fff; }
 
