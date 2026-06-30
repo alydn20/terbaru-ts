@@ -11172,7 +11172,7 @@ app.get('/monitoring', async (_req, res) => {
     /* Chart Section */
     .chart-section {
       background: #0d1525;
-      border-radius: 16px;
+      border-radius: 16px 16px 0 0;
       border: 1px solid rgba(255,255,255,0.07);
       margin-bottom: 20px;
       box-shadow: 0 4px 24px rgba(0,0,0,0.3);
@@ -11408,14 +11408,15 @@ app.get('/monitoring', async (_req, res) => {
     }
     /* Titik ON: label satu baris agar tinggi kotak sama dgn kartu lain */
     #lowestOnCard .stat-label { white-space: nowrap; }
-    /* Desktop: Beli/Jual/USD-IDR lebar tetap sama */
+    /* Desktop: Beli/Jual/USD-IDR menyesuaikan lebar isi (presisi, tanpa ruang kosong) */
     @media (min-width: 769px) {
       .chart-stats > #buyCard,
       .chart-stats > #sellCard,
       .chart-stats > #usdIdrCard,
       .chart-stats > #lowestOnCard {
-        flex: 0 0 170px;
-        width: 170px;
+        flex: 0 0 auto;
+        width: -moz-fit-content;
+        width: fit-content;
       }
     }
     .daily-stats {
@@ -12804,7 +12805,7 @@ app.get('/monitoring', async (_req, res) => {
       .header-search-wrap { max-width: 110px; padding: 4px 8px; font-size: 0.75em; }
       .nav-icon-btn { width: 28px; height: 28px; }
       .header-logo { width: 28px; height: 28px; border-radius: 6px; }
-      .chart-section { margin-bottom: 16px; border-radius: 14px; }
+      .chart-section { margin-bottom: 16px; border-radius: 14px 14px 0 0; }
       .chart-header { padding: 10px 14px; gap: 6px; border-radius: 14px 14px 0 0; }
       .chart-stats { gap: 6px; }
       .chart-info-row { padding: 8px 12px; margin-top: 8px; border-radius: 8px; }
@@ -12814,7 +12815,7 @@ app.get('/monitoring', async (_req, res) => {
       .stat-item .stat-label { font-size: 0.58em; }
       .stat-item .stat-value { font-size: 0.95em; }
       .stat-item .stat-change { font-size: 0.62em; padding: 1px 6px; }
-      #buyCard, #sellCard, #usdIdrCard { flex: 1 1 0; min-width: 0; }
+      #buyCard, #sellCard, #usdIdrCard { flex: 0 0 auto; width: -moz-fit-content; width: fit-content; min-width: 0; }
       .tradingview-widget-container { height: 400px; }
       .history-section { border-radius: 14px; }
       .history-header { padding: 12px 16px; }
@@ -13099,27 +13100,63 @@ app.get('/monitoring', async (_req, res) => {
       color: #374151 !important;
     }
     /* Mobile: sembunyikan select, tampilkan badge button */
-    #historyModeMobileBtn { display: none; }
+    #historyModeMobileWrap { display: none; position: relative; }
+    #historyModeMobileBtn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px 8px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.08);
+      color: var(--text-primary, #e6edf3);
+      font-size: 0.72em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    body.light-mode #historyModeMobileBtn {
+      background: #fff !important;
+      border-color: #d1d5db !important;
+      color: #374151 !important;
+    }
+    .hist-mode-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      z-index: 60;
+      min-width: 130px;
+      background: #1c2128;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      overflow: hidden;
+    }
+    .hist-mode-dropdown.open { display: block; }
+    .hist-mode-dropdown button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 8px 12px;
+      background: transparent;
+      border: none;
+      color: #e6edf3;
+      font-size: 0.78em;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .hist-mode-dropdown button:hover,
+    .hist-mode-dropdown button.active {
+      background: rgba(247,147,26,0.15);
+      color: #f7931a;
+    }
+    body.light-mode .hist-mode-dropdown { background: #fff; border-color: #d1d5db; }
+    body.light-mode .hist-mode-dropdown button { color: #374151; }
+    body.light-mode .hist-mode-dropdown button:hover,
+    body.light-mode .hist-mode-dropdown button.active { background: #fef3c7; color: #92400e; }
     @media (max-width: 480px) {
       #historyModeSelect { display: none !important; }
-      #historyModeMobileBtn {
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        padding: 3px 8px;
-        border-radius: 7px;
-        border: 1px solid rgba(255,255,255,0.15);
-        background: rgba(255,255,255,0.08);
-        color: var(--text-primary, #e6edf3);
-        font-size: 0.72em;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      body.light-mode #historyModeMobileBtn {
-        background: #fff !important;
-        border-color: #d1d5db !important;
-        color: #374151 !important;
-      }
+      #historyModeMobileWrap { display: inline-block; }
     }
 
     /* Font settings panel — override inline dark styles */
@@ -13763,6 +13800,10 @@ app.get('/monitoring', async (_req, res) => {
         <i id="soundIconOff" data-lucide="volume-x" style="width:14px;height:14px;display:none;"></i>
         Pengaturan Suara
       </div>
+      <button class="nav-menu-item" onclick="toggleHistoryFontPanel();closeNavMenu()" title="Pengaturan Tampilan">
+        <i data-lucide="settings" style="width:14px;height:14px;"></i>
+        Setting
+      </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
         <i data-lucide="log-out" style="width:14px;height:14px;"></i>
@@ -13955,16 +13996,19 @@ app.get('/monitoring', async (_req, res) => {
             <option value="price">Harga Emas</option>
             <option value="usdidr">USD/IDR</option>
           </select>
-          <button id="historyModeMobileBtn" onclick="cycleHistoryMode()">
-            <span id="historyModeBadgeLabel">Harga Emas</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
+          <div id="historyModeMobileWrap">
+            <button id="historyModeMobileBtn" onclick="toggleHistoryModeDropdown(event)">
+              <span id="historyModeBadgeLabel">Harga Emas</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <div class="hist-mode-dropdown" id="historyModeDropdown">
+              <button type="button" data-mode="price" onclick="selectHistoryMode('price')">Harga Emas</button>
+              <button type="button" data-mode="usdidr" onclick="selectHistoryMode('usdidr')">USD/IDR</button>
+            </div>
+          </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           <span class="count" id="historyCount">0 records</span>
-          <button id="historyFontSettingsBtn" onclick="toggleHistoryFontPanel()" title="Pengaturan Tampilan" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:4px 7px;cursor:pointer;color:#8b949e;font-size:0.75em;align-items:center;gap:4px;">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
         </div>
       </div>
       <div id="historyFontPanel" style="display:none;padding:10px 14px;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.07);">
@@ -14018,6 +14062,12 @@ app.get('/monitoring', async (_req, res) => {
             <button onclick="setHistoryPerPage(30)" id="perPageBtn30" style="padding:3px 9px;border-radius:5px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#8b949e;cursor:pointer;font-size:0.78em;">30</button>
             <button onclick="setHistoryPerPage(50)" id="perPageBtn50" style="padding:3px 9px;border-radius:5px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#8b949e;cursor:pointer;font-size:0.78em;">50</button>
           </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
+          <button onclick="resetAllDisplaySettings()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;border:1px solid rgba(247,147,26,0.4);background:rgba(247,147,26,0.12);color:#f7931a;cursor:pointer;font-size:0.74em;font-weight:600;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Default (kembali ke semula)
+          </button>
         </div>
       </div>
       <div id="priceHistoryWrap" class="history-table-wrap">
@@ -15086,6 +15136,28 @@ app.get('/monitoring', async (_req, res) => {
       });
     };
 
+    // Kembalikan SEMUA pengaturan tampilan ke default semula
+    window.resetAllDisplaySettings = function() {
+      _saveHistoryFontSettings({ nominal: 1.2, change: 1.0 });
+      _saveBuySellFontSettings({ nominal: 1.0, change: 1.0 });
+      _saveBuySellCardSettings({ scale: 1.0 });
+      try { localStorage.setItem('historyPerPage', '10'); } catch(e) {}
+      currentPage = 1;
+      // Bersihkan inline style kotak beli/jual
+      ['buyCard','sellCard'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { el.style.padding = ''; el.style.gap = ''; }
+      });
+      // Refresh tampilan & nilai persen
+      _updateHistoryFontDisplay();
+      _updateBuySellFontDisplay();
+      _updateBuySellCardDisplay();
+      _updatePerPageButtons();
+      _applyBuySellFontToDOM();
+      _applyBuySellCardToDOM();
+      loadHistory();
+    };
+
     let _historyMode = 'price'; // 'price' | 'usdidr'
 
     function switchHistoryMode(mode) {
@@ -15119,6 +15191,34 @@ app.get('/monitoring', async (_req, res) => {
       if (sel) sel.value = newMode;
       switchHistoryMode(newMode);
     }
+
+    function _syncHistoryModeDropdownActive() {
+      document.querySelectorAll('#historyModeDropdown button').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.mode === _historyMode);
+      });
+    }
+    window.toggleHistoryModeDropdown = function(e) {
+      if (e) e.stopPropagation();
+      const dd = document.getElementById('historyModeDropdown');
+      if (!dd) return;
+      const willOpen = !dd.classList.contains('open');
+      dd.classList.toggle('open', willOpen);
+      if (willOpen) _syncHistoryModeDropdownActive();
+    };
+    window.selectHistoryMode = function(mode) {
+      const dd = document.getElementById('historyModeDropdown');
+      if (dd) dd.classList.remove('open');
+      const sel = document.getElementById('historyModeSelect');
+      if (sel) sel.value = mode;
+      switchHistoryMode(mode);
+    };
+    document.addEventListener('click', function(ev) {
+      const wrap = document.getElementById('historyModeMobileWrap');
+      const dd = document.getElementById('historyModeDropdown');
+      if (dd && dd.classList.contains('open') && wrap && !wrap.contains(ev.target)) {
+        dd.classList.remove('open');
+      }
+    });
 
     function loadUsdIdrHistory() {
       monFetch('/usd-idr-history')
