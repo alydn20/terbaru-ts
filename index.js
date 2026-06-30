@@ -10792,47 +10792,55 @@ app.get('/monitoring', async (_req, res) => {
     /* Stat Items — Glassmorphism */
     .stat-item {
       display: flex;
-      flex-direction: column;
-      gap: 3px;
-      padding: 13px 16px;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 8px;
+      row-gap: 2px;
+      padding: 9px 13px;
       background: #0d1525;
-      border-radius: 14px;
+      border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.07);
-      border-top: 2.5px solid rgba(255,255,255,0.15);
-      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
-      transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      border-top: 2px solid rgba(255,255,255,0.15);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+      transition: background 0.2s ease, transform 0.2s ease;
     }
     .stat-item:hover {
       background: #111e33;
       transform: translateY(-1px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
     }
     .stat-item .stat-label {
-      font-size: 0.63em;
+      flex: 0 0 100%;
+      font-size: 0.6em;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.9px;
+      letter-spacing: 0.8px;
       color: #9ca3af;
-      opacity: 1;
+      line-height: 1.4;
     }
     .stat-item .stat-value {
-      font-size: 1.15em;
+      flex: 1 1 auto;
+      font-size: 1em;
       font-weight: 700;
       color: #f0f6ff;
       font-family: 'JetBrains Mono', monospace;
-      line-height: 1.25;
+      white-space: nowrap;
+      line-height: 1.3;
     }
     .rp-prefix { font-size: 0.52em; font-weight: 500; opacity: 0.7; }
     .stat-item .stat-value.green { color: #4ade80; }
     .stat-item .stat-value.blue { color: #60a5fa; }
     .stat-item .stat-change {
-      font-size: 0.7em;
-      padding: 2px 8px;
-      border-radius: 6px;
+      flex: 0 0 auto;
+      font-size: 0.65em;
+      padding: 2px 7px;
+      border-radius: 5px;
       font-weight: 700;
-      width: fit-content;
-      margin-top: 3px;
       letter-spacing: 0.2px;
+      white-space: nowrap;
+      /* min-height agar baris value selalu ada walau change kosong */
+      min-height: 1.5em;
+      display: inline-flex;
+      align-items: center;
     }
     .stat-item .stat-change.up {
       color: #4ade80;
@@ -11323,26 +11331,14 @@ app.get('/monitoring', async (_req, res) => {
     }
     /* Titik ON: label satu baris agar tinggi kotak sama dgn kartu lain */
     #lowestOnCard .stat-label { white-space: nowrap; }
-    /* Desktop: Beli/Jual/USD-IDR lebar tetap sama persis */
+    /* Desktop: Beli/Jual/USD-IDR lebar tetap sama */
     @media (min-width: 769px) {
       .chart-stats > #buyCard,
       .chart-stats > #sellCard,
       .chart-stats > #usdIdrCard,
       .chart-stats > #lowestOnCard {
-        flex: 0 0 260px;
-        width: 260px;
-      }
-      .chart-stats > #buyCard .stat-value,
-      .chart-stats > #sellCard .stat-value,
-      .chart-stats > #usdIdrCard .stat-value,
-      .chart-stats > #lowestOnCard .stat-value {
-        white-space: nowrap;
-      }
-      .chart-stats > #buyCard .stat-change,
-      .chart-stats > #sellCard .stat-change,
-      .chart-stats > #usdIdrCard .stat-change,
-      .chart-stats > #lowestOnCard .stat-change {
-        margin-left: auto;
+        flex: 0 0 200px;
+        width: 200px;
       }
     }
     .daily-stats {
@@ -12728,13 +12724,11 @@ app.get('/monitoring', async (_req, res) => {
       .chart-info-row { padding: 8px 12px; margin-top: 8px; border-radius: 8px; }
       .info-time { font-size: 1.2em; }
       .info-date { font-size: 0.75em; }
-      .stat-item { padding: 10px 14px; gap: 2px; border-radius: 10px; }
-      .stat-item .stat-label { font-size: 0.6em; }
-      .stat-item .stat-value { font-size: 1em; }
-      .stat-item .stat-change { font-size: 0.68em; padding: 2px 6px; }
-      #buyCard .stat-label, #sellCard .stat-label, #usdIdrCard .stat-label { font-size: 0.6em; }
-      #buyCard .stat-value, #sellCard .stat-value, #usdIdrCard .stat-value { font-size: 0.95em; white-space: nowrap; }
-      #buyCard .stat-change, #sellCard .stat-change, #usdIdrCard .stat-change { font-size: 0.65em; }
+      .stat-item { padding: 8px 12px; border-radius: 10px; column-gap: 7px; row-gap: 1px; }
+      .stat-item .stat-label { font-size: 0.58em; }
+      .stat-item .stat-value { font-size: 0.95em; }
+      .stat-item .stat-change { font-size: 0.62em; padding: 1px 6px; }
+      #buyCard, #sellCard, #usdIdrCard { flex: 1 1 0; min-width: 0; }
       .tradingview-widget-container { height: 400px; }
       .history-section { border-radius: 14px; }
       .history-header { padding: 12px 16px; }
@@ -12780,17 +12774,16 @@ app.get('/monitoring', async (_req, res) => {
         padding: 0 8px;
       }
       .chart-stats > .stat-item:not(.invest) {
-        padding: 8px 10px;
-        gap: 2px;
+        padding: 7px 10px;
         border-radius: 8px;
         min-width: 0;
-        flex-direction: column;
-        align-items: flex-start;
         overflow: hidden;
+        column-gap: 6px;
+        row-gap: 1px;
       }
-      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.58em; }
-      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.82em; min-width: 0; overflow: hidden; white-space: nowrap; }
-      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.62em; padding: 1px 5px; border-radius: 4px; }
+      .chart-stats > .stat-item:not(.invest) .stat-label { font-size: 0.56em; flex: 0 0 100%; }
+      .chart-stats > .stat-item:not(.invest) .stat-value { font-size: 0.78em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chart-stats > .stat-item:not(.invest) .stat-change { font-size: 0.58em; padding: 1px 5px; min-height: 1.4em; }
       #buyCard .stat-value, #sellCard .stat-value { white-space: nowrap; overflow: hidden; }
       /* Titik ON: sembunyikan teks "harga beli" di mobile agar nilai (Rp ...) tampil penuh */
       #lowestOnCard .stat-change { display: none; }
@@ -13075,8 +13068,9 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .history-pagination { background: #f9fafb; border-color: #e5e7eb; }
     body.light-mode .page-btn { background: #fff; border-color: #d1d5db; color: #374151; }
     body.light-mode .page-btn:hover:not(:disabled) { background: #fff7ed; border-color: #f7931a; color: #ea580c; }
-    body.light-mode .stat-item { background: #ffffff; border-color: #e5e7eb; border-top-width: 2.5px; box-shadow: 0 1px 8px rgba(0,0,0,0.06); }
-    body.light-mode .stat-item:hover { background: #f9fafb; box-shadow: 0 3px 14px rgba(0,0,0,0.09); }
+    body.light-mode .stat-item { background: #ffffff; border-color: #e5e7eb; border-top-width: 2px; box-shadow: 0 1px 6px rgba(0,0,0,0.06); }
+    body.light-mode .stat-item:hover { background: #f9fafb; }
+    body.light-mode .stat-item .stat-label { color: #6b7280; }
     body.light-mode .stat-item .stat-value { color: #111827; }
     body.light-mode .stat-item.price-up .stat-value { color: #15803d; }
     body.light-mode .stat-item.price-down .stat-value { color: #dc2626; }
