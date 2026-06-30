@@ -10637,35 +10637,28 @@ app.get('/monitoring', async (_req, res) => {
       box-shadow: 0 2px 16px rgba(0,0,0,0.25);
       transition: background 0.3s ease, border-color 0.3s ease;
     }
-    /* Header Logo (TradingView-style blue icon) */
+    /* Header Logo (original Treasury gold icon) */
     .header-logo {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
-      background: #2962ff;
-      border-radius: 8px;
       flex-shrink: 0;
       position: relative;
       cursor: pointer;
     }
-    /* Search bar */
-    .header-search-wrap {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 8px;
-      padding: 5px 11px;
-      color: #6b7280;
-      font-size: 0.8em;
+    /* Header title text (replaces search bar) */
+    .header-title-text {
+      font-size: 0.85em;
+      font-weight: 700;
+      color: #e7e9ea;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
       flex: 1;
-      max-width: 150px;
-      cursor: default;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .header-search-text { color: #6b7280; user-select: none; }
+    body.light-mode .header-title-text { color: #111827; }
     /* Nav icon buttons */
     .nav-icon-btn {
       display: flex;
@@ -10688,14 +10681,12 @@ app.get('/monitoring', async (_req, res) => {
     }
     /* Nav menu dropdown */
     .nav-menu-dropdown {
-      position: absolute;
-      top: calc(100% + 6px);
-      right: 0;
+      position: fixed;
       background: #1b2133;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      z-index: 9999;
+      z-index: 99999;
       min-width: 190px;
       overflow: hidden;
       display: none;
@@ -13019,7 +13010,7 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .indicator-btn { box-shadow: none !important; }
     body.light-mode .nav-icon-btn { color: #6b7280; }
     body.light-mode .nav-icon-btn:hover { background: rgba(0,0,0,0.06); color: #374151; }
-    body.light-mode .nav-menu-dropdown { background: #ffffff; border-color: rgba(0,0,0,0.1); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+    body.light-mode .nav-menu-dropdown { background: #ffffff; border-color: rgba(0,0,0,0.1); box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
     body.light-mode .nav-menu-item { color: #374151; }
     body.light-mode .nav-menu-item:hover { background: rgba(0,0,0,0.05); color: #111827; }
     body.light-mode .nav-menu-divider { background: rgba(0,0,0,0.1); }
@@ -13652,62 +13643,62 @@ app.get('/monitoring', async (_req, res) => {
   <div class="container">
     <div class="header">
       <div class="header-logo" title="Treasury Realtime Price">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="16" height="16" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="2 13 6 8 10 11 16 4"/>
-          <polyline points="12 4 16 4 16 8"/>
-        </svg>
-        <span class="live-dot"></span>
+        <span style="position:relative;display:inline-flex;flex-shrink:0;align-items:center;">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" style="display:block;" aria-hidden="true">
+            <rect x="7" y="1" width="16" height="16" rx="4" ry="4" fill="#f7931a"/>
+            <path d="M1 23 L1 9 A13 13 0 0 1 14 23 Z" fill="#c97a10" opacity="0.9"/>
+          </svg>
+          <span class="live-dot"></span>
+        </span>
         <span id="trendIcon" style="display:none;"></span>
       </div>
 
-      <div class="header-search-wrap">
-        <i data-lucide="search" style="width:13px;height:13px;flex-shrink:0;"></i>
-        <span class="header-search-text">Cari</span>
-      </div>
+      <div class="header-title-text">Harga Treasury</div>
 
       <div class="header-right">
         <button class="nav-icon-btn" onclick="openIndicatorSettings()" title="Indikator">
-          <i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>
+          <i data-lucide="activity" style="width:16px;height:16px;color:#60a5fa;"></i>
         </button>
         <button class="nav-icon-btn" onclick="openNewsModal()" title="Cek News" style="position:relative;">
-          <i data-lucide="newspaper" style="width:15px;height:15px;"></i>
+          <i data-lucide="bell" style="width:16px;height:16px;color:#c084fc;"></i>
           <span id="newsBadge" style="display:none;position:absolute;top:2px;right:2px;background:#f59e0b;color:#000;border-radius:99px;padding:0 4px;font-size:0.58em;font-weight:700;line-height:1.5;min-width:13px;text-align:center;">0</span>
         </button>
         <button class="nav-icon-btn promo-nav" id="promoBtnEl" onclick="openPromoSuggestions()" title="Cek Promo" style="position:relative;">
-          <i data-lucide="zap" style="width:15px;height:15px;color:#f59e0b;"></i>
+          <i data-lucide="percent" style="width:16px;height:16px;color:#34d399;"></i>
           <span id="promoBadge" style="display:none;position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border-radius:99px;padding:0 4px;font-size:0.58em;font-weight:700;line-height:1.5;min-width:13px;text-align:center;">0</span>
         </button>
-        <button class="nav-icon-btn" onclick="openGoldCalc()" title="Hitung Emas">
-          <i data-lucide="rocket" style="width:15px;height:15px;color:#f97316;"></i>
+        <button class="nav-icon-btn" onclick="openGoldCalc()" title="Harga Beli dan Jual">
+          <i data-lucide="scale" style="width:16px;height:16px;color:#fbbf24;"></i>
         </button>
         <button class="nav-icon-btn" onclick="openNavMenu(event)" title="Menu" id="navMenuBtn">
           <i data-lucide="align-justify" style="width:15px;height:15px;"></i>
         </button>
       </div>
 
-      <!-- Nav Menu Dropdown -->
-      <div class="nav-menu-dropdown" id="navMenuDropdown">
-        <button class="nav-menu-item install-nav" id="installBtn" onclick="installApp();closeNavMenu()" style="display:none;">
-          <i data-lucide="download" style="width:14px;height:14px;"></i>
-          Install App
-        </button>
-        <button class="nav-menu-item" onclick="toggleTheme()">
-          <i id="themeIconDark" data-lucide="moon" style="width:14px;height:14px;"></i>
-          <i id="themeIconLight" data-lucide="sun" style="width:14px;height:14px;display:none;"></i>
-          Ganti Mode
-        </button>
-        <div class="nav-menu-item" id="soundToggle" onclick="openSoundPanel(event)" title="Pengaturan Suara">
-          <i id="soundIconOn" data-lucide="volume-2" style="width:14px;height:14px;"></i>
-          <i id="soundIconPartial" data-lucide="volume-1" style="width:14px;height:14px;display:none;"></i>
-          <i id="soundIconOff" data-lucide="volume-x" style="width:14px;height:14px;display:none;"></i>
-          Pengaturan Suara
-        </div>
-        <div class="nav-menu-divider"></div>
-        <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
-          <i data-lucide="log-out" style="width:14px;height:14px;"></i>
-          Logout
-        </button>
+    </div>
+
+    <!-- Nav Menu Dropdown (outside header to avoid backdrop-filter stacking context) -->
+    <div class="nav-menu-dropdown" id="navMenuDropdown">
+      <button class="nav-menu-item install-nav" id="installBtn" onclick="installApp();closeNavMenu()" style="display:none;">
+        <i data-lucide="download" style="width:14px;height:14px;"></i>
+        Install App
+      </button>
+      <button class="nav-menu-item" onclick="toggleTheme()">
+        <i id="themeIconDark" data-lucide="moon" style="width:14px;height:14px;"></i>
+        <i id="themeIconLight" data-lucide="sun" style="width:14px;height:14px;display:none;"></i>
+        Ganti Mode
+      </button>
+      <div class="nav-menu-item" id="soundToggle" onclick="openSoundPanel(event)" title="Pengaturan Suara">
+        <i id="soundIconOn" data-lucide="volume-2" style="width:14px;height:14px;"></i>
+        <i id="soundIconPartial" data-lucide="volume-1" style="width:14px;height:14px;display:none;"></i>
+        <i id="soundIconOff" data-lucide="volume-x" style="width:14px;height:14px;display:none;"></i>
+        Pengaturan Suara
       </div>
+      <div class="nav-menu-divider"></div>
+      <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
+        <i data-lucide="log-out" style="width:14px;height:14px;"></i>
+        Logout
+      </button>
     </div>
 
     <!-- Notification Banner Container -->
@@ -15380,8 +15371,23 @@ app.get('/monitoring', async (_req, res) => {
       if (e) e.stopPropagation();
       _navMenuOpen = !_navMenuOpen;
       const dropdown = document.getElementById('navMenuDropdown');
-      if (dropdown) dropdown.classList.toggle('active', _navMenuOpen);
-      if (typeof lucide !== 'undefined') lucide.createIcons();
+      if (!dropdown) return;
+      if (_navMenuOpen) {
+        const btn = document.getElementById('navMenuBtn');
+        if (btn) {
+          const rect = btn.getBoundingClientRect();
+          const dropW = 190;
+          let left = rect.right - dropW;
+          if (left < 8) left = 8;
+          if (left + dropW > window.innerWidth - 8) left = window.innerWidth - dropW - 8;
+          dropdown.style.top = (rect.bottom + 6) + 'px';
+          dropdown.style.left = left + 'px';
+        }
+        dropdown.classList.add('active');
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+      } else {
+        dropdown.classList.remove('active');
+      }
     }
     function closeNavMenu() {
       _navMenuOpen = false;
@@ -15393,7 +15399,7 @@ app.get('/monitoring', async (_req, res) => {
       const dropdown = document.getElementById('navMenuDropdown');
       const btn = document.getElementById('navMenuBtn');
       const soundPanel = document.getElementById('soundPanel');
-      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && soundPanel && !soundPanel.contains(e.target)) {
+      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && !(soundPanel && soundPanel.contains(e.target))) {
         closeNavMenu();
       }
     });
