@@ -10846,9 +10846,9 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      column-gap: 6px;
+      column-gap: 5px;
       row-gap: 0;
-      padding: 7px 11px;
+      padding: 5px 9px;
       background: #0d1525;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.07);
@@ -10860,6 +10860,24 @@ app.get('/monitoring', async (_req, res) => {
       background: #111e33;
       transform: translateY(-1px);
     }
+    /* === Feedback klik ringan (tap mobile & klik desktop) + cursor pointer === */
+    button, [onclick], a[href], label[for], select {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, [onclick] { transition: transform 0.12s ease; }
+    button:active, [onclick]:active {
+      transform: scale(0.93);
+    }
+    /* Elemen besar/kartu yang bisa diklik: efek tekan lebih halus */
+    .stat-item[onclick]:active, .promo-card:active, .news-card:active,
+    .nav-menu-item:active, .page-btn:active {
+      transform: scale(0.97);
+    }
+    @media (hover: none) {
+      /* Di layar sentuh: cursor tidak relevan, biarkan efek tekan saja */
+      button, [onclick] { cursor: default; }
+    }
     .stat-item .stat-label {
       flex: 0 0 100%;
       font-size: 0.58em;
@@ -10870,7 +10888,7 @@ app.get('/monitoring', async (_req, res) => {
       line-height: 1.5;
     }
     .stat-item .stat-value {
-      flex: 1 1 auto;
+      flex: 0 1 auto;
       font-size: 0.88em;
       font-weight: 700;
       color: #f0f6ff;
@@ -10986,7 +11004,7 @@ app.get('/monitoring', async (_req, res) => {
       background: linear-gradient(135deg, rgba(247,147,26,0.1) 0%, rgba(247,147,26,0.04) 100%);
       border: 1px solid rgba(247,147,26,0.22);
       border-top: 1px solid rgba(247,147,26,0.4);
-      border-radius: 20px;
+      border-radius: 4px;
       box-shadow: 0 2px 6px rgba(247,147,26,0.1), inset 0 1px 0 rgba(255,255,255,0.04);
       transform: none !important;
     }
@@ -11396,8 +11414,8 @@ app.get('/monitoring', async (_req, res) => {
       .chart-stats > #sellCard,
       .chart-stats > #usdIdrCard,
       .chart-stats > #lowestOnCard {
-        flex: 0 0 200px;
-        width: 200px;
+        flex: 0 0 170px;
+        width: 170px;
       }
     }
     .daily-stats {
@@ -11456,9 +11474,9 @@ app.get('/monitoring', async (_req, res) => {
     .limit-label, .markup-overlay, .spread-overlay,
     .price-high-overlay, .price-low-overlay {
       display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0;
+      flex-direction: row;
+      align-items: center;
+      gap: 5px;
       font-size: 0.78em;
       font-weight: 600;
       padding: 5px 9px;
@@ -11548,28 +11566,19 @@ app.get('/monitoring', async (_req, res) => {
       letter-spacing: 0.5px;
       margin-bottom: 2px;
     }
+    /* Label badge sejajar dengan nilai dalam 1 baris (row) — tanpa jarak bawah */
+    .limit-label .limit-text, .markup-overlay-text,
+    .spread-overlay-text, .price-highlow-text { margin-bottom: 0; }
     @media (max-width: 768px) {
       .limit-label, .markup-overlay, .spread-overlay,
       .price-high-overlay, .price-low-overlay { font-size: 0.65em; padding: 3px 7px; }
       .limit-label .limit-text, .markup-overlay-text, .spread-overlay-text,
       .price-highlow-text { display: none; }
       .markup-overlay > svg { display: none; }
-      /* 5 badge (TERTINGGI/TERENDAH/LIMIT/MARKUP/SPREAD) jadi 1 baris; clock pindah ke bawah */
-      .chart-bottom-row { flex-wrap: wrap; gap: 4px; }
-      .price-highlow-group, .limit-markup-group {
-        position: static;
-        transform: none;
-        flex-direction: row;
-        gap: 4px;
-        order: 1;
-      }
-      .chart-section .chart-bottom-row .chart-info-row { order: 2; flex: 1 1 100%; margin-top: 4px; }
     }
     @media (max-width: 480px) {
       .limit-label, .markup-overlay, .spread-overlay,
-      .price-high-overlay, .price-low-overlay { font-size: 0.55em; padding: 3px 5px; }
-      .price-highlow-group, .limit-markup-group { gap: 3px; }
-      .chart-bottom-row { gap: 3px; }
+      .price-high-overlay, .price-low-overlay { font-size: 0.58em; padding: 3px 6px; }
     }
 
     /* Info Row - Clock & User Phone */
@@ -11608,9 +11617,23 @@ app.get('/monitoring', async (_req, res) => {
       display: block;
       text-shadow: none;
     }
+    /* Jam: bedakan warna jam / menit / detik agar jelas */
+    .clk-h { color: #e6edf3; }
+    .clk-m { color: #f7931a; }
+    .clk-s { color: #22c55e; display: inline-block; }
+    .clk-sep { color: rgba(255,255,255,0.35); margin: 0 1px; animation: clkBlink 1s steps(1,end) infinite; }
+    @keyframes clkBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0.3; } }
+    /* Animasi gerak saat detik berganti */
+    .clk-tick { animation: clkTick 0.4s ease; }
+    @keyframes clkTick {
+      0% { transform: translateY(-3px) scale(1.18); opacity: 0.45; }
+      60% { transform: translateY(0) scale(1.05); opacity: 1; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
     .info-date {
       font-size: 0.85em;
-      color: #8b949e;
+      color: #c9d1d9;
+      font-weight: 500;
     }
     @media (max-width: 768px) {
       .info-date-day { display: none; }
@@ -12927,8 +12950,7 @@ app.get('/monitoring', async (_req, res) => {
       /* Responsive buttons */
       .chart-bottom-row {
         flex-direction: row;
-        flex-wrap: wrap;
-        gap: 3px;
+        gap: 6px;
         margin-top: 4px;
         align-items: center;
         justify-content: center;
@@ -13112,8 +13134,8 @@ app.get('/monitoring', async (_req, res) => {
 
     /* Invest stats boxes — kuning */
     body.light-mode .invest-stats { background: transparent; }
-    body.light-mode .invest-stats .stat-item, body.light-mode .invest-stats .stat-item.invest { background: #fef08a !important; border-color: #eab308 !important; border-top-color: #ca8a04 !important; box-shadow: none !important; }
-    body.light-mode .invest-stats .stat-item:hover { background: #fde047 !important; border-color: #ca8a04 !important; }
+    body.light-mode .invest-stats .stat-item, body.light-mode .invest-stats .stat-item.invest { background: #fef3c7 !important; border-color: #f59e0b !important; border-top-color: #d97706 !important; box-shadow: none !important; }
+    body.light-mode .invest-stats .stat-item:hover { background: #fde68a !important; border-color: #d97706 !important; }
     body.light-mode .invest-stats .stat-item .stat-label, body.light-mode .invest-stats .stat-item.invest .stat-label { color: #713f12 !important; font-weight: 700; }
     body.light-mode .invest-stats .stat-item .stat-value, body.light-mode .invest-stats .stat-item.invest .stat-value { color: #422006 !important; font-weight: 600; }
     body.light-mode .invest-stats .stat-item .stat-change.up { color: #14532d !important; background: #dcfce7 !important; border-color: #86efac !important; font-weight: 700; }
@@ -13150,8 +13172,6 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .stat-item .stat-value { color: #111; text-shadow: none; }
     body.light-mode .stat-item .stat-value.green { color: #1a7a5e; text-shadow: none; }
     body.light-mode .stat-item .stat-value.blue { color: #1d5fa8; text-shadow: none; }
-    body.light-mode .invest-stats .stat-item { background: #fff; }
-    body.light-mode .stat-item.invest .stat-label { color: #c2700f; }
     body.light-mode .stat-item.price-up { border-color: #22c55e; border-top-color: #16a34a; box-shadow: none; }
     body.light-mode .stat-item.price-up .stat-value { color: #15803d; text-shadow: none; }
     body.light-mode .stat-item.price-down { border-color: #f87171; border-top-color: #dc2626; box-shadow: none; }
@@ -13177,7 +13197,11 @@ app.get('/monitoring', async (_req, res) => {
     /* Chart bottom row — clock/date/OFF box netral (dark glass setara di light mode) */
     body.light-mode .chart-info-row { background: #f1f5f9; border-color: #cbd5e1; }
     body.light-mode .info-time { color: #0f172a; text-shadow: none; }
-    body.light-mode .info-date { color: #475569; }
+    body.light-mode .clk-h { color: #0f172a; }
+    body.light-mode .clk-m { color: #b45309; }
+    body.light-mode .clk-s { color: #15803d; }
+    body.light-mode .clk-sep { color: rgba(15,23,42,0.4); }
+    body.light-mode .info-date { color: #1e293b; }
     body.light-mode .price-high-overlay { background: #bbf7d0; border-color: #22c55e; box-shadow: none; }
     body.light-mode .price-high-overlay span:last-child { color: #14532d; }
     body.light-mode .price-low-overlay { background: #fecaca; border-color: #ef4444; box-shadow: none; }
@@ -13795,7 +13819,7 @@ app.get('/monitoring', async (_req, res) => {
           </div>
           <div class="chart-info-row">
             <div class="info-item clock-info">
-              <span class="info-time" id="clock2">--:--:--</span>
+              <span class="info-time" id="clock2"><span class="clk-h" id="clkH">--</span><span class="clk-sep">:</span><span class="clk-m" id="clkM">--</span><span class="clk-sep">:</span><span class="clk-s" id="clkS">--</span></span>
               <span class="info-date" style="text-align:center;display:block;">
                 <span class="info-date-day" id="dateInfo2Day"></span>
                 <span id="dateInfo2"></span>
@@ -15913,11 +15937,26 @@ app.get('/monitoring', async (_req, res) => {
       const year = now.getFullYear();
       const dateStr = date + ' ' + month + ' ' + year + ' WIB';
 
-      // Update clock2 di pojok kanan (bawah Sound)
-      const clock2 = document.getElementById('clock2');
+      // Update clock2 di pojok kanan (bawah Sound) — jam/menit/detik dipisah + animasi tick
+      const clkH = document.getElementById('clkH');
+      const clkM = document.getElementById('clkM');
+      const clkS = document.getElementById('clkS');
+      if (clkH || clkM || clkS) {
+        const parts = timeStr.split(':');
+        if (clkH && clkH.textContent !== parts[0]) clkH.textContent = parts[0];
+        if (clkM && clkM.textContent !== parts[1]) clkM.textContent = parts[1];
+        if (clkS && clkS.textContent !== parts[2]) {
+          clkS.textContent = parts[2];
+          clkS.classList.remove('clk-tick');
+          void clkS.offsetWidth; // reflow agar animasi restart
+          clkS.classList.add('clk-tick');
+        }
+      } else {
+        const clock2 = document.getElementById('clock2');
+        if (clock2) clock2.textContent = timeStr;
+      }
       const dateInfo2 = document.getElementById('dateInfo2');
       const dateInfo2Day = document.getElementById('dateInfo2Day');
-      if (clock2) clock2.textContent = timeStr;
       if (dateInfo2) dateInfo2.textContent = dateStr;
       if (dateInfo2Day) dateInfo2Day.textContent = dayName + ', ';
     }
