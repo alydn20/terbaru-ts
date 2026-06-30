@@ -123,7 +123,7 @@ const TREASURY_URL = process.env.TREASURY_URL ||
 
 // Treasury Promo API Config
 const TREASURY_NOMINAL_URL = 'https://connect.treasury.id/nominal/suggestion'
-const TREASURY_PROMO_SUGGESTION_URL = 'https://connect.treasury.id/promotion/pop-up'
+const TREASURY_PROMO_SUGGESTION_URL = 'https://connect.treasury.id/promotion/suggestion'
 const TREASURY_LOGIN_URL = 'https://connect.treasury.id/user/signin'
 const TREASURY_CREDENTIALS = {
   "client_id": "3",
@@ -2262,9 +2262,9 @@ function triggerPromoCheck() {
 async function fetchPromoSuggestions() {
   try {
     if (!treasuryToken) await refreshTreasuryToken()
-    // Real app: POST /promotion/pop-up dengan body {"popup_location": 2}
+    // Real app: GET /promotion/suggestion (tanpa body)
     const res = await fetch(TREASURY_PROMO_SUGGESTION_URL, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'accept': 'application/json',
         'authorization': `Bearer ${treasuryToken}`,
@@ -2274,7 +2274,6 @@ async function fetchPromoSuggestions() {
         'x-platform': 'android',
         'x-version': '1.0'
       },
-      body: JSON.stringify({ popup_location: 2 }),
       signal: AbortSignal.timeout(10000)
     })
     if (!res.ok) {
@@ -2283,18 +2282,19 @@ async function fetchPromoSuggestions() {
     }
     const json = await res.json()
     if (json.meta?.status !== 'success') throw new Error('API error')
-    // Endpoint pop-up mengembalikan satu banner: { image_url, article_url, status }
-    const popup = json.data || {}
-    if (popup.status !== true) return [] // tidak ada promo banner aktif
-    return [{
-      code: 'POPUP',
-      name: 'Promo Aktif',
-      short_desc: popup.article_url || '',
-      image_url: popup.image_url || null,
-      article_url: popup.article_url || null,
-      min_trx: '-',
-      end_to: '-'
-    }]
+    // Endpoint suggestion mengembalikan list ter-paginasi: { data: { data: [ ...promo... ] } }
+    const list = json.data?.data || []
+    return list
+      .filter(p => p.promotion_status === true)
+      .map(p => ({
+        code: p.promotion_code || '',
+        name: p.promotion_name || 'Promo Aktif',
+        short_desc: p.promotion_short_description || '',
+        image_url: null,
+        article_url: null,
+        min_trx: p.promotion_tnc?.minimum_transaction || '-',
+        end_to: p.promotion_tnc?.end_to || '-'
+      }))
   } catch (e) {
     pushLog(`❌ PromoSuggestion error: ${e.message}`)
     return null
@@ -2317,8 +2317,12 @@ function formatPromoWaMessage(promos) {
   let msg = `*PROMO AKTIF (${timestamp})*\n\n`
   promos.forEach((p, i) => {
     msg += `${i + 1}. *${p.name}*\n`
-    if (p.article_url) msg += `   ${p.article_url}\n`
-    else if (p.image_url) msg += `   ${p.image_url}\n`
+    if (p.short_desc) msg += `   ${p.short_desc}\n`
+    if (p.code) msg += `   Kode: ${p.code}\n`
+    const tnc = []
+    if (p.min_trx && p.min_trx !== '-') tnc.push(`Min. ${p.min_trx}`)
+    if (p.end_to && p.end_to !== '-') tnc.push(`s/d ${p.end_to}`)
+    if (tnc.length) msg += `   ${tnc.join(' • ')}\n`
   })
   msg += `\n🌐 Via website: https://ts.muhamadaliyudin.my.id`
   return msg
@@ -2327,7 +2331,7 @@ function formatPromoWaMessage(promos) {
 async function pollPromoSuggestions() {
   const active = await fetchPromoSuggestions()
   if (active === null) return // error, skip
-  const sig = (list) => list.map(p => `${p.image_url || ''}|${p.article_url || ''}`).sort().join(',')
+  const sig = (list) => list.map(p => `${p.code || ''}|${p.name || ''}|${p.end_to || ''}`).sort().join(',')
   const prevIds = sig(cachedPromoSuggestions)
   const newIds = sig(active)
   if (prevIds !== newIds) {
@@ -14282,9 +14286,21 @@ app.get('/monitoring', async (_req, res) => {
           const link = p.article_url
             ? '<a class="promo-card-link" href="' + p.article_url + '" target="_blank" rel="noopener">Lihat detail &rarr;</a>'
             : '';
+          const desc = p.short_desc
+            ? '<div class="promo-card-desc" style="font-size:12px;color:#9ca3af;margin-top:2px;">' + p.short_desc + '</div>'
+            : '';
+          const meta = [];
+          if (p.code) meta.push('<span style="color:#22c55e;font-weight:600;">' + p.code + '</span>');
+          if (p.min_trx && p.min_trx !== '-') meta.push('Min. ' + p.min_trx);
+          if (p.end_to && p.end_to !== '-') meta.push('s/d ' + p.end_to);
+          const metaLine = meta.length
+            ? '<div class="promo-card-meta" style="font-size:11px;color:#6b7280;margin-top:4px;">' + meta.join(' &middot; ') + '</div>'
+            : '';
           return '<div class="promo-card">' +
             img +
             '<div class="promo-card-name">' + (p.name || 'Promo Aktif') + '</div>' +
+            desc +
+            metaLine +
             link +
           '</div>';
         }).join('');
