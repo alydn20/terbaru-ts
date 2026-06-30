@@ -24,10 +24,15 @@ import IORedis from 'ioredis'
 
 const execAsync = promisify(exec)
 
-// Global error handlers — cegah crash saat Redis limit/network error
+// Global error handlers — cegah crash saat Redis limit/network error,
+// TAPI tetap log lengkap ke stderr (terlihat di log Koyeb) + admin panel.
 process.on('unhandledRejection', (reason) => {
+  console.error(`[${new Date().toISOString()}] [UNHANDLED_REJECTION]`, reason)
+  try { pushLog(`❌ UnhandledRejection: ${reason && reason.message ? reason.message : String(reason)}`) } catch (_) {}
 })
 process.on('uncaughtException', (err) => {
+  console.error(`[${new Date().toISOString()}] [UNCAUGHT_EXCEPTION]`, err)
+  try { pushLog(`❌ UncaughtException: ${err && err.message ? err.message : String(err)}`) } catch (_) {}
 })
 
 // VAPID Keys untuk Web Push Notifications
@@ -15668,10 +15673,21 @@ app.get('/monitoring', async (_req, res) => {
     // Panel HTML di-render setelah script, defer agar checkbox sudah ada di DOM
     setTimeout(_initSoundCheckboxes, 0);
 
+    // Tutup semua floating panel (biar hanya 1 dropdown terbuka)
+    function _closeAllPanels() {
+      ['soundPanel','soundFxPanel','getarPanel','settingsPanel'].forEach(function(id){
+        const p = document.getElementById(id);
+        if (p) p.style.display = 'none';
+      });
+      _soundPanelOpen = false; _soundFxOpen = false; _getarOpen = false; _settingsPanelOpen = false;
+    }
     let _soundPanelOpen = false;
     function openSoundPanel(e) {
       if (e) e.stopPropagation();
-      _soundPanelOpen = !_soundPanelOpen;
+      const willOpen = !_soundPanelOpen;
+      _closeAllPanels();
+      if (typeof closeNavMenu === 'function') closeNavMenu();
+      _soundPanelOpen = willOpen;
       const panel = document.getElementById('soundPanel');
       if (!panel) return;
       if (_soundPanelOpen) {
@@ -15767,8 +15783,10 @@ app.get('/monitoring', async (_req, res) => {
     let _settingsPanelOpen = false;
     function openSettingsPanel(e) {
       if (e) e.stopPropagation();
+      const willOpen = !_settingsPanelOpen;
+      _closeAllPanels();
       closeNavMenu();
-      _settingsPanelOpen = !_settingsPanelOpen;
+      _settingsPanelOpen = willOpen;
       const panel = document.getElementById('settingsPanel');
       if (!panel) return;
       if (_settingsPanelOpen) {
@@ -15824,7 +15842,10 @@ app.get('/monitoring', async (_req, res) => {
     let _navMenuOpen = false;
     function openNavMenu(e) {
       if (e) e.stopPropagation();
-      _navMenuOpen = !_navMenuOpen;
+      const willOpen = !_navMenuOpen;
+      // Tutup panel lain dulu supaya tidak ada 2 dropdown terbuka bersamaan
+      if (typeof _closeAllPanels === 'function') _closeAllPanels();
+      _navMenuOpen = willOpen;
       const dropdown = document.getElementById('navMenuDropdown');
       if (!dropdown) return;
       if (_navMenuOpen) {
@@ -16320,16 +16341,16 @@ app.get('/monitoring', async (_req, res) => {
     (function(){
       var TOUR_KEY = 'onboardingDone_v1';
       var steps = [
-        { sel: '.header-logo', title: 'Selamat Datang! 👋', body: 'Ini Treasury Price Monitor. Logo dengan titik hijau menandakan harga update real-time. Yuk kenali tombol-tombolnya.', menu: false },
-        { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator teknikal & garis bantu pada grafik harga emas.', menu: false },
-        { sel: '#navNewsBtn', title: 'Berita / News', body: 'Lihat berita terbaru. Angka merah menandakan ada berita yang belum dibaca.', menu: false },
-        { sel: '#promoBtnEl', title: 'Promo', body: 'Cek promo & rekomendasi yang sedang berlangsung di sini.', menu: false },
-        { sel: '#navCalcBtn', title: 'Kalkulator', body: 'Hitung simulasi harga beli & jual emas sesuai nominal yang kamu mau.', menu: false },
-        { sel: '#navMenuBtn', title: 'Menu', body: 'Tombol ini membuka menu utama. Mari kita lihat isinya satu per satu.', menu: false },
-        { sel: '#installBtn', title: 'Install Aplikasi', body: 'Pasang aplikasi ke layar HP/desktop agar bisa dibuka cepat seperti aplikasi biasa.', menu: true },
-        { sel: '#themeToggleItem', title: 'Ganti Mode', body: 'Beralih antara mode gelap dan mode terang sesuai selera kamu.', menu: true },
-        { sel: '#soundToggle', title: 'Pengaturan Suara & Getar', body: 'Atur suara naik/turun harga, bunyi hitung mundur, dan getar/goyang layar di 5 detik terakhir.', menu: true },
-        { sel: '#settingToggle', title: 'Setting', body: 'Di dalam Setting ada 2 pilihan: <b>Tampilan</b> (atur ukuran & jenis font) dan <b>Pilih Nominal</b> (atur nominal harga yang dipantau).', menu: true }
+        { sel: '.header-logo', title: 'Treasury Price Monitor', body: 'Harga emas update tiap detik. Titik hijau berarti data live.', menu: false },
+        { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator dan garis bantu di grafik.', menu: false },
+        { sel: '#navNewsBtn', title: 'Berita', body: 'Berita terbaru. Titik merah berarti ada yang belum dibaca.', menu: false },
+        { sel: '#promoBtnEl', title: 'Promo', body: 'Lihat promo yang sedang berjalan.', menu: false },
+        { sel: '#navCalcBtn', title: 'Kalkulator', body: 'Hitung simulasi harga beli dan jual.', menu: false },
+        { sel: '#navMenuBtn', title: 'Menu', body: 'Menu utama ada di sini. Isinya kita lihat satu per satu.', menu: false },
+        { sel: '#installBtn', title: 'Install Aplikasi', body: 'Pasang aplikasi ke layar HP atau desktop.', menu: true },
+        { sel: '#themeToggleItem', title: 'Ganti Mode', body: 'Ubah tampilan ke mode gelap atau terang.', menu: true },
+        { sel: '#soundToggle', title: 'Sound & Getar', body: 'Ada 2 bagian: <b>Sound</b> (suara naik/turun, promo, hitung mundur) dan <b>Getar</b> (getar HP dan goyang layar).', menu: true },
+        { sel: '#settingToggle', title: 'Setting', body: 'Berisi <b>Tampilan</b> (ukuran dan jenis font) serta <b>Pilih Nominal</b> (nominal yang dipantau).', menu: true }
       ];
       var idx = 0, overlay = null, spot = null, tip = null;
 
@@ -16340,8 +16361,12 @@ app.get('/monitoring', async (_req, res) => {
         overlay.appendChild(spot);
         document.body.appendChild(overlay);
         document.body.appendChild(tip);
-        // jangan biarkan klik di overlay menutup menu/panel lain
-        overlay.addEventListener('click', function(e){ e.stopPropagation(); });
+        // Blokir SEMUA interaksi di luar tombol Next/Lewati — tur hanya bisa lanjut/lewati lewat tombol.
+        // Capture phase + preventDefault supaya klik tidak tembus ke elemen di bawah / handler outside-click.
+        ['click','mousedown','pointerdown','touchstart'].forEach(function(ev){
+          overlay.addEventListener(ev, function(e){ e.preventDefault(); e.stopPropagation(); }, true);
+        });
+        // Klik di dalam kartu tooltip tidak boleh dianggap klik luar (tombol tetap berfungsi)
         tip.addEventListener('click', function(e){ e.stopPropagation(); });
       }
 
@@ -16350,12 +16375,17 @@ app.get('/monitoring', async (_req, res) => {
         else { if (_navMenuOpen) closeNavMenu(); }
       }
 
+      function isStepAvailable(s){
+        var el = document.querySelector(s.sel);
+        if (!el) return false;
+        if (el.style && el.style.display === 'none') return false; // mis. installBtn saat sudah terpasang
+        // item di dalam hamburger (menu:true) dianggap ada walau dropdown sedang tertutup
+        if (!s.menu && el.offsetParent === null) return false; // item navbar yang tersembunyi
+        return true;
+      }
       function nextVisibleFrom(i, dir){
         while (i >= 0 && i < steps.length){
-          var s = steps[i];
-          var el = document.querySelector(s.sel);
-          if (el && el.offsetParent !== null && !(el.style && el.style.display === 'none')) return i;
-          // installBtn bisa disembunyikan kalau sudah terpasang -> lewati
+          if (isStepAvailable(steps[i])) return i;
           i += dir;
         }
         return -1;
@@ -16374,7 +16404,6 @@ app.get('/monitoring', async (_req, res) => {
           spot.style.left = (r.left - pad) + 'px';
           spot.style.width = (r.width + pad*2) + 'px';
           spot.style.height = (r.height + pad*2) + 'px';
-          var visIdx = steps.filter(function(st){ var e=document.querySelector(st.sel); return e && e.offsetParent!==null; });
           tip.innerHTML =
             '<div class="tour-tip-title"><i data-lucide="sparkles" style="width:16px;height:16px;"></i>' + s.title + '</div>' +
             '<div class="tour-tip-body">' + s.body + '</div>' +
@@ -16395,8 +16424,7 @@ app.get('/monitoring', async (_req, res) => {
 
       function lastVisible(){
         for (var i = steps.length - 1; i >= 0; i--){
-          var e = document.querySelector(steps[i].sel);
-          if (e && e.offsetParent !== null) return i;
+          if (isStepAvailable(steps[i])) return i;
         }
         return steps.length - 1;
       }
@@ -17851,7 +17879,24 @@ setInterval(checkAndKickExpiredUsers, 5 * 60 * 1000)
 setTimeout(checkAndKickExpiredUsers, 30000)
 // ====== END AUTO-KICK ======
 
+// ── 404 handler: route tidak ditemukan ──
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not Found', path: req.originalUrl })
+})
+
+// ── Global Express error handler — log jelas (method + URL + stack) ke Koyeb ──
+// Harus 4 argumen (err, req, res, next) agar dikenali Express sebagai error handler.
+app.use((err, req, res, _next) => {
+  const where = `${req.method} ${req.originalUrl}`
+  console.error(`[${new Date().toISOString()}] [ROUTE_ERROR] ${where}\n`, err)
+  try { pushLog(`❌ Error ${where} — ${err && err.message ? err.message : String(err)}`) } catch (_) {}
+  if (res.headersSent) return
+  res.status(err.status || 500).json({ error: 'Internal Server Error' })
+})
+
 app.listen(PORT, async () => {
+  console.log(`[${new Date().toISOString()}] [STARTUP] Server listening on port ${PORT}`)
+  try { pushLog(`🚀 Server start — listening on port ${PORT}`) } catch (_) {}
 
   // Reset titik ON terendah agar selalu realtime (tidak permanen dari sesi sebelumnya)
   try {
