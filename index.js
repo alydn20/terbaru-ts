@@ -208,6 +208,7 @@ const logs = []
 const processedMsgIds = new Set()
 const lastReplyAtPerChat = new Map()
 let lastGlobalReplyAt = 0
+const pendingEmasReplies = new Map() // target → { pendingMsg, requestTime }
 let isReady = false
 let sock = null
 
@@ -2850,6 +2851,45 @@ async function fastPoll() {
       lastApiUpdateTime = treasuryData.data.updated_at
       const _usdIdrLog = cachedMarketData.usdIdr?.rate ? ` | USD/IDR Rp${formatRupiah(cachedMarketData.usdIdr.rate)}` : ''
       pushLog(`TREASURY | Timestamp baru: ${treasuryData.data.updated_at} | Buy Rp${formatRupiah(currentPrice.buy)} | Sell Rp${formatRupiah(currentPrice.sell)}${_usdIdrLog} | latency ${_fetchMs}ms`)
+
+      // Kirim ke pending emas requests (dari command !emas yang menunggu harga baru)
+      if (pendingEmasReplies.size > 0 && sock && isReady) {
+        const _snapPrice = { ...currentPrice }
+        const _snapUsdIdr = cachedMarketData.usdIdr?.rate
+        const _snapXauUsd = cachedMarketData.xauUsd
+        setImmediate(async () => {
+          for (const [target, { pendingMsg }] of pendingEmasReplies) {
+            try {
+              const buy = _snapPrice.buy
+              const sell = _snapPrice.sell
+              const spreadPercent = buy > 0 ? (Math.abs(buy - sell) / buy * 100).toFixed(2) : '0.00'
+              const date = _snapPrice.updated_at ? new Date(_snapPrice.updated_at) : new Date()
+              const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu']
+              const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
+              const hh = String(date.getHours()).padStart(2,'0')
+              const mm = String(date.getMinutes()).padStart(2,'0')
+              const ss = String(date.getSeconds()).padStart(2,'0')
+              const timeStr = `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} ${hh}:${mm}:${ss} WIB`
+              let statusLine = ''
+              if (_snapXauUsd && _snapUsdIdr) {
+                const ps = analyzePriceStatus(buy, sell, _snapXauUsd, _snapUsdIdr)
+                if (ps.status === 'NORMAL') {
+                  statusLine = `Status : *NORMAL*`
+                } else {
+                  const diff = Math.round(ps.difference)
+                  statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
+                }
+              }
+              const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+              await sock.sendMessage(target, { text: replyText }, { quoted: pendingMsg })
+              pushLog(`CMD | emas (antrian→terkirim) ke ${target.substring(0, 20)}`)
+            } catch (e) {
+              pushLog(`CMD | emas antrian error: ${e.message}`)
+            }
+          }
+          pendingEmasReplies.clear()
+        })
+      }
     }
 
     if (isPriceChanged) {
@@ -6990,8 +7030,10 @@ app.get('/login', (_req, res) => {
                 if (pinData.requirePinChange) {
                   currentSession = existingSession;
                   document.getElementById('changePinModal').classList.add('show');
-                  setupPinInputs(document.querySelectorAll('.new-pin'));
-                  setupPinInputs(document.querySelectorAll('.confirm-pin'));
+                  setupPinInputs(document.querySelectorAll('.new-pin'), () => {
+                    document.querySelector('.confirm-pin').focus();
+                  });
+                  setupPinInputs(document.querySelectorAll('.confirm-pin'), () => saveNewPin());
                 } else {
                   window.location.replace('/monitoring');
                 }
@@ -7027,13 +7069,17 @@ app.get('/login', (_req, res) => {
       }
     }
 
-    // Setup PIN input auto-focus
-    function setupPinInputs(inputs) {
+    // Setup PIN input auto-focus + optional auto-submit on completion
+    function setupPinInputs(inputs, onComplete) {
       inputs.forEach((input, index) => {
         input.addEventListener('input', (e) => {
           const value = e.target.value;
           if (value && index < inputs.length - 1) {
             inputs[index + 1].focus();
+          }
+          // Auto-submit when last digit filled
+          if (value && index === inputs.length - 1 && onComplete) {
+            setTimeout(onComplete, 300);
           }
         });
         input.addEventListener('keydown', (e) => {
@@ -7128,7 +7174,7 @@ app.get('/login', (_req, res) => {
 
           // Setup PIN inputs
           const pinInputs = document.querySelectorAll('#pinForm .pin-input');
-          setupPinInputs(pinInputs);
+          setupPinInputs(pinInputs, () => submitLogin());
           pinInputs[0].focus();
         } else if (data.needRegister) {
           // Nomor tidak terdaftar — langsung redirect ke WA admin
@@ -7187,8 +7233,10 @@ app.get('/login', (_req, res) => {
           if (data.requirePinChange) {
             // Show PIN change modal
             document.getElementById('changePinModal').classList.add('show');
-            setupPinInputs(document.querySelectorAll('.new-pin'));
-            setupPinInputs(document.querySelectorAll('.confirm-pin'));
+            setupPinInputs(document.querySelectorAll('.new-pin'), () => {
+              document.querySelector('.confirm-pin').focus();
+            });
+            setupPinInputs(document.querySelectorAll('.confirm-pin'), () => saveNewPin());
             document.querySelector('.new-pin').focus();
           } else {
             showMessage('Login berhasil! Mengalihkan...', 'success');
@@ -10794,11 +10842,11 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      column-gap: 8px;
-      row-gap: 2px;
-      padding: 9px 13px;
+      column-gap: 6px;
+      row-gap: 0;
+      padding: 7px 11px;
       background: #0d1525;
-      border-radius: 12px;
+      border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.07);
       border-top: 2px solid rgba(255,255,255,0.15);
       box-shadow: 0 2px 8px rgba(0,0,0,0.18);
@@ -10810,35 +10858,34 @@ app.get('/monitoring', async (_req, res) => {
     }
     .stat-item .stat-label {
       flex: 0 0 100%;
-      font-size: 0.6em;
+      font-size: 0.58em;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.8px;
+      letter-spacing: 0.7px;
       color: #9ca3af;
-      line-height: 1.4;
+      line-height: 1.5;
     }
     .stat-item .stat-value {
       flex: 1 1 auto;
-      font-size: 1em;
+      font-size: 0.88em;
       font-weight: 700;
       color: #f0f6ff;
       font-family: 'JetBrains Mono', monospace;
       white-space: nowrap;
       line-height: 1.3;
     }
-    .rp-prefix { font-size: 0.52em; font-weight: 500; opacity: 0.7; }
+    .rp-prefix { font-size: 0.55em; font-weight: 500; opacity: 0.7; }
     .stat-item .stat-value.green { color: #4ade80; }
     .stat-item .stat-value.blue { color: #60a5fa; }
     .stat-item .stat-change {
       flex: 0 0 auto;
-      font-size: 0.65em;
-      padding: 2px 7px;
-      border-radius: 5px;
+      font-size: 0.62em;
+      padding: 1px 6px;
+      border-radius: 4px;
       font-weight: 700;
       letter-spacing: 0.2px;
       white-space: nowrap;
-      /* min-height agar baris value selalu ada walau change kosong */
-      min-height: 1.5em;
+      min-height: 1.45em;
       display: inline-flex;
       align-items: center;
     }
@@ -10926,34 +10973,42 @@ app.get('/monitoring', async (_req, res) => {
     .invest-stats .stat-item {
       display: flex;
       flex-direction: row;
+      flex-wrap: nowrap;
       align-items: center;
       gap: 6px;
       padding: 5px 12px;
       flex: 0 0 auto;
       text-align: left;
-      background: rgba(247,147,26,0.07);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(247,147,26,0.2);
-      border-top: 1px solid rgba(247,147,26,0.35);
+      background: linear-gradient(135deg, rgba(247,147,26,0.1) 0%, rgba(247,147,26,0.04) 100%);
+      border: 1px solid rgba(247,147,26,0.22);
+      border-top: 1px solid rgba(247,147,26,0.4);
       border-radius: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(247,147,26,0.1);
+      box-shadow: 0 2px 6px rgba(247,147,26,0.1), inset 0 1px 0 rgba(255,255,255,0.04);
       transform: none !important;
     }
     .invest-stats .stat-item:hover {
-      background: rgba(247,147,26,0.13);
+      background: linear-gradient(135deg, rgba(247,147,26,0.16) 0%, rgba(247,147,26,0.08) 100%);
+      border-color: rgba(247,147,26,0.38);
+      box-shadow: 0 3px 10px rgba(247,147,26,0.15);
       transform: none !important;
     }
+    /* Reset base overrides yang merusak horizontal layout pill invest */
     .invest-stats .stat-item .stat-label {
+      flex: 0 0 auto;
       font-size: 0.75em;
       min-width: 28px;
+      color: #f7931a;
     }
     .invest-stats .stat-item .stat-value {
+      flex: 0 0 auto;
       font-size: 0.85em;
     }
     .invest-stats .stat-item .stat-change {
+      flex: 0 0 auto;
       font-size: 0.8em;
       padding: 2px 6px;
+      min-height: auto;
+      display: inline;
     }
 
     /* History Font Settings Button - hanya mobile */
@@ -11393,59 +11448,70 @@ app.get('/monitoring', async (_req, res) => {
       top: 50%;
       transform: translateY(-50%);
     }
+    /* === Overlay badges - shared base === */
+    .limit-label, .markup-overlay, .spread-overlay,
+    .price-high-overlay, .price-low-overlay {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+      font-size: 0.78em;
+      font-weight: 600;
+      padding: 5px 9px;
+      border-radius: 8px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      line-height: 1;
+    }
+    /* LIMIT badge */
     .limit-label {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.82em;
-      font-weight: 600;
-      color: #ffffff;
-      padding: 4px 10px;
-      background: rgba(247,147,26,0.08);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(247,147,26,0.2);
-      border-top: 1px solid rgba(247,147,26,0.35);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(247,147,26,0.1);
+      background: rgba(247,147,26,0.1);
+      border: 1px solid rgba(247,147,26,0.28);
+      border-left: 2px solid #f7931a;
+      color: #f7931a;
     }
-    .limit-label .limit-text { color: rgba(255,255,255,0.6); font-weight: 500; }
-    .limit-label .limit-eq { color: rgba(255,255,255,0.35); }
-    .limit-label #promoLimitValue { color: #f7931a; font-weight: 700; }
+    .limit-label .limit-text {
+      font-size: 0.75em;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    .limit-label .limit-eq { display: none; }
+    .limit-label #promoLimitValue { font-size: 1em; color: #f7931a; font-weight: 700; }
+    /* MARKUP badge */
     .markup-overlay {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.82em;
-      font-weight: 600;
+      background: rgba(251,191,36,0.1);
+      border: 1px solid rgba(251,191,36,0.28);
+      border-left: 2px solid #fbbf24;
       color: #fbbf24;
-      padding: 4px 10px;
-      background: rgba(251,191,36,0.08);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(251,191,36,0.2);
-      border-top: 1px solid rgba(251,191,36,0.35);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(251,191,36,0.1);
     }
-    .markup-overlay-text { color: rgba(255,255,255,0.6); font-weight: 500; }
+    .markup-overlay > svg { display: none; }
+    .markup-overlay-text {
+      font-size: 0.75em;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+    /* SPREAD badge */
     .spread-overlay {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.82em;
-      font-weight: 600;
+      background: rgba(74,222,128,0.09);
+      border: 1px solid rgba(74,222,128,0.28);
+      border-left: 2px solid #4ade80;
       color: #4ade80;
-      padding: 4px 10px;
-      background: rgba(74,222,128,0.08);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(74,222,128,0.2);
-      border-top: 1px solid rgba(74,222,128,0.35);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(74,222,128,0.1);
     }
-    .spread-overlay-text { color: rgba(255,255,255,0.6); font-weight: 500; }
+    .spread-overlay-text {
+      font-size: 0.75em;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
     /* Price High/Low Group - pojok kiri */
     .price-highlow-group {
       display: flex;
@@ -11459,56 +11525,35 @@ app.get('/monitoring', async (_req, res) => {
       transform: translateY(-50%);
     }
     .price-high-overlay {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.82em;
-      font-weight: 600;
+      background: rgba(74,222,128,0.09);
+      border: 1px solid rgba(74,222,128,0.28);
+      border-left: 2px solid #4ade80;
       color: #4ade80;
-      padding: 4px 10px;
-      background: rgba(74,222,128,0.08);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(74,222,128,0.2);
-      border-top: 1px solid rgba(74,222,128,0.35);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(74,222,128,0.1);
     }
     .price-low-overlay {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.82em;
-      font-weight: 600;
+      background: rgba(248,113,113,0.09);
+      border: 1px solid rgba(248,113,113,0.28);
+      border-left: 2px solid #f87171;
       color: #f87171;
-      padding: 4px 10px;
-      background: rgba(248,113,113,0.08);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(248,113,113,0.2);
-      border-top: 1px solid rgba(248,113,113,0.35);
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(248,113,113,0.1);
     }
-    .price-highlow-text { color: rgba(255,255,255,0.6); font-weight: 500; }
+    .price-highlow-text {
+      font-size: 0.75em;
+      font-weight: 500;
+      color: rgba(255,255,255,0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
     @media (max-width: 768px) {
-      .limit-label { font-size: 0.65em; padding: 3px 7px; }
-      .markup-overlay { font-size: 0.65em; padding: 3px 7px; }
-      .markup-overlay-text { display: none; }
-      .spread-overlay { font-size: 0.65em; padding: 3px 7px; }
-      .spread-overlay-text { display: none; }
-      .price-high-overlay { font-size: 0.65em; padding: 3px 7px; }
-      .price-low-overlay { font-size: 0.65em; padding: 3px 7px; }
+      .limit-label, .markup-overlay, .spread-overlay,
+      .price-high-overlay, .price-low-overlay { font-size: 0.65em; padding: 3px 7px; }
+      .limit-label .limit-text, .markup-overlay-text, .spread-overlay-text,
       .price-highlow-text { display: none; }
+      .markup-overlay > svg { display: none; }
     }
     @media (max-width: 480px) {
-      .limit-label { font-size: 0.58em; padding: 3px 6px; }
-      .markup-overlay { font-size: 0.58em; padding: 3px 6px; }
-      .markup-overlay-text { display: none; }
-      .spread-overlay { font-size: 0.58em; padding: 3px 6px; }
-      .spread-overlay-text { display: none; }
-      .price-high-overlay { font-size: 0.58em; padding: 3px 6px; }
-      .price-low-overlay { font-size: 0.58em; padding: 3px 6px; }
+      .limit-label, .markup-overlay, .spread-overlay,
+      .price-high-overlay, .price-low-overlay { font-size: 0.58em; padding: 3px 6px; }
     }
 
     /* Info Row - Clock & User Phone */
@@ -17872,63 +17917,44 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
           continue
         }
 
-        // Command: emas (cek harga real-time) — siapa saja boleh, maks 1x per menit per chat
+        // Command: emas (cek harga) — gunakan cache jika segar, atau antri ke update berikutnya
         if (/\bemas\b/.test(text)) {
           const now = Date.now()
-          const lastReply = lastReplyAtPerChat.get(sendTarget) || 0
-          if (now - lastReply < COOLDOWN_PER_CHAT) continue
+          const cacheAge = now - lastSuccessfulFetch
 
-          let replyText
-          try {
-            const [treasury, usdIdr, xauUsd] = await Promise.all([
-              fetchTreasury(),
-              fetchUSDIDRFromGoogle(),
-              fetchXAUUSDCached()
-            ])
-            const buy = treasury?.data?.buying_rate || 0
-            const sell = treasury?.data?.selling_rate || 0
-            const spreadAbs = Math.abs(buy - sell)
-            const spreadPercent = buy > 0 ? ((spreadAbs / buy) * 100).toFixed(2) : '0.00'
-            const updatedAt = treasury?.data?.updated_at
-
-            const date = updatedAt ? new Date(updatedAt) : new Date()
-            const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+          if (lastKnownPrice && cacheAge < 45000) {
+            // Cache segar — balas langsung
+            const buy = lastKnownPrice.buy
+            const sell = lastKnownPrice.sell
+            const spreadPercent = buy > 0 ? (Math.abs(buy - sell) / buy * 100).toFixed(2) : '0.00'
+            const date = lastKnownPrice.updated_at ? new Date(lastKnownPrice.updated_at) : new Date()
+            const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu']
             const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']
-            const hh = date.getHours().toString().padStart(2, '0')
-            const mm = date.getMinutes().toString().padStart(2, '0')
-            const ss = date.getSeconds().toString().padStart(2, '0')
+            const hh = String(date.getHours()).padStart(2,'0')
+            const mm = String(date.getMinutes()).padStart(2,'0')
+            const ss = String(date.getSeconds()).padStart(2,'0')
             const timeStr = `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()} ${hh}:${mm}:${ss} WIB`
-
             let statusLine = ''
-            if (xauUsd && usdIdr?.rate) {
-              const ps = analyzePriceStatus(buy, sell, xauUsd, usdIdr.rate)
+            const _xauUsd = cachedMarketData.xauUsd
+            const _usdIdr = cachedMarketData.usdIdr?.rate
+            if (_xauUsd && _usdIdr) {
+              const ps = analyzePriceStatus(buy, sell, _xauUsd, _usdIdr)
               if (ps.status === 'NORMAL') {
                 statusLine = `Status : *NORMAL*`
               } else {
                 const diff = Math.round(ps.difference)
-                const label = diff > 0 ? 'MARKUP' : 'MARKDOWN'
-                statusLine = `Status : *${label}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
+                statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
               }
             }
-
-            replyText = [
-              `*HARGA EMAS TREASURY*`,
-              `${timeStr}`,
-              ``,
-              `Beli   : Rp${formatRupiah(buy)}/gr`,
-              `Jual   : Rp${formatRupiah(sell)}/gr`,
-              `Spread : ${spreadPercent}%`,
-              statusLine
-            ].filter(l => l !== '').join('\n')
-          } catch (e) {
-            replyText = '❌ Gagal mengambil data harga.'
+            const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+            await sock.sendMessage(sendTarget, { text: replyText }, { quoted: msg })
+            pushLog(`CMD | emas (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
+          } else {
+            // Cache lama atau belum ada — antri ke update Treasury berikutnya
+            pendingEmasReplies.set(sendTarget, { pendingMsg: msg, requestTime: now })
+            await sock.sendMessage(sendTarget, { text: '⏳ Menunggu harga terbaru Treasury...' }, { quoted: msg })
+            pushLog(`CMD | emas antri (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
           }
-
-          await sock.sendMessage(sendTarget, { text: replyText }, { quoted: msg })
-
-          lastReplyAtPerChat.set(sendTarget, now)
-          lastGlobalReplyAt = now
-          pushLog(`CMD | emas dari ${sendTarget.substring(0, 20)}`)
           continue
         }
 
