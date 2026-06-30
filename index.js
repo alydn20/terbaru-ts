@@ -300,8 +300,13 @@ const REDIS_KEYS = {
   LOWEST_ON_DATE: 'gold:lowest_on_date',  // String: WIB date (YYYY-MM-DD) when lowest ON price was recorded
   NTFY_SETTINGS: 'gold:ntfy_settings',    // JSON: ntfy.sh notification settings
   MARKUP_SETTINGS: 'gold:markup_settings', // JSON: { minMargin, maxMargin } markup normal range
-  THEME_SETTINGS: 'gold:theme_settings'   // String: nama tema aktif (navy/purple/green/red/teal/slate)
+  THEME_SETTINGS: 'gold:theme_settings',   // String: nama tema aktif (navy/purple/green/red/teal/slate)
+  FRESH_TOKEN: 'gold:fresh_token'          // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
 }
+
+// Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
+// kalau ingin memaksa semua user dapat tur + reset sound/getar sekali lagi.
+const DEFAULT_FRESH_TOKEN = 'v3'
 
 // Admin password untuk akses admin panel
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '@Ahaqos20'
@@ -4701,6 +4706,13 @@ ${authScript}
     </div>
 
     <div class="card">
+      <h2>Tur Pengenalan & Sound/Getar</h2>
+      <p style="color:#8b949e;font-size:0.88em;margin-bottom:12px;">Paksa SEMUA user melihat tur pengenalan lagi dan reset Sound &amp; Getar ke default (aktif semua). Berlaku saat user membuka / refresh halaman.</p>
+      <button type="button" class="btn btn-primary" id="resetFreshBtn" style="width:100%;">Reset Tur + Sound/Getar untuk Semua User</button>
+      <div class="result" id="resetFreshResult" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
       <h2>Riwayat Notifikasi</h2>
       <div class="history" id="history">
         <div class="empty-state">Belum ada notifikasi dikirim</div>
@@ -4779,6 +4791,33 @@ ${authScript}
       btn.textContent = 'Kirim Notifikasi';
 
       setTimeout(() => { result.className = 'result'; }, 5000);
+    });
+
+    // Reset tur + sound/getar untuk semua user
+    document.getElementById('resetFreshBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('resetFreshBtn');
+      const out = document.getElementById('resetFreshResult');
+      if (!confirm('Yakin? Semua user akan melihat tur pengenalan lagi dan Sound & Getar direset ke default.')) return;
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = 'Memproses...';
+      try {
+        const res = await fetch('/api/admin/reset-fresh', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        const data = await res.json();
+        if (data.success) {
+          out.className = 'result success';
+          out.textContent = 'Berhasil! Token baru: ' + data.token + '. Semua user akan dapat tur + reset saat buka/refresh.';
+        } else {
+          out.className = 'result error';
+          out.textContent = 'Gagal: ' + (data.error || 'Unknown error');
+        }
+      } catch (err) {
+        out.className = 'result error';
+        out.textContent = 'Error: ' + err.message;
+      }
+      btn.disabled = false;
+      btn.textContent = oldText;
+      setTimeout(() => { out.className = 'result'; }, 6000);
     });
 
     function addToHistory(item) {
@@ -6116,6 +6155,37 @@ app.get('/api/admin/wa-status', async (req, res) => {
     broadcastGroupId: broadcastGroupId || null,
     monitoredGroupId: monitoredGroupId || null
   })
+})
+
+// Public: token "fresh" — client membandingkan dengan yang tersimpan di localStorage.
+// Kalau beda → client tampilkan tur pengenalan lagi + reset Sound & Getar ke default.
+app.get('/api/fresh-token', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+  let token = DEFAULT_FRESH_TOKEN
+  try {
+    const t = await redis.get(REDIS_KEYS.FRESH_TOKEN)
+    if (t) token = t
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] [FRESH_TOKEN_READ_ERROR]`, e)
+  }
+  res.json({ token })
+})
+
+// Admin: paksa SEMUA user dapat tur + reset Sound & Getar sekali lagi (set token baru).
+app.post('/api/admin/reset-fresh', express.json(), async (req, res) => {
+  if (!isAdminCookieValid(req) && req.headers['x-admin-password'] !== ADMIN_PASSWORD) {
+    return res.json({ success: false, error: 'Unauthorized' })
+  }
+  try {
+    const token = 'r' + Date.now().toString(36)
+    await redis.set(REDIS_KEYS.FRESH_TOKEN, token)
+    console.log(`[${new Date().toISOString()}] [ADMIN_RESET_FRESH] token=${token} — semua user akan dapat tur + reset sound/getar`)
+    pushLog(`🔄 Admin reset FRESH — token baru ${token}. Semua user akan dapat tur pengenalan + reset Sound & Getar.`)
+    res.json({ success: true, token })
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] [ADMIN_RESET_FRESH_ERROR]`, e)
+    res.json({ success: false, error: e.message })
+  }
 })
 
 // Admin: Reset Titik ON terendah
@@ -16493,6 +16563,7 @@ app.get('/monitoring', async (_req, res) => {
       function onResize(){ if (overlay && overlay.classList.contains('active')) render(); }
 
       function start(){
+        if (overlay && overlay.classList.contains('active')) return; // jangan dobel start
         if (!overlay) buildDom();
         overlay.classList.add('active');
         tip.style.display = 'block';
@@ -16512,6 +16583,34 @@ app.get('/monitoring', async (_req, res) => {
       }
       if (document.readyState === 'complete' || document.readyState === 'interactive') maybeStart();
       else window.addEventListener('DOMContentLoaded', maybeStart);
+
+      // Cek token "fresh" dari server. Admin bisa menaikkan token ini kapan saja
+      // (tombol di /admin/monitoring) untuk memaksa SEMUA user dapat tur + reset Sound & Getar.
+      function freshCheck(){
+        fetch('/api/fresh-token', { cache: 'no-store' })
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            var token = d && d.token ? String(d.token) : '';
+            if (!token) return;
+            var seen = '';
+            try { seen = localStorage.getItem('gold_fresh_token') || ''; } catch(e){}
+            if (seen === token) return; // sudah fresh untuk token ini
+            try {
+              localStorage.removeItem(TOUR_KEY);          // tur muncul lagi
+              localStorage.removeItem('soundSettings');   // sound/getar ke default
+              localStorage.removeItem('soundEnabled');
+              localStorage.setItem('gold_fresh_token', token);
+            } catch(e){}
+            // terapkan default Sound & Getar ke memori + UI
+            try { if (typeof _loadSoundSettings === 'function') { soundSettings = _loadSoundSettings(); } } catch(e){}
+            try { if (typeof _initSoundCheckboxes === 'function') _initSoundCheckboxes(); } catch(e){}
+            // mulai tur (start() aman dipanggil walau maybeStart sudah jalan)
+            setTimeout(start, 600);
+          })
+          .catch(function(){});
+      }
+      if (document.readyState === 'complete' || document.readyState === 'interactive') freshCheck();
+      else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
     // Logout function
