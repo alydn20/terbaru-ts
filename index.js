@@ -4327,7 +4327,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v10';
+    const CACHE_VERSION = 'gold-monitor-v11';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -10632,10 +10632,7 @@ app.get('/monitoring', async (_req, res) => {
   <link rel="apple-touch-icon" href="/icon.png">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" href="/icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
-  <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
+  <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-synthesis:none;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
   <script src="/assets/lucide.min.js"></script>
   <title>Gold Price Monitor</title>
   <style>
@@ -10822,6 +10819,36 @@ app.get('/monitoring', async (_req, res) => {
       0%, 100% { background: rgba(34,197,94,0.12); }
       50% { background: rgba(34,197,94,0.30); }
     }
+    /* ── Onboarding tour (pengenalan untuk user baru) ── */
+    .tour-overlay { position: fixed; inset: 0; z-index: 100000; display: none; }
+    .tour-overlay.active { display: block; }
+    .tour-spot {
+      position: absolute; border-radius: 12px; pointer-events: none;
+      box-shadow: 0 0 0 4px rgba(247,147,26,0.9), 0 0 0 9999px rgba(0,0,0,0.72);
+      transition: all 0.28s cubic-bezier(.4,.0,.2,1);
+    }
+    .tour-tip {
+      position: fixed; z-index: 100001; width: min(300px, calc(100vw - 32px));
+      background: #161b27; border: 1px solid rgba(255,255,255,0.12);
+      border-top: 2px solid #f7931a; border-radius: 14px; padding: 16px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.55);
+      transition: top 0.28s ease, left 0.28s ease;
+    }
+    .tour-tip-title { display:flex; align-items:center; gap:8px; font-size: 0.98em; font-weight: 700; color: #f7931a; margin-bottom: 7px; }
+    .tour-tip-body { font-size: 0.82em; color: #d1d5db; line-height: 1.55; }
+    .tour-tip-foot { display:flex; align-items:center; justify-content:space-between; margin-top: 14px; gap: 10px; }
+    .tour-step-count { font-size: 0.72em; color: #8b949e; font-weight: 600; }
+    .tour-btns { display:flex; gap: 8px; }
+    .tour-skip { background: none; border: none; color: #8b949e; font-size: 0.78em; cursor: pointer; padding: 7px 8px; font-family: inherit; }
+    .tour-skip:hover { color: #e7e9ea; }
+    .tour-next {
+      background: #f7931a; border: none; color: #0a0e13; font-size: 0.8em; font-weight: 700;
+      cursor: pointer; padding: 7px 16px; border-radius: 8px; font-family: inherit;
+    }
+    .tour-next:hover { background: #ffa733; }
+    body.light-mode .tour-tip { background: #fff; border-color: #e5e7eb; border-top-color: #f7931a; box-shadow: 0 16px 48px rgba(0,0,0,0.18); }
+    body.light-mode .tour-tip-body { color: #374151; }
+    body.light-mode .tour-next { color: #fff; }
     .nav-menu-logout { color: #f87171; }
     .nav-menu-logout:hover { background: rgba(239,68,68,0.1) !important; color: #f87171 !important; }
     .chart-title-header {
@@ -11726,15 +11753,23 @@ app.get('/monitoring', async (_req, res) => {
     @keyframes clkSPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
     /* Goyang layar (pengganti getar untuk iPhone/desktop) */
     body.is-shaking { overflow-x: hidden; }
-    .screen-shake { animation: screenShake 0.4s cubic-bezier(.36,.07,.19,.97); }
+    /* Goyang layar halus (smooth) — bukan getar kasar */
+    .screen-shake { animation: screenShake 0.6s ease-in-out; }
     @keyframes screenShake {
       0%,100% { transform: translateX(0); }
-      15% { transform: translateX(-3px); }
-      30% { transform: translateX(3px); }
-      45% { transform: translateX(-2px); }
-      60% { transform: translateX(2px); }
-      75% { transform: translateX(-1px); }
-      90% { transform: translateX(1px); }
+      20% { transform: translateX(-1.5px); }
+      40% { transform: translateX(1.5px); }
+      60% { transform: translateX(-1px); }
+      80% { transform: translateX(0.6px); }
+    }
+    .screen-shake-strong { animation: screenShakeStrong 0.72s ease-in-out; }
+    @keyframes screenShakeStrong {
+      0%,100% { transform: translateX(0); }
+      15% { transform: translateX(-2.5px); }
+      35% { transform: translateX(2.5px); }
+      55% { transform: translateX(-1.6px); }
+      75% { transform: translateX(1px); }
+      90% { transform: translateX(-0.5px); }
     }
     .clk-sep { color: rgba(255,255,255,0.35); margin: 0 1px; animation: clkBlink 1s steps(1,end) infinite; }
     @keyframes clkBlink { 0%,50% { opacity: 1; } 51%,100% { opacity: 0.3; } }
@@ -13878,10 +13913,10 @@ app.get('/monitoring', async (_req, res) => {
       <div class="header-title-text">Harga Treasury</div>
 
       <div class="header-right">
-        <button class="nav-icon-btn" onclick="openIndicatorSettings()" title="Indikator">
+        <button class="nav-icon-btn" id="navIndicatorBtn" onclick="openIndicatorSettings()" title="Indikator">
           <i data-lucide="activity" style="width:16px;height:16px;color:#60a5fa;"></i>
         </button>
-        <button class="nav-icon-btn" onclick="openNewsModal()" title="Cek News" style="position:relative;">
+        <button class="nav-icon-btn" id="navNewsBtn" onclick="openNewsModal()" title="Cek News" style="position:relative;">
           <i data-lucide="bell" style="width:16px;height:16px;color:#c084fc;"></i>
           <span id="newsBadge" style="display:none;position:absolute;top:2px;right:2px;background:#f59e0b;color:#000;border-radius:99px;padding:0 4px;font-size:0.58em;font-weight:700;line-height:1.5;min-width:13px;text-align:center;">0</span>
         </button>
@@ -13889,7 +13924,7 @@ app.get('/monitoring', async (_req, res) => {
           <i data-lucide="percent" style="width:16px;height:16px;color:#34d399;"></i>
           <span id="promoBadge" style="display:none;position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border-radius:99px;padding:0 4px;font-size:0.58em;font-weight:700;line-height:1.5;min-width:13px;text-align:center;">0</span>
         </button>
-        <button class="nav-icon-btn" onclick="openGoldCalc()" title="Harga Beli dan Jual">
+        <button class="nav-icon-btn" id="navCalcBtn" onclick="openGoldCalc()" title="Harga Beli dan Jual">
           <i data-lucide="scale" style="width:16px;height:16px;color:#fbbf24;"></i>
         </button>
         <button class="nav-icon-btn" onclick="openNavMenu(event)" title="Menu" id="navMenuBtn">
@@ -13905,16 +13940,16 @@ app.get('/monitoring', async (_req, res) => {
         <i data-lucide="download" style="width:14px;height:14px;"></i>
         Install Aplikasi
       </button>
-      <button class="nav-menu-item" onclick="toggleTheme()">
+      <button class="nav-menu-item" id="themeToggleItem" onclick="toggleTheme()">
         <i id="themeIconDark" data-lucide="moon" style="width:14px;height:14px;"></i>
         <i id="themeIconLight" data-lucide="sun" style="width:14px;height:14px;display:none;"></i>
         Ganti Mode
       </button>
-      <div class="nav-menu-item" id="soundToggle" onclick="openSoundPanel(event)" title="Pengaturan Suara">
+      <div class="nav-menu-item" id="soundToggle" onclick="openSoundPanel(event)" title="Pengaturan Sound &amp; Getar">
         <i id="soundIconOn" data-lucide="volume-2" style="width:14px;height:14px;"></i>
         <i id="soundIconPartial" data-lucide="volume-1" style="width:14px;height:14px;display:none;"></i>
         <i id="soundIconOff" data-lucide="volume-x" style="width:14px;height:14px;display:none;"></i>
-        Pengaturan Suara
+        Sound &amp; Getar
       </div>
       <button class="nav-menu-item" id="settingToggle" onclick="openSettingsPanel(event)" title="Pengaturan">
         <i data-lucide="settings" style="width:14px;height:14px;"></i>
@@ -15575,13 +15610,13 @@ app.get('/monitoring', async (_req, res) => {
     // Daily Statistics - fetch dari server
     // Sound Notification - menggunakan audio file dari admin
     function _loadSoundSettings() {
-      const defaults = { up: true, bigUp: true, down: true, bigDown: true, promo: true, countdown: true, vibrate: true };
+      const defaults = { up: true, bigUp: true, down: true, bigDown: true, promo: true, countdown: true, vibrate: true, shake: true };
       try {
         const saved = localStorage.getItem('soundSettings');
         if (saved) return { ...defaults, ...JSON.parse(saved) };
         // Backwards compat: jika ada soundEnabled=false lama, matikan semua
         if (localStorage.getItem('soundEnabled') === 'false')
-          return { up: false, bigUp: false, down: false, bigDown: false, promo: false, countdown: false, vibrate: false };
+          return { up: false, bigUp: false, down: false, bigDown: false, promo: false, countdown: false, vibrate: false, shake: false };
       } catch (e) {}
       return defaults;
     }
@@ -15617,14 +15652,16 @@ app.get('/monitoring', async (_req, res) => {
       else { if (iconOn) iconOn.style.display = 'block'; }
     }
     function _initSoundCheckboxes() {
-      ['up','bigUp','down','bigDown','promo','countdown','vibrate'].forEach(t => {
+      ['up','bigUp','down','bigDown','promo','countdown','vibrate','shake'].forEach(t => {
         const el = document.getElementById('sw_' + t);
         if (el) el.checked = !!soundSettings[t];
       });
-      // Getar HP hanya di Android; di iPhone/desktop diganti goyang layar (jalan di semua perangkat)
+      // Getar HP (fisik) hanya tersedia di perangkat yang mendukung (umumnya Android)
       if (!('vibrate' in navigator)) {
+        var vrow = document.getElementById('vibrateRow');
+        if (vrow) vrow.style.display = 'none';
         var vsub = document.getElementById('vibrateSub');
-        if (vsub) vsub.textContent = 'Goyang layar 5 detik terakhir';
+        if (vsub) vsub.textContent = 'Tidak didukung perangkat ini';
       }
       _updateSoundHeaderIcon();
     }
@@ -15664,6 +15701,66 @@ app.get('/monitoring', async (_req, res) => {
       const toggle = document.getElementById('soundToggle');
       const panel = document.getElementById('soundPanel');
       if (toggle && !toggle.contains(e.target) && panel && !panel.contains(e.target)) closeSoundPanel();
+    });
+
+    // Sub-panel positioning helper (relatif ke tombol Pengaturan Suara di menu)
+    function _positionSubPanel(panel) {
+      const toggle = document.getElementById('soundToggle');
+      const ref = toggle && toggle.getBoundingClientRect().width ? toggle : document.getElementById('navMenuBtn');
+      if (!ref) return;
+      const rect = ref.getBoundingClientRect();
+      const panelW = 248;
+      let left = rect.left;
+      if (left + panelW > window.innerWidth - 8) left = window.innerWidth - panelW - 8;
+      if (left < 8) left = 8;
+      panel.style.top = (rect.bottom + 8) + 'px';
+      panel.style.left = left + 'px';
+    }
+    // Sub-panel: Sound (efek suara)
+    let _soundFxOpen = false;
+    function openSoundFx(e) {
+      if (e) e.stopPropagation();
+      closeSoundPanel();
+      const panel = document.getElementById('soundFxPanel');
+      if (!panel) return;
+      _soundFxOpen = true;
+      panel.style.display = 'block';
+      _positionSubPanel(panel);
+    }
+    window.openSoundFx = openSoundFx;
+    function closeSoundFx() {
+      _soundFxOpen = false;
+      const panel = document.getElementById('soundFxPanel');
+      if (panel) panel.style.display = 'none';
+    }
+    window.closeSoundFx = closeSoundFx;
+    document.addEventListener('click', function(e) {
+      if (!_soundFxOpen) return;
+      const panel = document.getElementById('soundFxPanel');
+      if (panel && !panel.contains(e.target)) closeSoundFx();
+    });
+    // Sub-panel: Getar
+    let _getarOpen = false;
+    function openGetar(e) {
+      if (e) e.stopPropagation();
+      closeSoundPanel();
+      const panel = document.getElementById('getarPanel');
+      if (!panel) return;
+      _getarOpen = true;
+      panel.style.display = 'block';
+      _positionSubPanel(panel);
+    }
+    window.openGetar = openGetar;
+    function closeGetar() {
+      _getarOpen = false;
+      const panel = document.getElementById('getarPanel');
+      if (panel) panel.style.display = 'none';
+    }
+    window.closeGetar = closeGetar;
+    document.addEventListener('click', function(e) {
+      if (!_getarOpen) return;
+      const panel = document.getElementById('getarPanel');
+      if (panel && !panel.contains(e.target)) closeGetar();
     });
 
     // Settings chooser panel (Tampilan / Pilih Nominal)
@@ -15758,7 +15855,9 @@ app.get('/monitoring', async (_req, res) => {
       const btn = document.getElementById('navMenuBtn');
       const soundPanel = document.getElementById('soundPanel');
       const settingsPanel = document.getElementById('settingsPanel');
-      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && !(soundPanel && soundPanel.contains(e.target)) && !(settingsPanel && settingsPanel.contains(e.target))) {
+      const soundFxPanel = document.getElementById('soundFxPanel');
+      const getarPanel = document.getElementById('getarPanel');
+      if (dropdown && !dropdown.contains(e.target) && btn && !btn.contains(e.target) && !(soundPanel && soundPanel.contains(e.target)) && !(settingsPanel && settingsPanel.contains(e.target)) && !(soundFxPanel && soundFxPanel.contains(e.target)) && !(getarPanel && getarPanel.contains(e.target))) {
         closeNavMenu();
       }
     });
@@ -15820,8 +15919,12 @@ app.get('/monitoring', async (_req, res) => {
       localStorage.setItem('soundSettings', JSON.stringify(soundSettings));
       _updateSoundHeaderIcon();
     }
-    function setSoundAll(val) {
-      ['up','bigUp','down','bigDown','promo','countdown','vibrate'].forEach(t => {
+    function setSoundAll(val, group) {
+      var types;
+      if (group === 'getar') types = ['vibrate','shake'];
+      else if (group === 'sound') types = ['up','bigUp','down','bigDown','promo','countdown'];
+      else types = ['up','bigUp','down','bigDown','promo','countdown','vibrate','shake'];
+      types.forEach(t => {
         soundSettings[t] = val;
         const el = document.getElementById('sw_' + t);
         if (el) el.checked = val;
@@ -15923,16 +16026,23 @@ app.get('/monitoring', async (_req, res) => {
     function shakeScreen(strong) {
       const el = document.querySelector('.container');
       if (!el) return;
+      const cls = strong ? 'screen-shake-strong' : 'screen-shake';
       document.body.classList.add('is-shaking');
-      el.classList.remove('screen-shake');
+      el.classList.remove('screen-shake', 'screen-shake-strong');
       void el.offsetWidth; // reflow agar animasi restart
-      el.classList.add('screen-shake');
+      el.classList.add(cls);
       if (_shakeTimer) clearTimeout(_shakeTimer);
       _shakeTimer = setTimeout(function() {
-        el.classList.remove('screen-shake');
+        el.classList.remove('screen-shake', 'screen-shake-strong');
         document.body.classList.remove('is-shaking');
-      }, strong ? 600 : 420);
+      }, strong ? 760 : 640);
     }
+
+    // navigator.vibrate butuh user gesture dulu; tandai setelah interaksi pertama
+    let _userInteracted = false;
+    ['pointerdown','keydown','touchstart'].forEach(function(ev){
+      window.addEventListener(ev, function(){ _userInteracted = true; }, { once: true, passive: true });
+    });
 
     // Dipanggil tiap pergantian detik 55-59 dari updateClock
     let _lastCountdownSec = -1;
@@ -15942,12 +16052,12 @@ app.get('/monitoring', async (_req, res) => {
       _lastCountdownSec = sec;
       const isFinal = sec === 59;
       if (soundSettings.countdown) playCountdownBeep(isFinal);
-      if (soundSettings.vibrate) {
-        // Getar fisik di perangkat yang mendukung (umumnya Android)
-        if (navigator.vibrate) { try { navigator.vibrate(isFinal ? [90, 50, 90] : 60); } catch (e) {} }
-        // Goyang layar (visual) — jalan di semua perangkat termasuk iPhone & desktop
-        shakeScreen(isFinal);
+      // Getar HP (fisik) — hanya perangkat yang mendukung (umumnya Android) & setelah user interaksi
+      if (soundSettings.vibrate && navigator.vibrate && _userInteracted) {
+        try { navigator.vibrate(isFinal ? [90, 50, 90] : 60); } catch (e) {}
       }
+      // Goyang layar (visual halus) — jalan di semua perangkat termasuk iPhone & desktop
+      if (soundSettings.shake) shakeScreen(isFinal);
     }
 
     function playSound(direction) {
@@ -16205,6 +16315,146 @@ app.get('/monitoring', async (_req, res) => {
       _updateInstallVisibility();
     });
     setTimeout(_updateInstallVisibility, 0);
+
+    // ── Onboarding tour (pengenalan untuk user pertama kali) ──
+    (function(){
+      var TOUR_KEY = 'onboardingDone_v1';
+      var steps = [
+        { sel: '.header-logo', title: 'Selamat Datang! 👋', body: 'Ini Treasury Price Monitor. Logo dengan titik hijau menandakan harga update real-time. Yuk kenali tombol-tombolnya.', menu: false },
+        { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator teknikal & garis bantu pada grafik harga emas.', menu: false },
+        { sel: '#navNewsBtn', title: 'Berita / News', body: 'Lihat berita terbaru. Angka merah menandakan ada berita yang belum dibaca.', menu: false },
+        { sel: '#promoBtnEl', title: 'Promo', body: 'Cek promo & rekomendasi yang sedang berlangsung di sini.', menu: false },
+        { sel: '#navCalcBtn', title: 'Kalkulator', body: 'Hitung simulasi harga beli & jual emas sesuai nominal yang kamu mau.', menu: false },
+        { sel: '#navMenuBtn', title: 'Menu', body: 'Tombol ini membuka menu utama. Mari kita lihat isinya satu per satu.', menu: false },
+        { sel: '#installBtn', title: 'Install Aplikasi', body: 'Pasang aplikasi ke layar HP/desktop agar bisa dibuka cepat seperti aplikasi biasa.', menu: true },
+        { sel: '#themeToggleItem', title: 'Ganti Mode', body: 'Beralih antara mode gelap dan mode terang sesuai selera kamu.', menu: true },
+        { sel: '#soundToggle', title: 'Pengaturan Suara & Getar', body: 'Atur suara naik/turun harga, bunyi hitung mundur, dan getar/goyang layar di 5 detik terakhir.', menu: true },
+        { sel: '#settingToggle', title: 'Setting', body: 'Di dalam Setting ada 2 pilihan: <b>Tampilan</b> (atur ukuran & jenis font) dan <b>Pilih Nominal</b> (atur nominal harga yang dipantau).', menu: true }
+      ];
+      var idx = 0, overlay = null, spot = null, tip = null;
+
+      function buildDom(){
+        overlay = document.createElement('div'); overlay.className = 'tour-overlay';
+        spot = document.createElement('div'); spot.className = 'tour-spot';
+        tip = document.createElement('div'); tip.className = 'tour-tip';
+        overlay.appendChild(spot);
+        document.body.appendChild(overlay);
+        document.body.appendChild(tip);
+        // jangan biarkan klik di overlay menutup menu/panel lain
+        overlay.addEventListener('click', function(e){ e.stopPropagation(); });
+        tip.addEventListener('click', function(e){ e.stopPropagation(); });
+      }
+
+      function ensureMenu(open){
+        if (open) { if (!_navMenuOpen) openNavMenu(); }
+        else { if (_navMenuOpen) closeNavMenu(); }
+      }
+
+      function nextVisibleFrom(i, dir){
+        while (i >= 0 && i < steps.length){
+          var s = steps[i];
+          var el = document.querySelector(s.sel);
+          if (el && el.offsetParent !== null && !(el.style && el.style.display === 'none')) return i;
+          // installBtn bisa disembunyikan kalau sudah terpasang -> lewati
+          i += dir;
+        }
+        return -1;
+      }
+
+      function render(){
+        var s = steps[idx];
+        ensureMenu(!!s.menu);
+        // beri waktu menu/dropdown muncul sebelum mengukur
+        setTimeout(function(){
+          var el = document.querySelector(s.sel);
+          if (!el) { advance(1); return; }
+          var r = el.getBoundingClientRect();
+          var pad = 6;
+          spot.style.top = (r.top - pad) + 'px';
+          spot.style.left = (r.left - pad) + 'px';
+          spot.style.width = (r.width + pad*2) + 'px';
+          spot.style.height = (r.height + pad*2) + 'px';
+          var visIdx = steps.filter(function(st){ var e=document.querySelector(st.sel); return e && e.offsetParent!==null; });
+          tip.innerHTML =
+            '<div class="tour-tip-title"><i data-lucide="sparkles" style="width:16px;height:16px;"></i>' + s.title + '</div>' +
+            '<div class="tour-tip-body">' + s.body + '</div>' +
+            '<div class="tour-tip-foot">' +
+              '<span class="tour-step-count">' + (idx+1) + ' / ' + steps.length + '</span>' +
+              '<div class="tour-btns">' +
+                '<button class="tour-skip" id="tourSkipBtn">Lewati</button>' +
+                '<button class="tour-next" id="tourNextBtn">' + (idx >= lastVisible() ? 'Selesai' : 'Lanjut') + '</button>' +
+              '</div>' +
+            '</div>';
+          if (typeof lucide !== 'undefined') lucide.createIcons();
+          document.getElementById('tourSkipBtn').addEventListener('click', function(e){ e.stopPropagation(); finish(); });
+          document.getElementById('tourNextBtn').addEventListener('click', function(e){ e.stopPropagation(); advance(1); });
+          // posisikan tooltip
+          positionTip(r);
+        }, s.menu ? 130 : 30);
+      }
+
+      function lastVisible(){
+        for (var i = steps.length - 1; i >= 0; i--){
+          var e = document.querySelector(steps[i].sel);
+          if (e && e.offsetParent !== null) return i;
+        }
+        return steps.length - 1;
+      }
+
+      function positionTip(r){
+        var tipR = tip.getBoundingClientRect();
+        var top = r.bottom + 14;
+        var left = r.left + r.width/2 - tipR.width/2;
+        // kalau tidak muat di bawah, taruh di atas
+        if (top + tipR.height > window.innerHeight - 12) {
+          var above = r.top - tipR.height - 14;
+          if (above > 12) top = above;
+          else top = Math.max(12, window.innerHeight - tipR.height - 12);
+        }
+        if (left < 12) left = 12;
+        if (left + tipR.width > window.innerWidth - 12) left = window.innerWidth - tipR.width - 12;
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+      }
+
+      function advance(dir){
+        var ni = nextVisibleFrom(idx + dir, dir);
+        if (ni === -1) { finish(); return; }
+        idx = ni;
+        render();
+      }
+
+      function finish(){
+        try { localStorage.setItem(TOUR_KEY, '1'); } catch(e){}
+        ensureMenu(false);
+        if (overlay) overlay.classList.remove('active');
+        if (tip) tip.style.display = 'none';
+        window.removeEventListener('resize', onResize);
+      }
+
+      function onResize(){ if (overlay && overlay.classList.contains('active')) render(); }
+
+      function start(){
+        if (!overlay) buildDom();
+        overlay.classList.add('active');
+        tip.style.display = 'block';
+        idx = nextVisibleFrom(0, 1);
+        if (idx === -1) { finish(); return; }
+        window.addEventListener('resize', onResize);
+        render();
+      }
+      window.startOnboardingTour = start;
+
+      // auto-start untuk user yang belum pernah lihat (termasuk semua user lama karena fitur baru)
+      function maybeStart(){
+        var done = false;
+        try { done = localStorage.getItem(TOUR_KEY) === '1'; } catch(e){}
+        if (done) return;
+        setTimeout(start, 900);
+      }
+      if (document.readyState === 'complete' || document.readyState === 'interactive') maybeStart();
+      else window.addEventListener('DOMContentLoaded', maybeStart);
+    })();
 
     // Logout function
     async function logout() {
@@ -17373,10 +17623,29 @@ app.get('/monitoring', async (_req, res) => {
   </script>
 
   <!-- Sound Panel — di luar header agar position:fixed tidak terkena backdrop-filter -->
+  <!-- Chooser: Sound & Getar -->
   <div id="soundPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
     <div class="sound-panel-header">
-      Pengaturan Suara &amp; Getar
+      Pengaturan Sound &amp; Getar
       <button class="sound-panel-close" onclick="closeSoundPanel()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="sound-row" style="cursor:pointer" onclick="openSoundFx(event)">
+      <div class="sound-row-icon" style="background:rgba(96,165,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></div>
+      <div class="sound-row-label">Sound<span class="sound-row-sub">Suara naik/turun, promo, hitung mundur</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+    <div class="sound-row" style="cursor:pointer" onclick="openGetar(event)">
+      <div class="sound-row-icon" style="background:rgba(167,139,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
+      <div class="sound-row-label">Getar<span class="sound-row-sub">Getar HP &amp; goyang layar</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+  </div>
+
+  <!-- Sub-panel: Sound (efek suara) -->
+  <div id="soundFxPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
+    <div class="sound-panel-header">
+      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-close" style="margin:0 2px 0 0;" onclick="closeSoundFx();openSoundPanel()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Sound</span>
+      <button class="sound-panel-close" onclick="closeSoundFx()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div class="sound-row">
       <div class="sound-row-icon" style="background:rgba(34,197,94,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></div>
@@ -17408,14 +17677,31 @@ app.get('/monitoring', async (_req, res) => {
       <div class="sound-row-label">Bunyi Hitung Mundur<span class="sound-row-sub">Beep 5 detik terakhir</span></div>
       <label class="sound-sw"><input type="checkbox" id="sw_countdown" onchange="toggleSoundType('countdown',this)"><span class="sound-sw-track"></span></label>
     </div>
-    <div class="sound-row">
+    <div class="sound-panel-footer">
+      <button class="sound-panel-btn" onclick="setSoundAll(true,'sound')">Nyalakan Semua</button>
+      <button class="sound-panel-btn" onclick="setSoundAll(false,'sound')">Matikan Semua</button>
+    </div>
+  </div>
+
+  <!-- Sub-panel: Getar -->
+  <div id="getarPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
+    <div class="sound-panel-header">
+      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-close" style="margin:0 2px 0 0;" onclick="closeGetar();openSoundPanel()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Getar</span>
+      <button class="sound-panel-close" onclick="closeGetar()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="sound-row" id="vibrateRow">
       <div class="sound-row-icon" style="background:rgba(167,139,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg></div>
-      <div class="sound-row-label">Getar / Goyang Layar<span class="sound-row-sub" id="vibrateSub">Getar HP + goyang layar 5 detik terakhir</span></div>
+      <div class="sound-row-label">Getar HP<span class="sound-row-sub" id="vibrateSub">Getar fisik (Android) 5 detik terakhir</span></div>
       <label class="sound-sw"><input type="checkbox" id="sw_vibrate" onchange="toggleSoundType('vibrate',this)"><span class="sound-sw-track"></span></label>
     </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(52,211,153,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+      <div class="sound-row-label">Goyang Layar<span class="sound-row-sub">Layar bergetar halus 5 detik terakhir</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_shake" onchange="toggleSoundType('shake',this)"><span class="sound-sw-track"></span></label>
+    </div>
     <div class="sound-panel-footer">
-      <button class="sound-panel-btn" onclick="setSoundAll(true)">Nyalakan Semua</button>
-      <button class="sound-panel-btn" onclick="setSoundAll(false)">Matikan Semua</button>
+      <button class="sound-panel-btn" onclick="setSoundAll(true,'getar')">Nyalakan Semua</button>
+      <button class="sound-panel-btn" onclick="setSoundAll(false,'getar')">Matikan Semua</button>
     </div>
   </div>
 
