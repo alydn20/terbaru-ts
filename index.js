@@ -4468,7 +4468,11 @@ ${authScript}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(180deg, #0a0e13 0%, #0f1419 100%);
+      background:
+        radial-gradient(1000px 500px at 85% -10%, rgba(247,147,26,0.07), transparent 60%),
+        radial-gradient(800px 400px at -10% 20%, rgba(59,130,246,0.05), transparent 55%),
+        linear-gradient(180deg, #070a10 0%, #0d1118 55%, #0a0e13 100%);
+      background-attachment: fixed;
       min-height: 100vh;
       padding: 20px;
       color: #e7e9ea;
@@ -4479,11 +4483,21 @@ ${authScript}
       text-align: center;
       margin-bottom: 24px;
       padding: 24px;
-      background: rgba(20, 26, 34, 0.8);
+      background: linear-gradient(135deg, rgba(24,30,40,0.95), rgba(16,21,30,0.95));
       backdrop-filter: blur(20px);
       border-radius: 20px;
-      border: 1px solid rgba(247,147,26,0.3);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border: 1px solid rgba(247,147,26,0.14);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #f7931a, transparent);
+      opacity: 0.7;
     }
     .header h1 {
       color: #ffffff;
@@ -4503,26 +4517,30 @@ ${authScript}
     }
     .stat-item {
       text-align: center;
-      background: rgba(20, 26, 34, 0.8);
+      background: linear-gradient(160deg, rgba(24,30,40,0.9), rgba(16,21,30,0.9));
       backdrop-filter: blur(10px);
       padding: 20px 32px;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,0.06);
       flex: 1;
       max-width: 200px;
+      transition: all 0.2s;
     }
-    .stat-value { font-size: 2em; font-weight: 700; color: #f7931a; font-family: 'JetBrains Mono', monospace; }
+    .stat-item:hover { border-color: rgba(247,147,26,0.25); transform: translateY(-2px); }
+    .stat-value { font-size: 2em; font-weight: 700; color: #f7931a; font-family: 'JetBrains Mono', monospace; text-shadow: 0 0 20px rgba(247,147,26,0.25); }
     .stat-label { font-size: 0.8em; color: #8b949e; margin-top: 4px; font-weight: 500; }
 
     .card {
-      background: rgba(20, 26, 34, 0.8);
+      background: linear-gradient(170deg, rgba(22,28,38,0.88), rgba(16,21,30,0.88));
       backdrop-filter: blur(20px);
       border-radius: 20px;
       padding: 24px;
       margin-bottom: 20px;
       border: 1px solid rgba(255,255,255,0.06);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: border-color 0.2s;
     }
+    .card:hover { border-color: rgba(255,255,255,0.1); }
     .card h2 {
       color: #ffffff;
       font-size: 1.1em;
@@ -8157,7 +8175,7 @@ ${authScript}
         </h1>
         <div class="header-actions">
           <a href="/admin/monitoring">Notifikasi</a>
-          <a href="/monitoring" class="action-monitoring">📈 Ke Monitoring</a>
+          <a href="/monitoring" class="action-monitoring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Ke Monitoring</a>
           <a href="/admin/logout" style="color:#f87171;border-color:rgba(248,113,113,0.3);" onclick="return confirm('Yakin ingin logout?')">Logout</a>
         </div>
       </div>
@@ -18539,8 +18557,10 @@ async function start() {
 
         if (!text) continue
 
-        // Only process commands starting with /
-        if (!text.startsWith('/')) continue
+        // Only process commands starting with / — atau teks berupa nomor HP saja
+        // (tambah user cepat via DM: kirim nomornya langsung, format bebas: +62 / 0 / spasi / strip)
+        const isPhoneOnly = !isGroup && /^\+?[\d\s\-().]{8,20}$/.test(text.trim()) && (text.replace(/\D/g, '').length >= 9)
+        if (!text.startsWith('/') && !isPhoneOnly) continue
 
         const lowerText = text.toLowerCase().trim()
 
@@ -18608,6 +18628,7 @@ async function start() {
           const helpText = `🤖 *ADMIN COMMANDS*
 
 📋 *Manajemen User:*
+• Kirim nomor HP saja - Tambah user cepat (lifetime)
 • /add 08xxx - Tambah user baru
 • /add 08xxx 30 - Tambah user + expired 30 hari
 • /del 08xxx - Hapus user dari database
@@ -18891,6 +18912,40 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
           }
 
           await sock.sendMessage(senderJid, { text: onlineText }, { quoted: msg })
+          continue
+        }
+
+        // ===== TAMBAH USER CEPAT: kirim nomor HP saja via DM =====
+        if (isPhoneOnly) {
+          let phone = text.replace(/\D/g, '')
+          if (phone.startsWith('0')) phone = '62' + phone.substring(1)
+          if (!phone.startsWith('62')) phone = '62' + phone
+
+          if (phone.length < 10 || phone.length > 15) {
+            await sock.sendMessage(senderJid, { text: `❌ Nomor tidak valid: ${text.trim()}\n\nContoh format: 0812xxxx / +62 812-xxxx / 62812xxxx` }, { quoted: msg })
+            continue
+          }
+
+          // Check if exists
+          const existing = await redis.hget(REDIS_KEYS.USERS, phone)
+          if (existing) {
+            await sock.sendMessage(senderJid, { text: `⚠️ User +${phone} sudah terdaftar` }, { quoted: msg })
+            continue
+          }
+
+          const userData = {
+            name: 'Member ' + phone.substring(2),
+            createdAt: Date.now(),
+            expired: null,
+            source: 'wa_quick_add'
+          }
+          await redis.hset(REDIS_KEYS.USERS, { [phone]: JSON.stringify(userData) })
+
+          await sock.sendMessage(senderJid, {
+            text: `✅ *User Disimpan*\n\n📱 Nomor: +${phone}\n⏰ Expired: Lifetime\n📅 Dibuat: ${new Date().toLocaleDateString('id-ID')}\n\n_Untuk atur masa aktif: /add ${phone} 30_`
+          }, { quoted: msg })
+
+          pushLog(`WA CMD | Admin ${senderPhone} quick-added user +${phone}`)
           continue
         }
 
