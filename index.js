@@ -301,7 +301,8 @@ const REDIS_KEYS = {
   NTFY_SETTINGS: 'gold:ntfy_settings',    // JSON: ntfy.sh notification settings
   MARKUP_SETTINGS: 'gold:markup_settings', // JSON: { minMargin, maxMargin } markup normal range
   THEME_SETTINGS: 'gold:theme_settings',   // String: nama tema aktif (navy/purple/green/red/teal/slate)
-  FRESH_TOKEN: 'gold:fresh_token'          // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
+  FRESH_TOKEN: 'gold:fresh_token',         // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
+  KICKED_SESSIONS: 'gold:kicked_sessions'  // Hash: sessionId -> timestamp (session ditendang karena login di perangkat lain)
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -4706,13 +4707,6 @@ ${authScript}
     </div>
 
     <div class="card">
-      <h2>Tur Pengenalan & Sound/Getar</h2>
-      <p style="color:#8b949e;font-size:0.88em;margin-bottom:12px;">Paksa SEMUA user melihat tur pengenalan lagi dan reset Sound &amp; Getar ke default (aktif semua). Berlaku saat user membuka / refresh halaman.</p>
-      <button type="button" class="btn btn-primary" id="resetFreshBtn" style="width:100%;">Reset Tur + Sound/Getar untuk Semua User</button>
-      <div class="result" id="resetFreshResult" style="margin-top:12px;"></div>
-    </div>
-
-    <div class="card">
       <h2>Riwayat Notifikasi</h2>
       <div class="history" id="history">
         <div class="empty-state">Belum ada notifikasi dikirim</div>
@@ -4791,33 +4785,6 @@ ${authScript}
       btn.textContent = 'Kirim Notifikasi';
 
       setTimeout(() => { result.className = 'result'; }, 5000);
-    });
-
-    // Reset tur + sound/getar untuk semua user
-    document.getElementById('resetFreshBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('resetFreshBtn');
-      const out = document.getElementById('resetFreshResult');
-      if (!confirm('Yakin? Semua user akan melihat tur pengenalan lagi dan Sound & Getar direset ke default.')) return;
-      btn.disabled = true;
-      const oldText = btn.textContent;
-      btn.textContent = 'Memproses...';
-      try {
-        const res = await fetch('/api/admin/reset-fresh', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-        const data = await res.json();
-        if (data.success) {
-          out.className = 'result success';
-          out.textContent = 'Berhasil! Token baru: ' + data.token + '. Semua user akan dapat tur + reset saat buka/refresh.';
-        } else {
-          out.className = 'result error';
-          out.textContent = 'Gagal: ' + (data.error || 'Unknown error');
-        }
-      } catch (err) {
-        out.className = 'result error';
-        out.textContent = 'Error: ' + err.message;
-      }
-      btn.disabled = false;
-      btn.textContent = oldText;
-      setTimeout(() => { out.className = 'result'; }, 6000);
     });
 
     function addToHistory(item) {
@@ -5081,16 +5048,19 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     return res.json({ success: false, error: 'PIN salah. Silakan coba lagi.' })
   }
 
-  // Check existing sessions (max 3 devices, kecuali admin phone tidak ada limit)
+  // Check existing sessions (max 2 devices, kecuali admin phone tidak ada limit).
+  // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
   if (normalizedPhone !== ADMIN_PHONE) {
     const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
     const userSessions = []
     for (const [sessId, sessPhone] of Object.entries(allSessions)) {
       if (sessPhone === normalizedPhone) userSessions.push(sessId)
     }
-    if (userSessions.length >= 3) {
-      await redis.hdel(REDIS_KEYS.SESSIONS, userSessions[0])
-      pushLog(`Auth | User +${normalizedPhone} exceeded 3 devices, oldest session removed`)
+    while (userSessions.length >= 2) {
+      const oldSess = userSessions.shift()
+      await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
+      await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
+      pushLog(`Auth | User +${normalizedPhone} login di perangkat baru — session lama ditendang`)
     }
   }
 
@@ -5102,7 +5072,8 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     success: true,
     sessionId,
     user: check.user,
-    requirePinChange: !pinChanged // true if user must change PIN
+    // Nomor admin tidak pernah dipaksa ganti PIN
+    requirePinChange: normalizedPhone === ADMIN_PHONE ? false : !pinChanged
   })
 })
 
@@ -5156,8 +5127,8 @@ app.get('/api/check-pin-status', async (req, res) => {
   const phone = await redis.hget(REDIS_KEYS.SESSIONS, session)
   if (!phone) return res.json({ success: false })
 
-  // Admin doesn't need PIN
-  if (phone === 'admin') {
+  // Admin doesn't need PIN (baik akun internal maupun nomor admin)
+  if (phone === 'admin' || phone === ADMIN_PHONE) {
     return res.json({ success: true, pinChanged: true, requirePinChange: false })
   }
 
@@ -5181,7 +5152,17 @@ app.get('/api/verify-session', async (req, res) => {
     if (!sessionId) return res.json({ valid: false })
 
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, sessionId)
-    if (!phone) return res.json({ valid: false })
+    if (!phone) {
+      // Session hilang — cek apakah ditendang karena login di perangkat lain
+      try {
+        const kicked = await redis.hget(REDIS_KEYS.KICKED_SESSIONS, sessionId)
+        if (kicked) {
+          await redis.hdel(REDIS_KEYS.KICKED_SESSIONS, sessionId)
+          return res.json({ valid: false, reason: 'kicked_other_device' })
+        }
+      } catch (e) {}
+      return res.json({ valid: false })
+    }
 
     const check = await isUserValid(phone)
     if (!check.valid) return res.json({ valid: false, reason: check.reason })
@@ -5244,10 +5225,12 @@ app.post('/api/user/request-login', express.json(), async (req, res) => {
 
   const normalizedPhone = normalizePhone(phone)
 
-  // Check if user is blocked
-  const blocked = await redis.hget(REDIS_KEYS.BLOCKED_USERS, normalizedPhone)
-  if (blocked) {
-    return res.json({ success: false, error: 'Akun diblokir. Hubungi admin untuk membuka blokir.' })
+  // Check if user is blocked (nomor admin tidak pernah diblokir)
+  if (normalizedPhone !== ADMIN_PHONE) {
+    const blocked = await redis.hget(REDIS_KEYS.BLOCKED_USERS, normalizedPhone)
+    if (blocked) {
+      return res.json({ success: false, error: 'Akun diblokir. Hubungi admin untuk membuka blokir.' })
+    }
   }
 
   // Check if user exists and valid
@@ -7467,10 +7450,12 @@ app.get('/auth/:token', async (req, res) => {
 
     const phone = data.phone
 
-    // Check if user is blocked
-    const blocked = await redis.hget(REDIS_KEYS.BLOCKED_USERS, phone)
-    if (blocked) {
-      return res.send(getLoginErrorPage('Akun Anda diblokir. Hubungi admin untuk membuka blokir.'))
+    // Check if user is blocked (nomor admin tidak pernah diblokir)
+    if (phone !== ADMIN_PHONE) {
+      const blocked = await redis.hget(REDIS_KEYS.BLOCKED_USERS, phone)
+      if (blocked) {
+        return res.send(getLoginErrorPage('Akun Anda diblokir. Hubungi admin untuk membuka blokir.'))
+      }
     }
 
     // Check if user is valid
@@ -7482,19 +7467,23 @@ app.get('/auth/:token', async (req, res) => {
       return res.send(getLoginErrorPage('Akun tidak ditemukan atau tidak valid.'))
     }
 
-    // Check existing sessions for this user (max 2 devices)
-    const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
-    const userSessions = []
-    for (const [sessId, sessPhone] of Object.entries(allSessions)) {
-      if (sessPhone === phone) {
-        userSessions.push(sessId)
+    // Check existing sessions for this user (max 2 devices, kecuali nomor admin tanpa batas)
+    if (phone !== ADMIN_PHONE) {
+      const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
+      const userSessions = []
+      for (const [sessId, sessPhone] of Object.entries(allSessions)) {
+        if (sessPhone === phone) {
+          userSessions.push(sessId)
+        }
       }
-    }
 
-    // If already 2 sessions, remove the oldest one
-    if (userSessions.length >= 2) {
-      await redis.hdel(REDIS_KEYS.SESSIONS, userSessions[0])
-      pushLog('Auth | User +62' + phone + ' exceeded 2 devices, oldest session removed')
+      // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain"
+      while (userSessions.length >= 2) {
+        const oldSess = userSessions.shift()
+        await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
+        await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
+        pushLog('Auth | User +' + phone + ' login di perangkat baru — session lama ditendang')
+      }
     }
 
     // Create new session
@@ -7652,7 +7641,11 @@ ${authScript}
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(180deg, #0a0e13 0%, #0f1419 100%);
+      background:
+        radial-gradient(1000px 500px at 85% -10%, rgba(247,147,26,0.07), transparent 60%),
+        radial-gradient(800px 400px at -10% 20%, rgba(59,130,246,0.05), transparent 55%),
+        linear-gradient(180deg, #070a10 0%, #0d1118 55%, #0a0e13 100%);
+      background-attachment: fixed;
       min-height: 100vh;
       padding: 20px;
       color: #e7e9ea;
@@ -7666,15 +7659,25 @@ ${authScript}
       align-items: center;
       margin-bottom: 24px;
       padding: 18px 24px;
-      background: rgba(20, 26, 34, 0.9);
+      background: linear-gradient(135deg, rgba(24,30,40,0.95), rgba(16,21,30,0.95));
       backdrop-filter: blur(20px);
       border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.06);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      border: 1px solid rgba(247,147,26,0.14);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #f7931a, transparent);
+      opacity: 0.7;
     }
     .header h1 { color: #ffffff; font-size: 1.4em; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
-    .header h1 svg { width: 24px; height: 24px; color: #f7931a; }
-    .header-actions { display: flex; gap: 10px; }
+    .header h1 svg { width: 24px; height: 24px; color: #f7931a; filter: drop-shadow(0 0 8px rgba(247,147,26,0.4)); }
+    .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .header-actions a {
       padding: 10px 16px;
       background: rgba(255,255,255,0.06);
@@ -7686,7 +7689,14 @@ ${authScript}
       border: 1px solid rgba(255,255,255,0.08);
       transition: all 0.2s ease;
     }
-    .header-actions a:hover { background: rgba(247,147,26,0.15); border-color: rgba(247,147,26,0.3); color: #f7931a; }
+    .header-actions a:hover { background: rgba(247,147,26,0.15); border-color: rgba(247,147,26,0.3); color: #f7931a; transform: translateY(-1px); }
+    .header-actions a.action-monitoring {
+      background: linear-gradient(135deg, #f7931a 0%, #e8850f 100%);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 4px 12px rgba(247,147,26,0.3);
+    }
+    .header-actions a.action-monitoring:hover { color: #fff; background: linear-gradient(135deg, #ffa733 0%, #f7931a 100%); box-shadow: 0 6px 16px rgba(247,147,26,0.4); }
 
     /* Stats Cards */
     .stats-row {
@@ -7696,28 +7706,42 @@ ${authScript}
       margin-bottom: 24px;
     }
     .stat-card {
-      background: rgba(20, 26, 34, 0.85);
+      background: linear-gradient(160deg, rgba(24,30,40,0.9), rgba(16,21,30,0.9));
       backdrop-filter: blur(10px);
       padding: 20px 16px;
       border-radius: 14px;
       text-align: center;
       border: 1px solid rgba(255,255,255,0.06);
       transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
     }
-    .stat-card:hover { border-color: rgba(247,147,26,0.2); transform: translateY(-2px); }
-    .stat-value { font-size: 1.8em; font-weight: 700; color: #f7931a; font-family: 'JetBrains Mono', monospace; }
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 20%; right: 20%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(247,147,26,0.5), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .stat-card:hover { border-color: rgba(247,147,26,0.25); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+    .stat-card:hover::after { opacity: 1; }
+    .stat-value { font-size: 1.8em; font-weight: 700; color: #f7931a; font-family: 'JetBrains Mono', monospace; text-shadow: 0 0 20px rgba(247,147,26,0.25); }
     .stat-label { color: #8b949e; font-size: 0.8em; margin-top: 4px; font-weight: 500; }
 
     /* Cards */
     .card {
-      background: rgba(20, 26, 34, 0.85);
+      background: linear-gradient(170deg, rgba(22,28,38,0.88), rgba(16,21,30,0.88));
       backdrop-filter: blur(20px);
       border-radius: 16px;
       padding: 22px;
       margin-bottom: 18px;
       border: 1px solid rgba(255,255,255,0.06);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.03);
+      transition: border-color 0.2s;
     }
+    .card:hover { border-color: rgba(255,255,255,0.1); }
     .card h2 {
       color: #ffffff;
       font-size: 1em;
@@ -7735,23 +7759,37 @@ ${authScript}
     /* Section Tabs */
     .section-tabs {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 20px;
       flex-wrap: wrap;
+      padding: 6px;
+      background: rgba(14,18,26,0.75);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 14px;
+      backdrop-filter: blur(16px);
+      position: sticky;
+      top: 12px;
+      z-index: 50;
     }
     .section-tab {
-      padding: 10px 18px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px;
+      padding: 9px 16px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 9px;
       color: #8b949e;
       font-size: 0.85em;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
     }
-    .section-tab:hover { background: rgba(255,255,255,0.08); color: #e7e9ea; }
-    .section-tab.active { background: rgba(247,147,26,0.15); border-color: rgba(247,147,26,0.3); color: #f7931a; }
+    .section-tab:hover { background: rgba(255,255,255,0.06); color: #e7e9ea; }
+    .section-tab.active {
+      background: linear-gradient(135deg, rgba(247,147,26,0.2), rgba(247,147,26,0.1));
+      border-color: rgba(247,147,26,0.35);
+      color: #f7931a;
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(247,147,26,0.12);
+    }
 
     /* Section Content */
     .section-content { display: none; }
@@ -8119,7 +8157,7 @@ ${authScript}
         </h1>
         <div class="header-actions">
           <a href="/admin/monitoring">Notifikasi</a>
-          <a href="/monitoring" target="_blank">Monitoring</a>
+          <a href="/monitoring" class="action-monitoring">📈 Ke Monitoring</a>
           <a href="/admin/logout" style="color:#f87171;border-color:rgba(248,113,113,0.3);" onclick="return confirm('Yakin ingin logout?')">Logout</a>
         </div>
       </div>
@@ -8449,6 +8487,19 @@ ${authScript}
 
       <!-- Section: Pengaturan -->
       <div class="section-content" id="section-settings">
+        <!-- Tur Pengenalan & Sound/Getar -->
+        <div class="card">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <path d="M21.5 12a9.5 9.5 0 1 1-9.5-9.5"/><polyline points="21.5 2.5 21.5 7.5 16.5 7.5"/>
+            </svg>
+            Tur Pengenalan &amp; Sound/Getar
+          </h2>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Paksa SEMUA user melihat tur pengenalan lagi dan reset Sound &amp; Getar ke default (aktif semua). Berlaku saat user membuka / refresh halaman monitoring.</p>
+          <div class="result-msg" id="resetFreshResult"></div>
+          <button class="btn btn-primary" id="resetFreshBtn" style="width:100%;" onclick="resetFreshAll()">Reset Tur + Sound/Getar untuk Semua User</button>
+        </div>
+
         <!-- Sound Notifikasi -->
         <div class="card">
           <h2>
@@ -9452,6 +9503,39 @@ ${authScript}
           const inp = document.getElementById('promoLimitInput');
           if (inp && data.limit !== null) inp.value = data.limit;
         });
+    }
+
+    // ==================== Reset Tur + Sound/Getar ====================
+    function resetFreshAll() {
+      if (!confirm('Yakin? Semua user akan melihat tur pengenalan lagi dan Sound & Getar direset ke default.')) return;
+      const btn = document.getElementById('resetFreshBtn');
+      const result = document.getElementById('resetFreshResult');
+      btn.disabled = true;
+      const oldText = btn.textContent;
+      btn.textContent = 'Memproses...';
+      adminFetch('/api/admin/reset-fresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          result.className = 'result-msg success';
+          result.textContent = 'Berhasil! Semua user akan dapat tur + reset Sound/Getar saat buka/refresh. (token: ' + data.token + ')';
+        } else {
+          result.className = 'result-msg error';
+          result.textContent = data.error || 'Gagal';
+        }
+      })
+      .catch(err => {
+        result.className = 'result-msg error';
+        result.textContent = 'Error: ' + err.message;
+      })
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = oldText;
+        setTimeout(() => { result.textContent = ''; result.className = 'result-msg'; }, 6000);
+      });
     }
 
     function savePromoLimit() {
@@ -14039,6 +14123,10 @@ app.get('/monitoring', async (_req, res) => {
         <i data-lucide="settings" style="width:14px;height:14px;"></i>
         Setting
       </button>
+      <button class="nav-menu-item" id="adminPanelBtn" style="display:none;" onclick="window.location.href='/admin/users'" title="Panel Admin">
+        <i data-lucide="shield" style="width:14px;height:14px;"></i>
+        Panel Admin
+      </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
         <i data-lucide="log-out" style="width:14px;height:14px;"></i>
@@ -16632,6 +16720,34 @@ app.get('/monitoring', async (_req, res) => {
       window.location.replace('/login');
     }
 
+    // Notif + logout saat session ditendang karena login di perangkat lain
+    function _kickedToLogin() {
+      localStorage.removeItem('goldmonitor_session');
+      try {
+        showConfirm('Anda login di perangkat lain. Sesi di perangkat ini keluar otomatis.', 'Login di Perangkat Lain')
+          .then(function(){ window.location.replace('/login'); });
+        // fallback: redirect otomatis kalau modal tidak ditutup
+        setTimeout(function(){ window.location.replace('/login'); }, 10000);
+      } catch(e) {
+        window.location.replace('/login');
+      }
+    }
+
+    // Cek berkala: kalau session sudah ditendang (login di device lain), beri notif lalu logout
+    setInterval(function() {
+      const session = localStorage.getItem('goldmonitor_session');
+      if (!session) return;
+      fetch('/api/verify-session?session=' + session)
+        .then(r => r.json())
+        .then(data => {
+          if (data.valid) return;
+          if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
+          localStorage.removeItem('goldmonitor_session');
+          window.location.replace('/login');
+        })
+        .catch(() => {}); // jaringan bermasalah — jangan logout paksa
+    }, 30000);
+
     // Check session validity and PIN status on page load
     (function checkSession() {
       const session = localStorage.getItem('goldmonitor_session');
@@ -16644,9 +16760,15 @@ app.get('/monitoring', async (_req, res) => {
         .then(r => r.json())
         .then(data => {
           if (!data.valid) {
+            if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
             localStorage.removeItem('goldmonitor_session');
             window.location.replace('/login');
             return;
+          }
+
+          // Tampilkan tombol Panel Admin di menu untuk admin
+          if (data.isAdmin) {
+            try { document.getElementById('adminPanelBtn').style.display = 'flex'; } catch(e){}
           }
 
           // Proteksi inspect hanya untuk non-admin
