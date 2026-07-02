@@ -5185,8 +5185,8 @@ app.get('/api/verify-session', async (req, res) => {
     const check = await isUserValid(phone)
     if (!check.valid) return res.json({ valid: false, reason: check.reason })
 
-    // Check if user is admin
-    const isAdmin = ADMIN_PHONES.includes(phone)
+    // Check if user is admin (akun internal 'admin' ATAU nomor admin)
+    const isAdmin = phone === 'admin' || ADMIN_PHONES.includes(phone)
 
     res.json({ valid: true, user: check.user, phone, isAdmin })
   } catch (e) {
