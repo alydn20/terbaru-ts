@@ -11783,17 +11783,15 @@ app.get('/monitoring', async (_req, res) => {
       border: 1px solid rgba(247,147,26,0.2);
       border-radius: 12px;
     }
-    /* Limit Badge - kotak stat-item style, absolute kiri */
+    /* Limit/Markup/Spread - kolom badge di kanan jam (in-flow, tidak absolute
+       agar tidak terpotong di layar sempit dan tidak menyisakan ruang kosong di desktop) */
     .limit-markup-group {
       display: flex;
       flex-direction: column;
       gap: 4px;
       align-items: flex-start;
       justify-content: center;
-      position: absolute;
-      right: 0;
-      top: 50%;
-      transform: translateY(-50%);
+      flex: 0 0 auto;
     }
     /* === Overlay badges - shared base === */
     .limit-label, .markup-overlay, .spread-overlay,
@@ -11859,17 +11857,14 @@ app.get('/monitoring', async (_req, res) => {
       letter-spacing: 0.5px;
       margin-bottom: 2px;
     }
-    /* Price High/Low Group - pojok kiri */
+    /* Tertinggi/Terendah - kolom badge di kiri jam (in-flow), rata kanan menempel jam */
     .price-highlow-group {
       display: flex;
       flex-direction: column;
       gap: 4px;
-      align-items: flex-start;
+      align-items: flex-end;
       justify-content: center;
-      position: absolute;
-      left: 0;
-      top: 50%;
-      transform: translateY(-50%);
+      flex: 0 0 auto;
     }
     .price-high-overlay {
       background: rgba(74,222,128,0.09);
@@ -12123,7 +12118,7 @@ app.get('/monitoring', async (_req, res) => {
       flex-direction: row;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 12px;
       margin-top: 4px;
       width: 100%;
       position: relative;
@@ -12131,6 +12126,12 @@ app.get('/monitoring', async (_req, res) => {
     .chart-bottom-row .chart-info-row {
       margin-top: 0;
       flex: none;
+      min-width: 0;
+    }
+    @media (max-width: 768px) {
+      /* Mobile: rapat dan muat satu baris — badge kiri | jam | badge kanan */
+      .chart-bottom-row { gap: 8px; justify-content: center; padding: 0 4px; }
+      .chart-bottom-row .chart-info-row { flex: 0 1 auto; }
     }
     .all-btns-row {
       display: flex;
