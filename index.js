@@ -11217,6 +11217,9 @@ app.get('/monitoring', async (_req, res) => {
       display: inline-flex;
       align-items: center;
     }
+    /* Badge kosong (belum ada perubahan, mis. USD/IDR diam) jangan dirender —
+       di light mode background putihnya kelihatan seperti kapsul kosong */
+    .stat-item .stat-change:empty { display: none !important; }
     /* Dorong badge +/- ke kanan agar mepet ke tepi kotak, bukan ke font harga */
     #buyCard .stat-change, #sellCard .stat-change, #usdIdrCard .stat-change { margin-left: auto; }
     .stat-item .stat-change.up {
@@ -11756,20 +11759,18 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      align-items: center;
+      align-items: stretch; /* semua kartu sebaris sama tinggi walau badge perubahan beda ukuran */
       justify-content: center;
     }
+    .chart-stats > .stat-item { align-content: center; }
     /* Titik ON: label satu baris agar tinggi kotak sama dgn kartu lain */
     #lowestOnCard .stat-label { white-space: nowrap; }
-    /* Desktop: Beli/Jual/USD-IDR menyesuaikan lebar isi (presisi, tanpa ruang kosong) */
+    /* Desktop: semua kartu (Beli/Jual/USD-IDR/Titik ON) seragam lebarnya */
     @media (min-width: 769px) {
-      .chart-stats > #buyCard,
-      .chart-stats > #sellCard,
-      .chart-stats > #usdIdrCard,
-      .chart-stats > #lowestOnCard {
-        flex: 0 0 auto;
-        width: -moz-fit-content;
-        width: fit-content;
+      .chart-stats > .stat-item {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 250px;
       }
     }
     .daily-stats {
@@ -13239,7 +13240,8 @@ app.get('/monitoring', async (_req, res) => {
       .stat-item .stat-label { font-size: 0.58em; }
       .stat-item .stat-value { font-size: 0.95em; }
       .stat-item .stat-change { font-size: 0.62em; padding: 1px 6px; }
-      #buyCard, #sellCard, #usdIdrCard { flex: 0 0 auto; width: -moz-fit-content; width: fit-content; min-width: 0; }
+      /* Mobile: kartu seragam — 2 per baris, lebar sama */
+      .chart-stats > .stat-item { flex: 1 1 calc(50% - 6px); width: auto; min-width: 0; }
       .tradingview-widget-container { height: 400px; }
       .history-section { border-radius: 4px; }
       .history-header { padding: 12px 16px; }
