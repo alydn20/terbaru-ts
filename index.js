@@ -7043,6 +7043,15 @@ app.get('/login', (_req, res) => {
         <p class="subtitle">Pantau harga emas real-time dengan akurat</p>
       </div>
 
+      <!-- Notice: sesi dikeluarkan karena login di perangkat lain -->
+      <div id="kickedNotice" style="display:none;text-align:left;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.35);border-left:3px solid #fbbf24;border-radius:10px;padding:12px 14px;margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:8px;color:#fbbf24;font-weight:700;font-size:0.82em;margin-bottom:4px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Sesi Berakhir — Login di Perangkat Lain
+        </div>
+        <div style="color:#c9a86a;font-size:0.76em;line-height:1.5;">Akun Anda baru saja masuk di perangkat lain. Demi keamanan, maksimal <b>2 perangkat aktif</b> per akun — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali untuk melanjutkan.</div>
+      </div>
+
       <!-- Step Indicator -->
       <div class="step-indicator">
         <div class="step active" id="step1"></div>
@@ -7144,6 +7153,19 @@ app.get('/login', (_req, res) => {
     let currentPhone = '';
     let currentSession = '';
     let userName = '';
+
+    // Tampilkan pemberitahuan bila sesi sebelumnya dikeluarkan karena login di perangkat lain
+    try {
+      const kickedAt = localStorage.getItem('gold_kicked_notice');
+      if (kickedAt) {
+        localStorage.removeItem('gold_kicked_notice');
+        // hanya tampilkan bila kejadiannya belum lama (< 24 jam)
+        if (Date.now() - parseInt(kickedAt, 10) < 24 * 60 * 60 * 1000) {
+          const kn = document.getElementById('kickedNotice');
+          if (kn) kn.style.display = 'block';
+        }
+      }
+    } catch (e) {}
 
     // Check if already logged in
     const existingSession = localStorage.getItem('goldmonitor_session');
@@ -11249,7 +11271,8 @@ app.get('/monitoring', async (_req, res) => {
     #sellCard   { border-top-color: #60a5fa !important; border-left: none !important; }
     #usdIdrCard { border-top-color: #a78bfa !important; border-left: none !important; }
     #promoLimitCard { border-top-color: #f7931a !important; border-left: none !important; }
-    #lowestOnCard   { border-top-color: #34d399 !important; border-left: none !important; }
+    /* Titik ON: border hijau penuh + latar tipis agar serasi dengan kartu lain yang punya glow */
+    #lowestOnCard   { border-color: rgba(52,211,153,0.45) !important; border-top-color: #34d399 !important; border-left: none !important; background: rgba(52,211,153,0.06); box-shadow: 0 0 10px rgba(52,211,153,0.12), 0 2px 8px rgba(0,0,0,0.18); }
     #markupCard     { border-top-color: #fbbf24 !important; border-left: none !important; }
 
     .stat-item.invest {
@@ -13627,6 +13650,9 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode #usdIdrCard { background: #ddd6fe !important; border-color: #8b5cf6 !important; border-top-color: #7c3aed !important; }
     body.light-mode #usdIdrCard .stat-label { color: #4c1d95; }
     body.light-mode #usdIdrCard .stat-value, body.light-mode #usdIdrCard .stat-value * { color: #4c1d95 !important; }
+    body.light-mode #lowestOnCard { background: #d1fae5 !important; border-color: #10b981 !important; border-top-color: #059669 !important; box-shadow: none !important; }
+    body.light-mode #lowestOnCard .stat-label { color: #065f46 !important; }
+    body.light-mode #lowestOnCard .stat-value { color: #065f46 !important; }
     /* Change badge di kotak berwarna — putih agar kontras */
     body.light-mode #buyCard .stat-change, body.light-mode #sellCard .stat-change, body.light-mode #usdIdrCard .stat-change { background: #fff !important; }
     body.light-mode #buyCard .stat-change.up, body.light-mode #sellCard .stat-change.up, body.light-mode #usdIdrCard .stat-change.up { color: #15803d !important; border-color: #86efac !important; }
@@ -16845,11 +16871,12 @@ app.get('/monitoring', async (_req, res) => {
     // Notif + logout saat session ditendang karena login di perangkat lain
     function _kickedToLogin() {
       localStorage.removeItem('goldmonitor_session');
+      try { localStorage.setItem('gold_kicked_notice', String(Date.now())); } catch(e) {}
       try {
-        showConfirm('Anda login di perangkat lain. Sesi di perangkat ini keluar otomatis.', 'Login di Perangkat Lain')
+        showConfirm('Akun Anda baru saja login di perangkat lain. Demi keamanan, maksimal 2 perangkat aktif — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali jika ingin memakai perangkat ini.', 'Login di Perangkat Lain')
           .then(function(){ window.location.replace('/login'); });
         // fallback: redirect otomatis kalau modal tidak ditutup
-        setTimeout(function(){ window.location.replace('/login'); }, 10000);
+        setTimeout(function(){ window.location.replace('/login'); }, 12000);
       } catch(e) {
         window.location.replace('/login');
       }
