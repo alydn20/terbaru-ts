@@ -10914,7 +10914,7 @@ app.get('/monitoring', async (_req, res) => {
       background: rgba(8, 8, 8, 0.92);
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
-      border-radius: 12px;
+      border-radius: 4px;
       border: 1px solid rgba(255,255,255,0.07);
       box-shadow: 0 2px 16px rgba(0,0,0,0.25);
       transition: background 0.3s ease, border-color 0.3s ease;
@@ -11134,7 +11134,7 @@ app.get('/monitoring', async (_req, res) => {
       row-gap: 0;
       padding: 5px 9px;
       background: #0d0d0d;
-      border-radius: 10px;
+      border-radius: 4px;
       border: 1px solid rgba(255,255,255,0.07);
       border-top: 2px solid rgba(255,255,255,0.15);
       box-shadow: 0 2px 8px rgba(0,0,0,0.18);
@@ -11349,8 +11349,6 @@ app.get('/monitoring', async (_req, res) => {
       right: 0;
       bottom: 0;
       background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       z-index: 9999;
       display: none;
       align-items: center;
@@ -11360,13 +11358,12 @@ app.get('/monitoring', async (_req, res) => {
     .display-settings-overlay {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
       z-index: 10000; display: none; align-items: center; justify-content: center;
       padding: 16px;
     }
     .display-settings-overlay.active { display: flex; }
     .display-settings-modal {
-      background: rgba(14,20,30,0.92);
+      background: rgba(10,10,10,0.92);
       backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
       border-radius: 18px;
       border: 1px solid rgba(255,255,255,0.12);
@@ -11380,7 +11377,7 @@ app.get('/monitoring', async (_req, res) => {
       display: flex; align-items: center; gap: 8px;
       padding: 18px 20px 14px; margin: 0;
       position: sticky; top: 0; z-index: 1;
-      background: rgba(14,20,30,0.95);
+      background: rgba(10,10,10,0.95);
       border-bottom: 1px solid rgba(255,255,255,0.08);
     }
     .display-settings-close {
@@ -11396,7 +11393,7 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .display-settings-close { background: #f3f4f6; border-color: #e0e0e0; color: #6b7280; }
     body.light-mode .display-settings-close:hover { background: #e5e7eb; color: #1f2937; }
     .nominal-modal {
-      background: rgba(14,20,30,0.85);
+      background: rgba(10,10,10,0.85);
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
       border-radius: 20px;
@@ -11496,7 +11493,7 @@ app.get('/monitoring', async (_req, res) => {
     /* Chart Section */
     .chart-section {
       background: #0d0d0d;
-      border-radius: 16px 16px 0 0;
+      border-radius: 4px 4px 0 0;
       border: 1px solid rgba(255,255,255,0.07);
       margin-bottom: 20px;
       box-shadow: 0 4px 24px rgba(0,0,0,0.3);
@@ -11526,7 +11523,7 @@ app.get('/monitoring', async (_req, res) => {
       padding: 14px 18px;
       background: #0a0a0a;
       border-bottom: 1px solid rgba(255,255,255,0.06);
-      border-radius: 16px 16px 0 0;
+      border-radius: 4px 4px 0 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -11641,25 +11638,31 @@ app.get('/monitoring', async (_req, res) => {
       padding: 4px 12px;
       border-radius: 20px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 800;
+      letter-spacing: 0.6px;
       background: rgba(255,255,255,0.05);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.1);
       color: #888;
       margin-left: 8px;
     }
+    /* ON: hijau mengkilap (gradasi + highlight atas) dengan kedip glow rapi */
     .promo-status-badge.on {
-      background: rgba(0,200,83,0.1);
-      border-color: rgba(0,200,83,0.3);
-      border-top-color: rgba(0,200,83,0.5);
-      color: #00c853;
-      box-shadow: 0 0 12px rgba(0,200,83,0.15), inset 0 1px 0 rgba(0,200,83,0.15);
-      animation: promoGlow 1.5s ease-in-out infinite;
+      background: linear-gradient(180deg, #00e676 0%, #00c853 48%, #00993f 100%);
+      border: 1px solid rgba(0,230,118,0.9);
+      color: #ffffff;
+      text-shadow: 0 1px 2px rgba(0,80,30,0.55);
+      box-shadow: 0 0 14px rgba(0,230,118,0.5), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5);
+      animation: promoBlinkOn 1.6s ease-in-out infinite;
     }
+    /* OFF: merah mengkilap dengan kedip glow rapi */
     .promo-status-badge.off {
-      background: rgba(255,82,82,0.1);
-      border-color: rgba(255,82,82,0.25);
-      color: #ff5252;
+      background: linear-gradient(180deg, #ff6b6b 0%, #f43b3b 48%, #c62828 100%);
+      border: 1px solid rgba(255,107,107,0.9);
+      color: #ffffff;
+      text-shadow: 0 1px 2px rgba(100,10,10,0.55);
+      box-shadow: 0 0 14px rgba(244,59,59,0.5), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.45);
+      animation: promoBlinkOff 1.6s ease-in-out infinite;
     }
     .promo-dot {
       width: 8px;
@@ -11667,20 +11670,23 @@ app.get('/monitoring', async (_req, res) => {
       border-radius: 50%;
       background: #888;
     }
-    .promo-status-badge.on .promo-dot {
-      background: #00c853;
-      animation: promoPulse 1s ease-in-out infinite;
-    }
+    .promo-status-badge.on .promo-dot,
     .promo-status-badge.off .promo-dot {
-      background: #ff5252;
+      background: radial-gradient(circle at 35% 30%, #ffffff 0%, rgba(255,255,255,0.85) 35%, rgba(255,255,255,0.45) 100%);
+      box-shadow: 0 0 6px rgba(255,255,255,0.9);
+      animation: promoPulse 1s ease-in-out infinite;
     }
     @keyframes promoPulse {
       0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.3); opacity: 0.7; }
+      50% { transform: scale(1.35); opacity: 0.65; }
     }
-    @keyframes promoGlow {
-      0%, 100% { box-shadow: 0 0 5px rgba(0,200,83,0.3); }
-      50% { box-shadow: 0 0 15px rgba(0,200,83,0.5); }
+    @keyframes promoBlinkOn {
+      0%, 100% { box-shadow: 0 0 8px rgba(0,230,118,0.35), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5); filter: brightness(1); }
+      50% { box-shadow: 0 0 22px rgba(0,230,118,0.85), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5); filter: brightness(1.18); }
+    }
+    @keyframes promoBlinkOff {
+      0%, 100% { box-shadow: 0 0 8px rgba(244,59,59,0.35), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.45); filter: brightness(1); }
+      50% { box-shadow: 0 0 22px rgba(244,59,59,0.85), 0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.45); filter: brightness(1.18); }
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; }
@@ -11758,7 +11764,7 @@ app.get('/monitoring', async (_req, res) => {
       align-items: center;
       gap: 8px;
       padding: 8px 14px;
-      background: rgba(15, 20, 25, 0.8);
+      background: rgba(12, 12, 12, 0.8);
       border-radius: 10px;
       font-size: 0.85em;
       border: 1px solid rgba(255,255,255,0.05);
@@ -11803,7 +11809,7 @@ app.get('/monitoring', async (_req, res) => {
       font-size: 0.78em;
       font-weight: 600;
       padding: 5px 9px;
-      border-radius: 8px;
+      border-radius: 4px;
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       box-shadow: 0 2px 8px rgba(0,0,0,0.25);
@@ -11911,7 +11917,7 @@ app.get('/monitoring', async (_req, res) => {
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.1);
       border-left: 3px solid rgba(255,255,255,0.18);
-      border-radius: 10px;
+      border-radius: 4px;
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
       transition: border-color 0.3s ease, background-color 0.3s ease;
@@ -12249,16 +12255,14 @@ app.get('/monitoring', async (_req, res) => {
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.45);
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
+      background: rgba(0,0,0,0.55);
       z-index: 1000;
       align-items: center;
       justify-content: center;
     }
     .promo-suggestions-overlay.active { display: flex; }
     .promo-suggestions-modal {
-      background: rgba(14,20,30,0.85);
+      background: rgba(10,10,10,0.85);
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
       border: 1px solid rgba(255,255,255,0.12);
@@ -12324,6 +12328,25 @@ app.get('/monitoring', async (_req, res) => {
       color: #6b7280;
     }
     .promo-card-meta span { display: flex; align-items: center; gap: 3px; }
+    .promo-copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.35);
+      color: #22c55e;
+      border-radius: 7px;
+      padding: 4px 10px;
+      font-size: 0.7em;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .promo-copy-btn:hover { background: rgba(34,197,94,0.2); }
+    .promo-copy-btn.copied { background: rgba(34,197,94,0.85); color: #fff; border-color: rgba(34,197,94,0.9); }
+    body.light-mode .promo-copy-btn { background: #dcfce7; border-color: #86efac; color: #15803d; }
+    body.light-mode .promo-copy-btn.copied { background: #22c55e; color: #fff; border-color: #16a34a; }
     .promo-empty {
       text-align: center;
       color: #6b7280;
@@ -12386,6 +12409,28 @@ app.get('/monitoring', async (_req, res) => {
     .news-values .actual { color: #22c55e; font-weight: 700; }
     .news-section-label { font-size: 0.7em; font-weight: 700; color: #fbbf24; text-transform: uppercase; letter-spacing: 0.08em; margin: 12px 0 6px; }
     .news-empty { text-align: center; color: #6b7280; font-size: 0.85em; padding: 20px; }
+    .news-past-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      margin-top: 12px;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.15);
+      border-radius: 10px;
+      color: #8b949e;
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .news-past-toggle:hover { background: rgba(255,255,255,0.08); color: #d1d4dc; }
+    body.light-mode .news-past-toggle { background: #f9fafb; border-color: #d1d5db; color: #6b7280; }
+    body.light-mode .news-past-toggle:hover { background: #f3f4f6; color: #374151; }
     .news-filter-row { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
     .news-filter-btn { background: rgba(255,255,255,0.05); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); border-top: 1px solid rgba(255,255,255,0.18); color: #9ca3af; border-radius: 8px; padding: 4px 10px; font-size: 0.72em; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.06); }
     .news-filter-btn:hover { background: rgba(255,255,255,0.09); color: #d1d4dc; box-shadow: 0 0 10px rgba(255,255,255,0.05); }
@@ -12400,8 +12445,6 @@ app.get('/monitoring', async (_req, res) => {
       width: 100%;
       height: 100%;
       background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       z-index: 9999;
       justify-content: center;
       align-items: center;
@@ -12411,17 +12454,17 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
     }
     .indicator-settings-modal {
-      background: rgba(14,20,30,0.88);
+      background: rgba(10,10,10,0.88);
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
       border-radius: 20px;
-      border: 1px solid rgba(59,130,246,0.2);
-      border-top: 1px solid rgba(59,130,246,0.4);
+      border: 1px solid rgba(247,147,26,0.2);
+      border-top: 1px solid rgba(247,147,26,0.4);
       max-width: 500px;
       width: 100%;
       max-height: 90vh;
       overflow-y: auto;
-      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 40px rgba(59,130,246,0.05), inset 0 1px 0 rgba(59,130,246,0.12);
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 40px rgba(247,147,26,0.05), inset 0 1px 0 rgba(247,147,26,0.12);
     }
     .indicator-settings-header {
       padding: 20px 24px;
@@ -12431,12 +12474,12 @@ app.get('/monitoring', async (_req, res) => {
       align-items: center;
       position: sticky;
       top: 0;
-      background: rgba(14,20,30,0.92);
+      background: rgba(10,10,10,0.92);
       backdrop-filter: blur(20px);
       border-radius: 20px 20px 0 0;
     }
     .indicator-settings-header h3 {
-      color: #3b82f6;
+      color: #f7931a;
       font-size: 1.1em;
       font-weight: 700;
       display: flex;
@@ -12500,6 +12543,21 @@ app.get('/monitoring', async (_req, res) => {
       color: #8b949e;
       font-size: 0.75em;
     }
+    .ind-rec-badge {
+      font-size: 0.62em;
+      font-weight: 700;
+      color: #f7931a;
+      background: rgba(247,147,26,0.12);
+      border: 1px solid rgba(247,147,26,0.3);
+      border-radius: 5px;
+      padding: 2px 6px;
+      margin-left: 7px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      vertical-align: 1px;
+      white-space: nowrap;
+    }
+    body.light-mode .ind-rec-badge { background: #fff7ed; border-color: #fdba74; color: #c2700f; }
     .indicator-toggle {
       position: relative;
       width: 44px;
@@ -12560,16 +12618,16 @@ app.get('/monitoring', async (_req, res) => {
       box-shadow: 0 0 12px rgba(255,255,255,0.06);
     }
     .indicator-settings-footer .apply-btn {
-      background: rgba(59,130,246,0.15);
+      background: rgba(247,147,26,0.15);
       backdrop-filter: blur(10px);
-      border: 1px solid rgba(59,130,246,0.35);
-      border-top: 1px solid rgba(59,130,246,0.55);
-      color: #60a5fa;
-      box-shadow: 0 4px 14px rgba(59,130,246,0.15), inset 0 1px 0 rgba(59,130,246,0.15);
+      border: 1px solid rgba(247,147,26,0.35);
+      border-top: 1px solid rgba(247,147,26,0.55);
+      color: #f7931a;
+      box-shadow: 0 4px 14px rgba(247,147,26,0.15), inset 0 1px 0 rgba(247,147,26,0.15);
     }
     .indicator-settings-footer .apply-btn:hover {
-      background: rgba(59,130,246,0.25);
-      box-shadow: 0 0 18px rgba(59,130,246,0.25), inset 0 1px 0 rgba(59,130,246,0.2);
+      background: rgba(247,147,26,0.25);
+      box-shadow: 0 0 18px rgba(247,147,26,0.25), inset 0 1px 0 rgba(247,147,26,0.2);
     }
 
     /* Indicator Guide Modal */
@@ -12581,8 +12639,6 @@ app.get('/monitoring', async (_req, res) => {
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       z-index: 9999;
       justify-content: center;
       align-items: center;
@@ -12593,7 +12649,7 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
     }
     .indicator-modal {
-      background: rgba(14,20,30,0.85);
+      background: rgba(10,10,10,0.85);
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
       border-radius: 20px;
@@ -12613,7 +12669,7 @@ app.get('/monitoring', async (_req, res) => {
       align-items: center;
       position: sticky;
       top: 0;
-      background: rgba(14,20,30,0.9);
+      background: rgba(10,10,10,0.9);
       backdrop-filter: blur(20px);
       border-radius: 20px 20px 0 0;
     }
@@ -12722,8 +12778,6 @@ app.get('/monitoring', async (_req, res) => {
       width: 100%;
       height: 100%;
       background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       z-index: 9999;
       justify-content: center;
       align-items: center;
@@ -12733,7 +12787,7 @@ app.get('/monitoring', async (_req, res) => {
       display: flex;
     }
     .calc-modal {
-      background: rgba(14,20,30,0.88);
+      background: rgba(10,10,10,0.88);
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
       border-radius: 24px;
@@ -12984,7 +13038,7 @@ app.get('/monitoring', async (_req, res) => {
     .history-table-wrap { overflow-x: auto; }
     .history-section {
       background: #0d0d0d;
-      border-radius: 16px;
+      border-radius: 4px;
       border: 1px solid rgba(255,255,255,0.07);
       overflow: hidden;
       box-shadow: 0 4px 24px rgba(0,0,0,0.3);
@@ -13147,24 +13201,24 @@ app.get('/monitoring', async (_req, res) => {
         padding: 0 8px;
         gap: 6px;
         margin-bottom: 10px;
-        border-radius: 10px;
+        border-radius: 4px;
       }
       .header-search-wrap { max-width: 110px; padding: 4px 8px; font-size: 0.75em; }
       .nav-icon-btn { width: 28px; height: 28px; }
       .header-logo { width: 28px; height: 28px; border-radius: 6px; }
-      .chart-section { margin-bottom: 16px; border-radius: 14px 14px 0 0; }
-      .chart-header { padding: 10px 14px; gap: 6px; border-radius: 14px 14px 0 0; }
+      .chart-section { margin-bottom: 16px; border-radius: 4px 4px 0 0; }
+      .chart-header { padding: 10px 14px; gap: 6px; border-radius: 4px 4px 0 0; }
       .chart-stats { gap: 6px; }
-      .chart-info-row { padding: 8px 12px; margin-top: 8px; border-radius: 8px; }
+      .chart-info-row { padding: 8px 12px; margin-top: 8px; border-radius: 4px; }
       .info-time { font-size: 1.2em; }
       .info-date { font-size: 0.75em; }
-      .stat-item { padding: 8px 12px; border-radius: 10px; column-gap: 7px; row-gap: 1px; }
+      .stat-item { padding: 8px 12px; border-radius: 4px; column-gap: 7px; row-gap: 1px; }
       .stat-item .stat-label { font-size: 0.58em; }
       .stat-item .stat-value { font-size: 0.95em; }
       .stat-item .stat-change { font-size: 0.62em; padding: 1px 6px; }
       #buyCard, #sellCard, #usdIdrCard { flex: 0 0 auto; width: -moz-fit-content; width: fit-content; min-width: 0; }
       .tradingview-widget-container { height: 400px; }
-      .history-section { border-radius: 14px; }
+      .history-section { border-radius: 4px; }
       .history-header { padding: 12px 16px; }
       .history-table th { padding: 8px; font-size: 0.68em; }
       .history-table td { padding: 10px 8px; font-size: 0.82em; }
@@ -13180,7 +13234,7 @@ app.get('/monitoring', async (_req, res) => {
         padding: 0 6px;
         gap: 5px;
         margin-bottom: 10px;
-        border-radius: 10px;
+        border-radius: 4px;
       }
       .header-search-wrap { max-width: 90px; padding: 4px 7px; }
       .nav-icon-btn { width: 26px; height: 26px; }
@@ -13308,7 +13362,7 @@ app.get('/monitoring', async (_req, res) => {
         font-size: 0.58em;
       }
 
-      .history-section { border-radius: 14px; margin-top: 0; }
+      .history-section { border-radius: 4px; margin-top: 0; }
       .history-header { padding: 10px 14px; flex-wrap: wrap; gap: 6px; }
       .history-header h2 { font-size: 0.82em; }
       .history-header h2 svg { width: 11px; height: 11px; }
@@ -13598,8 +13652,9 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .spread-overlay { background: #bbf7d0; border-color: #22c55e; box-shadow: none; }
     body.light-mode .spread-overlay-text { color: #14532d; font-weight: 600; }
     body.light-mode #spreadPercent { color: #14532d; font-weight: 700; }
-    body.light-mode .promo-status-badge.off { background: #fecaca; border-color: #ef4444; color: #7f1d1d; }
-    body.light-mode .promo-status-badge.on { background: #bbf7d0; border-color: #22c55e; color: #14532d; box-shadow: none; }
+    /* Badge ON/OFF di light mode tetap glossy — gradasi sama dengan dark mode */
+    body.light-mode .promo-status-badge.off { box-shadow: 0 0 12px rgba(244,59,59,0.4), 0 2px 6px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.45); }
+    body.light-mode .promo-status-badge.on { box-shadow: 0 0 12px rgba(0,230,118,0.4), 0 2px 6px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); }
     body.light-mode .limit-label { background: #fed7aa; border-color: #f97316; box-shadow: none; }
     body.light-mode .limit-label .limit-text { color: #7c2d12; font-weight: 600; }
     body.light-mode .limit-label #promoLimitValue { color: #7c2d12; font-weight: 700; }
@@ -13638,8 +13693,9 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .indicator-settings-footer { border-color: #e5e7eb; }
     body.light-mode .indicator-settings-footer .cancel-btn { background: #fff; border-color: #d1d5db; color: #374151; box-shadow: none; }
     body.light-mode .indicator-settings-footer .cancel-btn:hover { background: #f5f5f5; color: #111; box-shadow: none; }
-    body.light-mode .indicator-settings-footer .apply-btn { background: #dbeafe; border-color: #3b82f6; border-top-color: #2563eb; color: #1e3a8a; box-shadow: none; }
-    body.light-mode .indicator-settings-footer .apply-btn:hover { background: #bfdbfe; box-shadow: none; }
+    body.light-mode .indicator-settings-footer .apply-btn { background: #fff7ed; border-color: #f7931a; border-top-color: #e8850f; color: #c2700f; box-shadow: none; }
+    body.light-mode .indicator-settings-footer .apply-btn:hover { background: #ffedd5; box-shadow: none; }
+    body.light-mode .indicator-settings-header h3 { color: #c2700f; }
     body.light-mode .sound-toggle-header { background: #bbf7d0; border-color: #22c55e; border-top-color: #16a34a; box-shadow: 0 2px 6px rgba(22,163,74,0.2); }
     body.light-mode .sound-toggle-header svg { color: #14532d; }
     body.light-mode .sound-toggle-header.partial { background: #fef3c7; border-color: #f59e0b; border-top-color: #d97706; box-shadow: 0 2px 6px rgba(217,119,6,0.2); }
@@ -13705,8 +13761,8 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .promo-suggestions-overlay { background: rgba(15,23,42,0.28); }
     body.light-mode .promo-suggestions-modal { background: #fff; border-color: #e0e0e0; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
     body.light-mode .promo-suggestions-modal h3 { color: #111; }
-    body.light-mode .promo-card { background: #f9fafb; border-color: #e0e0e0; border-top-color: #e0e0e0; box-shadow: none; }
-    body.light-mode .promo-card:hover { background: #f3f4f6; }
+    body.light-mode .promo-card { background: #ffffff; border-color: #e5e7eb; border-top-color: #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    body.light-mode .promo-card:hover { background: #fafafa; }
     body.light-mode .promo-card-code { color: #15803d; background: #dcfce7; border-color: #86efac; }
     body.light-mode .promo-card-name { color: #111; }
     body.light-mode .promo-card-desc { color: #374151; }
@@ -13714,7 +13770,7 @@ app.get('/monitoring', async (_req, res) => {
     body.light-mode .promo-empty { color: #6b7280; }
 
     /* News modal (Forex Factory) — solid */
-    body.light-mode .news-card { background: #f9fafb; border-color: #e0e0e0; border-top-color: #e0e0e0; box-shadow: none; }
+    body.light-mode .news-card { background: #ffffff; border-color: #e5e7eb; border-top-color: #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     body.light-mode .news-card.impact-high { border-left: 3px solid #ef4444; box-shadow: none; }
     body.light-mode .news-card.impact-medium { border-left: 3px solid #f97316; box-shadow: none; }
     body.light-mode .news-card.impact-low { border-left: 3px solid #9ca3af; }
@@ -13852,7 +13908,6 @@ app.get('/monitoring', async (_req, res) => {
       width: 100%;
       height: 100%;
       background: rgba(0,0,0,0.85);
-      backdrop-filter: blur(8px);
       align-items: center;
       justify-content: center;
       z-index: 9999;
@@ -13999,7 +14054,7 @@ app.get('/monitoring', async (_req, res) => {
         <button class="indicator-modal-close" onclick="closeIndicatorSettings()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div class="indicator-settings-body">
-        <p class="hint">Aktifkan indikator yang ingin ditampilkan di chart. Perubahan memerlukan refresh halaman.</p>
+        <p class="hint">Aktifkan indikator yang ingin ditampilkan di chart. Setiap indikator memakai parameter standar terbaiknya (BB 20/2, RSI 14, MACD 12-26-9, Stochastic 14-3-3, ATR 14). Kombinasi berlabel <b style="color:#f7931a;">Rekomendasi</b> paling pas untuk memantau emas. Perubahan memerlukan refresh halaman.</p>
         <div class="indicator-list" id="indicatorList"></div>
       </div>
       <div class="indicator-settings-footer">
@@ -14744,12 +14799,15 @@ app.get('/monitoring', async (_req, res) => {
           const metaLine = meta.length
             ? '<div class="promo-card-meta" style="font-size:11px;color:#6b7280;margin-top:4px;">' + meta.join(' &middot; ') + '</div>'
             : '';
+          const copyBtn = p.code
+            ? '<button class="promo-copy-btn" onclick="copyPromoCode(&apos;' + p.code + '&apos;, this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Salin kode</button>'
+            : '';
           return '<div class="promo-card">' +
             img +
             '<div class="promo-card-name">' + (p.name || 'Promo Aktif') + '</div>' +
             desc +
             metaLine +
-            link +
+            '<div style="display:flex;align-items:center;gap:10px;margin-top:6px;">' + copyBtn + link + '</div>' +
           '</div>';
         }).join('');
       }
@@ -14772,6 +14830,31 @@ app.get('/monitoring', async (_req, res) => {
       } else if (btnEl) {
         btnEl.classList.remove('has-new');
       }
+    }
+
+    function copyPromoCode(code, btn) {
+      const done = function() {
+        const old = btn.innerHTML;
+        btn.classList.add('copied');
+        btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Tersalin!';
+        setTimeout(function(){ btn.classList.remove('copied'); btn.innerHTML = old; }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(done).catch(function(){ _copyFallback(code); done(); });
+      } else {
+        _copyFallback(code); done();
+      }
+    }
+    function _copyFallback(text) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch(e){}
     }
 
     function openPromoSuggestions() {
@@ -14937,8 +15020,15 @@ app.get('/monitoring', async (_req, res) => {
       if (today.length > 0) { html += '<div class="news-section-label">'+_svgPin+'Hari Ini — '+_fmtDayDate(nowWIB)+' ('+today.length+')</div>'+today.map(ev=>_renderNewsCard(ev,nowMs,true)).join(''); }
       Object.entries(futureByDay).forEach(([d,evs]) => { html += '<div class="news-section-label">'+_svgCalDays+d+' ('+evs.length+')</div>'+evs.map(ev=>_renderNewsCard(ev,nowMs,false)).join(''); });
       if (Object.keys(pastByDay).length > 0) {
-        html += '<div class="news-section-label" style="opacity:0.5;margin-top:12px;">— Sudah Lewat —</div>';
-        Object.entries(pastByDay).forEach(([d,evs]) => { html += '<div class="news-section-label">'+_svgCalDays+d+' ('+evs.length+')</div>'+evs.map(ev=>_renderNewsCard(ev,nowMs,false)).join(''); });
+        // Bagian "Sudah Lewat" dilipat default — klik untuk buka/tutup, biar panel tidak panjang
+        const pastCount = past.length;
+        let pastHtml = '';
+        Object.entries(pastByDay).forEach(([d,evs]) => { pastHtml += '<div class="news-section-label">'+_svgCalDays+d+' ('+evs.length+')</div>'+evs.map(ev=>_renderNewsCard(ev,nowMs,false)).join(''); });
+        html += '<button class="news-past-toggle" onclick="var b=document.getElementById(&apos;newsPastBody&apos;);var open=b.style.display!==&apos;none&apos;;b.style.display=open?&apos;none&apos;:&apos;block&apos;;this.querySelector(&apos;.chev&apos;).style.transform=open?&apos;&apos;:&apos;rotate(180deg)&apos;;">'+
+          '— Sudah Lewat ('+pastCount+') —'+
+          '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>'+
+        '</button>';
+        html += '<div id="newsPastBody" style="display:none;">' + pastHtml + '</div>';
       }
       body.innerHTML = html || '<div class="news-empty">Tidak ada event minggu ini</div>';
     }
@@ -15091,14 +15181,16 @@ app.get('/monitoring', async (_req, res) => {
 
       // Build list HTML
       let html = '';
+      const RECOMMENDED_IND = ['ma', 'bb', 'vwap']; // kombinasi default terbaik untuk pantau emas
       Object.values(ALL_INDICATORS).forEach(ind => {
         const isActive = activeIndicators.includes(ind.id);
         tempIndicatorState[ind.id] = isActive;
+        const recBadge = RECOMMENDED_IND.includes(ind.id) ? '<span class="ind-rec-badge">Rekomendasi</span>' : '';
         html += '<div class="indicator-item ' + (isActive ? 'active' : '') + '" data-id="' + ind.id + '">' +
           '<div class="indicator-item-info">' +
             '<div class="indicator-item-color" style="background:' + ind.color + '"></div>' +
             '<div class="indicator-item-details">' +
-              '<h5>' + ind.name + '</h5>' +
+              '<h5>' + ind.name + recBadge + '</h5>' +
               '<span>' + ind.desc + '</span>' +
             '</div>' +
           '</div>' +
