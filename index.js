@@ -335,13 +335,27 @@ let nominalSettingsCache = null
 
 // Cache markup settings dari Redis
 let markupSettingsCache = { minMargin: 0.7, maxMargin: 2.0 }
-let themeCache = { bg1: '#06101e', bg2: '#091628', bg3: '#0c1a32', card: '#0e1b2e', header: '#070d1a' }
+// Cache fresh token di memory — endpoint /api/fresh-token dipanggil setiap page load,
+// jangan sampai membebani/menunggu Redis (yang kadang timeout).
+let freshTokenCache = DEFAULT_FRESH_TOKEN
+async function loadFreshToken() {
+  try {
+    const t = await redis.get(REDIS_KEYS.FRESH_TOKEN)
+    if (t) freshTokenCache = t
+  } catch (e) {}
+}
+loadFreshToken()
+setInterval(loadFreshToken, 5 * 60 * 1000)
+
+let themeCache = { bg1: '#000000', bg2: '#000000', bg3: '#000000', card: '#0a0a0a', header: '#000000' }
 
 async function loadThemeSettings() {
   try {
     const val = await redis.get(REDIS_KEYS.THEME_SETTINGS)
     if (val) {
       const parsed = typeof val === 'string' ? JSON.parse(val) : val
+      // Migrasi: tema navy lama (default sebelumnya, terlihat biru) → hitam pekat
+      if (parsed.bg1 && parsed.bg1.toLowerCase() === '#06101e') return
       if (parsed.bg1) {
         themeCache = parsed
         if (!themeCache.header) themeCache.header = themeCache.bg1 // backwards compat
@@ -6160,16 +6174,10 @@ app.get('/api/admin/wa-status', async (req, res) => {
 
 // Public: token "fresh" — client membandingkan dengan yang tersimpan di localStorage.
 // Kalau beda → client tampilkan tur pengenalan lagi + reset Sound & Getar ke default.
-app.get('/api/fresh-token', async (_req, res) => {
+app.get('/api/fresh-token', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-  let token = DEFAULT_FRESH_TOKEN
-  try {
-    const t = await redis.get(REDIS_KEYS.FRESH_TOKEN)
-    if (t) token = t
-  } catch (e) {
-    console.error(`[${new Date().toISOString()}] [FRESH_TOKEN_READ_ERROR]`, e)
-  }
-  res.json({ token })
+  // Dilayani dari memory (freshTokenCache) — tidak menyentuh Redis di jalur panas
+  res.json({ token: freshTokenCache })
 })
 
 // Admin: paksa SEMUA user dapat tur + reset Sound & Getar sekali lagi (set token baru).
@@ -6180,6 +6188,7 @@ app.post('/api/admin/reset-fresh', express.json(), async (req, res) => {
   try {
     const token = 'r' + Date.now().toString(36)
     await redis.set(REDIS_KEYS.FRESH_TOKEN, token)
+    freshTokenCache = token
     console.log(`[${new Date().toISOString()}] [ADMIN_RESET_FRESH] token=${token} — semua user akan dapat tur + reset sound/getar`)
     pushLog(`🔄 Admin reset FRESH — token baru ${token}. Semua user akan dapat tur pengenalan + reset Sound & Getar.`)
     res.json({ success: true, token })
@@ -6712,7 +6721,7 @@ app.get('/login', (_req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0a0e13">
+  <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.png">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
@@ -6721,7 +6730,7 @@ app.get('/login', (_req, res) => {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(145deg, #0a0e13 0%, #131921 50%, #0f1419 100%);
+      background: #000000;
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -6755,7 +6764,7 @@ app.get('/login', (_req, res) => {
       z-index: 1;
     }
     .card {
-      background: rgba(13, 21, 37, 0.72);
+      background: rgba(10, 10, 10, 0.85);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       border-radius: 16px;
@@ -6796,7 +6805,7 @@ app.get('/login', (_req, res) => {
       padding: 14px 16px;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 10px;
-      background: rgba(10, 17, 32, 0.7);
+      background: rgba(12, 12, 12, 0.9);
       color: #e6edf3;
       font-size: 1em;
       font-family: 'JetBrains Mono', monospace;
@@ -6806,7 +6815,7 @@ app.get('/login', (_req, res) => {
     .form-group input:focus {
       outline: none;
       border-color: #f7931a;
-      background: rgba(10, 17, 32, 1);
+      background: #0c0c0c;
       box-shadow: 0 0 0 3px rgba(247,147,26,0.15);
     }
     .form-group input::placeholder { color: #4a5568; }
@@ -6898,7 +6907,7 @@ app.get('/login', (_req, res) => {
       font-weight: 700;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 10px;
-      background: rgba(10, 17, 32, 0.7);
+      background: rgba(12, 12, 12, 0.9);
       color: #f7931a;
       font-family: 'JetBrains Mono', monospace;
       transition: all 0.2s ease;
@@ -6906,7 +6915,7 @@ app.get('/login', (_req, res) => {
     .pin-input:focus {
       outline: none;
       border-color: #f7931a;
-      background: rgba(10, 17, 32, 1);
+      background: #0c0c0c;
       box-shadow: 0 0 0 3px rgba(247,147,26,0.15);
     }
     .pin-hint {
@@ -8696,6 +8705,7 @@ ${authScript}
           <div class="result-msg" id="themeResult"></div>
           <p style="color:#6b7280;font-size:0.78em;margin-bottom:8px;font-weight:600;">Preset Cepat:</p>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:16px;">
+            <button onclick="applyThemePreset(\'black\')" style="border:1px solid rgba(255,255,255,0.15);border-radius:7px;padding:0;overflow:hidden;cursor:pointer;"><div style="background:#000000;height:40px;display:flex;align-items:center;justify-content:center;font-size:0.72em;color:#d0d0d0;font-weight:600;">Hitam</div></button>
             <button onclick="applyThemePreset(\'navy\')" style="border:none;border-radius:7px;padding:0;overflow:hidden;cursor:pointer;"><div style="background:linear-gradient(160deg,#06101e,#091628,#0c1a32);height:40px;display:flex;align-items:center;justify-content:center;font-size:0.72em;color:#c4d0df;font-weight:600;">Navy</div></button>
             <button onclick="applyThemePreset(\'purple\')" style="border:none;border-radius:7px;padding:0;overflow:hidden;cursor:pointer;"><div style="background:linear-gradient(160deg,#0d0618,#130a2a,#1a0f3d);height:40px;display:flex;align-items:center;justify-content:center;font-size:0.72em;color:#c4bfe8;font-weight:600;">Purple</div></button>
             <button onclick="applyThemePreset(\'green\')" style="border:none;border-radius:7px;padding:0;overflow:hidden;cursor:pointer;"><div style="background:linear-gradient(160deg,#061209,#091a0e,#0c2218);height:40px;display:flex;align-items:center;justify-content:center;font-size:0.72em;color:#a7d9b0;font-weight:600;">Green</div></button>
@@ -9632,6 +9642,7 @@ ${authScript}
 
     // ==================== Theme Settings Functions ====================
     const _THEME_PRESETS = {
+      black:    { bg1: '#000000', bg2: '#000000', bg3: '#000000', card: '#0a0a0a', header: '#000000' },
       navy:     { bg1: '#06101e', bg2: '#091628', bg3: '#0c1a32', card: '#0e1b2e', header: '#070d1a' },
       purple:   { bg1: '#0d0618', bg2: '#130a2a', bg3: '#1a0f3d', card: '#160d2e', header: '#0a0414' },
       green:    { bg1: '#061209', bg2: '#091a0e', bg3: '#0c2218', card: '#0a1c0e', header: '#040e06' },
@@ -10800,7 +10811,7 @@ app.get('/monitoring', async (_req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0a0e13">
+  <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Treasury Price">
@@ -10817,11 +10828,11 @@ app.get('/monitoring', async (_req, res) => {
     [data-lucide] { display: inline-flex; vertical-align: middle; flex-shrink: 0; }
 
     :root {
-      --bg-page: linear-gradient(160deg, #06101e 0%, #091628 50%, #0c1a32 100%);
-      --bg-header: rgba(7, 13, 26, 0.97);
-      --bg-card: #0e1b2e;
-      --bg-card-hover: #152338;
-      --bg-input: #1a2e48;
+      --bg-page: #000000;
+      --bg-header: rgba(0, 0, 0, 0.97);
+      --bg-card: #0a0a0a;
+      --bg-card-hover: #141414;
+      --bg-input: #1a1a1a;
       --text-primary: #c4d0df;
       --text-secondary: #5e7080;
       --text-heading: #eef3fa;
@@ -10900,7 +10911,7 @@ app.get('/monitoring', async (_req, res) => {
       margin-bottom: 14px;
       padding: 0 10px;
       height: 46px;
-      background: rgba(14, 18, 36, 0.92);
+      background: rgba(8, 8, 8, 0.92);
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
       border-radius: 12px;
@@ -10953,7 +10964,7 @@ app.get('/monitoring', async (_req, res) => {
     /* Nav menu dropdown */
     .nav-menu-dropdown {
       position: fixed;
-      background: #1b2133;
+      background: #101010;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.5);
@@ -11006,7 +11017,7 @@ app.get('/monitoring', async (_req, res) => {
     }
     .tour-tip {
       position: fixed; z-index: 100001; width: min(300px, calc(100vw - 32px));
-      background: #161b27; border: 1px solid rgba(255,255,255,0.12);
+      background: #121212; border: 1px solid rgba(255,255,255,0.12);
       border-top: 2px solid #f7931a; border-radius: 14px; padding: 16px;
       box-shadow: 0 16px 48px rgba(0,0,0,0.55);
       transition: top 0.28s ease, left 0.28s ease;
@@ -11043,7 +11054,7 @@ app.get('/monitoring', async (_req, res) => {
     /* Sound Panel */
     .sound-panel {
       position: fixed; z-index: 9999;
-      background: #161b27; border: 1px solid rgba(255,255,255,0.1);
+      background: #121212; border: 1px solid rgba(255,255,255,0.1);
       border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
       width: 248px; overflow: hidden;
     }
@@ -11122,7 +11133,7 @@ app.get('/monitoring', async (_req, res) => {
       column-gap: 5px;
       row-gap: 0;
       padding: 5px 9px;
-      background: #0d1525;
+      background: #0d0d0d;
       border-radius: 10px;
       border: 1px solid rgba(255,255,255,0.07);
       border-top: 2px solid rgba(255,255,255,0.15);
@@ -11484,7 +11495,7 @@ app.get('/monitoring', async (_req, res) => {
 
     /* Chart Section */
     .chart-section {
-      background: #0d1525;
+      background: #0d0d0d;
       border-radius: 16px 16px 0 0;
       border: 1px solid rgba(255,255,255,0.07);
       margin-bottom: 20px;
@@ -11513,7 +11524,7 @@ app.get('/monitoring', async (_req, res) => {
     }
     .chart-header {
       padding: 14px 18px;
-      background: #0a1120;
+      background: #0a0a0a;
       border-bottom: 1px solid rgba(255,255,255,0.06);
       border-radius: 16px 16px 0 0;
       display: flex;
@@ -12971,7 +12982,7 @@ app.get('/monitoring', async (_req, res) => {
     /* History Table */
     .history-table-wrap { overflow-x: auto; }
     .history-section {
-      background: #0d1525;
+      background: #0d0d0d;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,0.07);
       overflow: hidden;
@@ -12980,7 +12991,7 @@ app.get('/monitoring', async (_req, res) => {
     }
     .history-header {
       padding: 14px 20px;
-      background: #0a1120;
+      background: #0a0a0a;
       border-bottom: 1px solid rgba(255,255,255,0.06);
       display: flex;
       justify-content: space-between;
@@ -13056,7 +13067,7 @@ app.get('/monitoring', async (_req, res) => {
       gap: 12px;
       padding: 14px 20px;
       border-top: 1px solid rgba(255,255,255,0.06);
-      background: #0a1120;
+      background: #0a0a0a;
     }
     .page-btn {
       background: rgba(255,255,255,0.04);
