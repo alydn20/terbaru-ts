@@ -5101,7 +5101,11 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       const oldSess = userSessions.shift()
       await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
-      pushLog(`Auth | User +${normalizedPhone} login di perangkat baru — session lama ditendang`)
+      const _kickWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+      const _kickName = check.user?.name || '-'
+      pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
+      loginHistory.push({ time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked' })
+      if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
     }
   }
 
@@ -8883,7 +8887,7 @@ ${authScript}
               <thead>
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Waktu (WIB)</th>
-                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nomor HP</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nomor HP &amp; Status</th>
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nama</th>
                 </tr>
               </thead>
@@ -10036,9 +10040,13 @@ ${authScript}
         return;
       }
       tbody.innerHTML = filtered.map(function(item) {
+        var isKicked = item.event === 'kicked';
+        var badge = isKicked
+          ? '<span style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">DITENDANG</span>'
+          : '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">LOGIN</span>';
         return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
           '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;">' + (item.time || '-') + '</td>' +
-          '<td style="padding:8px 10px;color:#60a5fa;font-family:monospace;font-weight:600;">+' + (item.phone || '-') + '</td>' +
+          '<td style="padding:8px 10px;font-family:monospace;font-weight:600;color:' + (isKicked ? '#f87171' : '#60a5fa') + ';">+' + (item.phone || '-') + badge + '</td>' +
           '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
           '</tr>';
       }).join('');
