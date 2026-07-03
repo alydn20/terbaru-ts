@@ -304,7 +304,8 @@ const REDIS_KEYS = {
   MARKUP_SETTINGS: 'gold:markup_settings', // JSON: { minMargin, maxMargin } markup normal range
   THEME_SETTINGS: 'gold:theme_settings',   // String: nama tema aktif (navy/purple/green/red/teal/slate)
   FRESH_TOKEN: 'gold:fresh_token',         // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
-  KICKED_SESSIONS: 'gold:kicked_sessions'  // Hash: sessionId -> timestamp (session ditendang karena login di perangkat lain)
+  KICKED_SESSIONS: 'gold:kicked_sessions', // Hash: sessionId -> timestamp (session ditendang karena login di perangkat lain)
+  SESSION_META: 'gold:session_meta'        // Hash: sessionId -> JSON {ip, ua, time}
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -893,6 +894,26 @@ function formatRupiah(n) {
   return typeof n === 'number'
     ? n.toLocaleString('id-ID')
     : (Number(n || 0) || 0).toLocaleString('id-ID')
+}
+
+function parseBrowser(ua) {
+  if (!ua || ua === '-') return '-'
+  if (/WhatsApp\//.test(ua)) return 'WhatsApp'
+  if (/Instagram/.test(ua)) return 'Instagram'
+  const mobile = /Mobile|Android|iPhone|iPad/.test(ua)
+  const suffix = mobile ? ' 📱' : ' 🖥'
+  if (/Edg\//.test(ua)) return 'Edge' + suffix
+  if (/OPR\/|Opera\//.test(ua)) return 'Opera' + suffix
+  if (/Firefox\//.test(ua)) return 'Firefox' + suffix
+  if (/Chrome\//.test(ua)) return 'Chrome' + suffix
+  if (/Safari\//.test(ua)) return 'Safari' + suffix
+  return 'Browser' + suffix
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers['x-forwarded-for']
+  if (forwarded) return forwarded.split(',')[0].trim()
+  return req.socket?.remoteAddress || req.ip || '-'
 }
 
 function calculateDiscount(investmentAmount) {
@@ -5089,6 +5110,9 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     return res.json({ success: false, error: 'PIN salah. Silakan coba lagi.' })
   }
 
+  const _clientIp = getClientIp(req)
+  const _clientUa = parseBrowser(req.headers['user-agent'])
+
   // Check existing sessions (max 2 devices, kecuali admin phone tidak ada limit).
   // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
   if (normalizedPhone !== ADMIN_PHONE) {
@@ -5099,12 +5123,16 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     }
     while (userSessions.length >= 2) {
       const oldSess = userSessions.shift()
+      const _kickedMetaRaw = await redis.hget(REDIS_KEYS.SESSION_META, oldSess)
+      const _kickedMeta = _kickedMetaRaw ? JSON.parse(_kickedMetaRaw) : {}
       await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
+      await redis.hdel(REDIS_KEYS.SESSION_META, oldSess)
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
       const _kickWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      loginHistory.push({ time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked' })
+      // Push KICKED dulu (terjadi lebih awal), LOGIN di-push setelahnya
+      loginHistory.push({ time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked', ip: _kickedMeta.ip || '-', ua: _kickedMeta.ua || '-' })
       if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
     }
   }
@@ -5112,12 +5140,13 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   // Create new session
   const sessionId = generateSessionId()
   await redis.hset(REDIS_KEYS.SESSIONS, { [sessionId]: normalizedPhone })
+  await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa }) })
 
-  // Catat ke login history
+  // Catat ke login history (LOGIN di-push setelah KICKED agar saat .reverse() LOGIN muncul di atas)
   const _loginWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
   const _loginName = check.user?.name || '-'
-  pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName})`)
-  loginHistory.push({ time: _loginWib, phone: normalizedPhone, name: _loginName })
+  pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName}) — ${_clientIp} — ${_clientUa}`)
+  loginHistory.push({ time: _loginWib, phone: normalizedPhone, name: _loginName, ip: _clientIp, ua: _clientUa })
   if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
 
   res.json({
@@ -8889,6 +8918,8 @@ ${authScript}
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Waktu (WIB)</th>
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nomor HP &amp; Status</th>
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nama</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">IP</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Browser</th>
                 </tr>
               </thead>
               <tbody id="loginHistoryBody">
@@ -10036,7 +10067,7 @@ ${authScript}
         return true;
       });
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Tidak ada data yang cocok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#6b7280;">Tidak ada data yang cocok</td></tr>';
         return;
       }
       tbody.innerHTML = filtered.map(function(item) {
@@ -10044,10 +10075,14 @@ ${authScript}
         var badge = isKicked
           ? '<span style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">DITENDANG</span>'
           : '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">LOGIN</span>';
+        var ipText = (item.ip && item.ip !== '-') ? item.ip : '<span style="color:#4b5563;">-</span>';
+        var uaText = (item.ua && item.ua !== '-') ? item.ua : '<span style="color:#4b5563;">-</span>';
         return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-          '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;">' + (item.time || '-') + '</td>' +
-          '<td style="padding:8px 10px;font-family:monospace;font-weight:600;color:' + (isKicked ? '#f87171' : '#60a5fa') + ';">+' + (item.phone || '-') + badge + '</td>' +
+          '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;white-space:nowrap;">' + (item.time || '-') + '</td>' +
+          '<td style="padding:8px 10px;font-family:monospace;font-weight:600;color:' + (isKicked ? '#f87171' : '#60a5fa') + ';white-space:nowrap;">+' + (item.phone || '-') + badge + '</td>' +
           '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
+          '<td style="padding:8px 10px;color:#9ca3af;font-family:monospace;font-size:0.85em;">' + ipText + '</td>' +
+          '<td style="padding:8px 10px;color:#c9d1d9;font-size:0.85em;">' + uaText + '</td>' +
           '</tr>';
       }).join('');
     }
