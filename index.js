@@ -10030,7 +10030,7 @@ ${authScript}
       const date = (document.getElementById('filterLoginDate') || {}).value || '';
       const name = (document.getElementById('filterLoginName') || {}).value || '';
       const filtered = _loginHistoryData.filter(function(item) {
-        if (phone && !(item.phone || '').includes(phone.replace(/^\+/, ''))) return false;
+        if (phone && !(item.phone || '').includes(phone.charAt(0) === '+' ? phone.slice(1) : phone)) return false;
         if (date && !(item.time || '').startsWith(date)) return false;
         if (name && !(item.name || '').toLowerCase().includes(name.toLowerCase())) return false;
         return true;
