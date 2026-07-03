@@ -8865,10 +8865,18 @@ ${authScript}
       <!-- Section: Logs -->
       <div class="section-content" id="section-logs">
         <div class="card" style="margin-bottom:18px;">
-          <h2>🔐 Riwayat Login User</h2>
-          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
-            <button class="btn btn-secondary btn-sm" onclick="loadLoginHistory()">🔁 Reload</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <h2 style="margin:0;">🔐 Riwayat Login User</h2>
             <span id="loginHistoryCount" style="font-size:0.82em;color:#8b949e;"></span>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+            <input id="filterLoginPhone" type="text" placeholder="Filter nomor HP..." oninput="renderLoginHistoryFiltered()"
+              style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:170px;outline:none;">
+            <input id="filterLoginDate" type="date" oninput="renderLoginHistoryFiltered()"
+              style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;outline:none;">
+            <input id="filterLoginName" type="text" placeholder="Filter nama..." oninput="renderLoginHistoryFiltered()"
+              style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:140px;outline:none;">
+            <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">✕ Reset</button>
           </div>
           <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:0.82em;">
@@ -8880,7 +8888,7 @@ ${authScript}
                 </tr>
               </thead>
               <tbody id="loginHistoryBody">
-                <tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Klik Reload untuk memuat...</td></tr>
+                <tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Memuat...</td></tr>
               </tbody>
             </table>
           </div>
@@ -9111,11 +9119,19 @@ ${authScript}
         });
       });
 
-      // Load logs & login history saat tab logs diklik
+      // Load logs & login history saat tab logs diklik, auto-refresh setiap 5 detik
       document.querySelectorAll('.section-tab[data-section="logs"]').forEach(tab => {
         tab.addEventListener('click', function() {
           loadAdminLogs();
           loadLoginHistory();
+          clearInterval(_loginHistoryTimer);
+          _loginHistoryTimer = setInterval(loadLoginHistory, 5000);
+        });
+      });
+      // Hentikan auto-refresh login history saat pindah ke tab lain
+      document.querySelectorAll('.section-tab:not([data-section="logs"])').forEach(tab => {
+        tab.addEventListener('click', function() {
+          clearInterval(_loginHistoryTimer);
         });
       });
     });
@@ -9987,27 +10003,52 @@ ${authScript}
         .catch(() => {});
     }
 
+    var _loginHistoryData = [];
+    var _loginHistoryTimer = null;
+
     function loadLoginHistory() {
-      adminFetch('/api/admin/login-history?limit=100')
+      adminFetch('/api/admin/login-history?limit=300')
         .then(r => r.json())
         .then(data => {
           if (!data.success) return;
-          const tbody = document.getElementById('loginHistoryBody');
+          _loginHistoryData = data.items || [];
           const countEl = document.getElementById('loginHistoryCount');
           if (countEl) countEl.textContent = data.total + ' entri (session ini)';
-          if (!data.items || data.items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Belum ada riwayat login</td></tr>';
-            return;
-          }
-          tbody.innerHTML = data.items.map(function(item) {
-            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-              '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;">' + (item.time || '-') + '</td>' +
-              '<td style="padding:8px 10px;color:#60a5fa;font-family:monospace;font-weight:600;">+' + (item.phone || '-') + '</td>' +
-              '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
-              '</tr>';
-          }).join('');
+          renderLoginHistoryFiltered();
         })
         .catch(() => {});
+    }
+
+    function renderLoginHistoryFiltered() {
+      const tbody = document.getElementById('loginHistoryBody');
+      if (!tbody) return;
+      const phone = (document.getElementById('filterLoginPhone') || {}).value || '';
+      const date = (document.getElementById('filterLoginDate') || {}).value || '';
+      const name = (document.getElementById('filterLoginName') || {}).value || '';
+      const filtered = _loginHistoryData.filter(function(item) {
+        if (phone && !(item.phone || '').includes(phone.replace(/^\+/, ''))) return false;
+        if (date && !(item.time || '').startsWith(date)) return false;
+        if (name && !(item.name || '').toLowerCase().includes(name.toLowerCase())) return false;
+        return true;
+      });
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Tidak ada data yang cocok</td></tr>';
+        return;
+      }
+      tbody.innerHTML = filtered.map(function(item) {
+        return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+          '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;">' + (item.time || '-') + '</td>' +
+          '<td style="padding:8px 10px;color:#60a5fa;font-family:monospace;font-weight:600;">+' + (item.phone || '-') + '</td>' +
+          '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    function clearLoginFilters() {
+      var f = document.getElementById('filterLoginPhone'); if (f) f.value = '';
+      var d = document.getElementById('filterLoginDate'); if (d) d.value = '';
+      var n = document.getElementById('filterLoginName'); if (n) n.value = '';
+      renderLoginHistoryFiltered();
     }
 
     function toggleLogsAutoRefresh() {
