@@ -210,6 +210,8 @@ let pingInterval = null  // Interval ping WS - clear dulu sebelum buat baru
 // ------ STATE ------
 let lastQr = null
 const logs = []
+const loginHistory = [] // in-memory login log per nomor user
+const MAX_LOGIN_HISTORY = 300
 const processedMsgIds = new Set()
 const lastReplyAtPerChat = new Map()
 let lastGlobalReplyAt = 0
@@ -3795,6 +3797,13 @@ app.get('/api/admin/logs', async (req, res) => {
   res.json({ success: true, logs: logs.slice(-limit), total: logs.length })
 })
 
+// Admin: Login history per nomor user (in-memory)
+app.get('/api/admin/login-history', (req, res) => {
+  if (!isAdminCookieValid(req)) return res.status(403).json({ error: 'Unauthorized' })
+  const limit = Math.min(parseInt(req.query.limit) || 100, MAX_LOGIN_HISTORY)
+  res.json({ success: true, items: [...loginHistory].reverse().slice(0, limit), total: loginHistory.length })
+})
+
 app.get('/stats', (_req, res) => {
   const now = Date.now()
   const timeSinceLastUpdate = lastPriceUpdateTime > 0 ? now - lastPriceUpdateTime : null
@@ -5099,6 +5108,13 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   // Create new session
   const sessionId = generateSessionId()
   await redis.hset(REDIS_KEYS.SESSIONS, { [sessionId]: normalizedPhone })
+
+  // Catat ke login history
+  const _loginWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+  const _loginName = check.user?.name || '-'
+  pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName})`)
+  loginHistory.push({ time: _loginWib, phone: normalizedPhone, name: _loginName })
+  if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
 
   res.json({
     success: true,
@@ -8848,6 +8864,27 @@ ${authScript}
 
       <!-- Section: Logs -->
       <div class="section-content" id="section-logs">
+        <div class="card" style="margin-bottom:18px;">
+          <h2>🔐 Riwayat Login User</h2>
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+            <button class="btn btn-secondary btn-sm" onclick="loadLoginHistory()">🔁 Reload</button>
+            <span id="loginHistoryCount" style="font-size:0.82em;color:#8b949e;"></span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.82em;">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Waktu (WIB)</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nomor HP</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nama</th>
+                </tr>
+              </thead>
+              <tbody id="loginHistoryBody">
+                <tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Klik Reload untuk memuat...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div class="card">
           <h2>📋 System Logs</h2>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -9074,9 +9111,12 @@ ${authScript}
         });
       });
 
-      // Load logs saat tab logs diklik
+      // Load logs & login history saat tab logs diklik
       document.querySelectorAll('.section-tab[data-section="logs"]').forEach(tab => {
-        tab.addEventListener('click', loadAdminLogs);
+        tab.addEventListener('click', function() {
+          loadAdminLogs();
+          loadLoginHistory();
+        });
       });
     });
 
@@ -9942,6 +9982,29 @@ ${authScript}
           const container = document.getElementById('logsContainer');
           container.innerHTML = data.logs.slice().reverse().map(line => {
             return '<div style="color:' + logLineColor(line) + ';padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04);">' + line.replace(/</g, '&lt;') + '</div>';
+          }).join('');
+        })
+        .catch(() => {});
+    }
+
+    function loadLoginHistory() {
+      adminFetch('/api/admin/login-history?limit=100')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          const tbody = document.getElementById('loginHistoryBody');
+          const countEl = document.getElementById('loginHistoryCount');
+          if (countEl) countEl.textContent = data.total + ' entri (session ini)';
+          if (!data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:#6b7280;">Belum ada riwayat login</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.items.map(function(item) {
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;">' + (item.time || '-') + '</td>' +
+              '<td style="padding:8px 10px;color:#60a5fa;font-family:monospace;font-weight:600;">+' + (item.phone || '-') + '</td>' +
+              '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
+              '</tr>';
           }).join('');
         })
         .catch(() => {});
@@ -17561,8 +17624,11 @@ app.get('/monitoring', async (_req, res) => {
 
         if (data.type === 'session_expired') {
           localStorage.removeItem('goldmonitor_session');
-          alert('Sesi Anda telah berakhir. Silakan login kembali.');
-          window.location.href = '/login';
+          var _toast = document.createElement('div');
+          _toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#ef4444;color:#fff;padding:14px 24px;border-radius:12px;font-size:0.95em;font-weight:600;z-index:99999;box-shadow:0 4px 20px rgba(0,0,0,0.4);text-align:center;';
+          _toast.innerHTML = '🔒 Sesi Anda telah berakhir<br><span style="font-weight:400;font-size:0.88em;">Mengalihkan ke halaman login...</span>';
+          document.body.appendChild(_toast);
+          setTimeout(function() { window.location.href = '/login'; }, 2500);
           return;
         }
 
