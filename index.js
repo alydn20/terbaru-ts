@@ -916,6 +916,22 @@ function getClientIp(req) {
   return req.socket?.remoteAddress || req.ip || '-'
 }
 
+async function getIpLocation(ip) {
+  if (!ip || ip === '-' || ip === '::1' || ip === '127.0.0.1') return 'Lokal'
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return 'Lokal'
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 3000)
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName,country,status`, { signal: ctrl.signal })
+    clearTimeout(timer)
+    const d = await res.json()
+    if (d.status !== 'success') return '-'
+    return [d.city, d.regionName, d.country].filter(Boolean).join(', ') || '-'
+  } catch {
+    return '-'
+  }
+}
+
 function calculateDiscount(investmentAmount) {
   let discount
 
@@ -5131,8 +5147,8 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       const _kickWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      // Push KICKED dulu (terjadi lebih awal), LOGIN di-push setelahnya
-      loginHistory.push({ time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked', ip: _kickedMeta.ip || '-', ua: _kickedMeta.ua || '-' })
+      const _kickEntry = { time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked', ip: _kickedMeta.ip || '-', ua: _kickedMeta.ua || '-', location: _kickedMeta.location || '-' }
+      loginHistory.push(_kickEntry)
       if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
     }
   }
@@ -5140,14 +5156,20 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   // Create new session
   const sessionId = generateSessionId()
   await redis.hset(REDIS_KEYS.SESSIONS, { [sessionId]: normalizedPhone })
-  await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa }) })
+  await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: '' }) })
 
   // Catat ke login history (LOGIN di-push setelah KICKED agar saat .reverse() LOGIN muncul di atas)
   const _loginWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
   const _loginName = check.user?.name || '-'
   pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName}) — ${_clientIp} — ${_clientUa}`)
-  loginHistory.push({ time: _loginWib, phone: normalizedPhone, name: _loginName, ip: _clientIp, ua: _clientUa })
+  const _loginEntry = { time: _loginWib, phone: normalizedPhone, name: _loginName, ip: _clientIp, ua: _clientUa, location: '-' }
+  loginHistory.push(_loginEntry)
   if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
+  // Lookup lokasi async — update entry & session meta tanpa blokir response
+  getIpLocation(_clientIp).then(loc => {
+    _loginEntry.location = loc
+    redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: loc }) }).catch(() => {})
+  })
 
   res.json({
     success: true,
@@ -8920,6 +8942,7 @@ ${authScript}
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nama</th>
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">IP</th>
                   <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Browser</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Lokasi</th>
                 </tr>
               </thead>
               <tbody id="loginHistoryBody">
@@ -10067,7 +10090,7 @@ ${authScript}
         return true;
       });
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:#6b7280;">Tidak ada data yang cocok</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#6b7280;">Tidak ada data yang cocok</td></tr>';
         return;
       }
       tbody.innerHTML = filtered.map(function(item) {
@@ -10077,12 +10100,14 @@ ${authScript}
           : '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">LOGIN</span>';
         var ipText = (item.ip && item.ip !== '-') ? item.ip : '<span style="color:#4b5563;">-</span>';
         var uaText = (item.ua && item.ua !== '-') ? item.ua : '<span style="color:#4b5563;">-</span>';
+        var locText = (item.location && item.location !== '-') ? item.location : '<span style="color:#4b5563;">-</span>';
         return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
           '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;white-space:nowrap;">' + (item.time || '-') + '</td>' +
           '<td style="padding:8px 10px;font-family:monospace;font-weight:600;color:' + (isKicked ? '#f87171' : '#60a5fa') + ';white-space:nowrap;">+' + (item.phone || '-') + badge + '</td>' +
           '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
           '<td style="padding:8px 10px;color:#9ca3af;font-family:monospace;font-size:0.85em;">' + ipText + '</td>' +
           '<td style="padding:8px 10px;color:#c9d1d9;font-size:0.85em;">' + uaText + '</td>' +
+          '<td style="padding:8px 10px;color:#86efac;font-size:0.85em;">' + locText + '</td>' +
           '</tr>';
       }).join('');
     }
