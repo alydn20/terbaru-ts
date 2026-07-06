@@ -8941,6 +8941,8 @@ ${authScript}
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;outline:none;">
             <input id="filterLoginName" type="text" placeholder="Filter nama..." oninput="renderLoginHistoryFiltered()"
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:140px;outline:none;">
+            <input id="filterLoginLocation" type="text" placeholder="Filter kota/provinsi..." oninput="renderLoginHistoryFiltered()"
+              style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:170px;outline:none;">
             <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">✕ Reset</button>
           </div>
           <div style="overflow-x:auto;">
@@ -10093,10 +10095,13 @@ ${authScript}
       const phone = (document.getElementById('filterLoginPhone') || {}).value || '';
       const date = (document.getElementById('filterLoginDate') || {}).value || '';
       const name = (document.getElementById('filterLoginName') || {}).value || '';
+      const loc = (document.getElementById('filterLoginLocation') || {}).value || '';
       const filtered = _loginHistoryData.filter(function(item) {
         if (phone && !(item.phone || '').includes(phone.charAt(0) === '+' ? phone.slice(1) : phone)) return false;
         if (date && !(item.time || '').startsWith(date)) return false;
         if (name && !(item.name || '').toLowerCase().includes(name.toLowerCase())) return false;
+        // Filter lokasi: teks bebas, cocok ke kota/provinsi/negara (kolom Lokasi)
+        if (loc && !(item.location || '').toLowerCase().includes(loc.toLowerCase())) return false;
         return true;
       });
       if (filtered.length === 0) {
@@ -10126,6 +10131,7 @@ ${authScript}
       var f = document.getElementById('filterLoginPhone'); if (f) f.value = '';
       var d = document.getElementById('filterLoginDate'); if (d) d.value = '';
       var n = document.getElementById('filterLoginName'); if (n) n.value = '';
+      var l = document.getElementById('filterLoginLocation'); if (l) l.value = '';
       renderLoginHistoryFiltered();
     }
 
