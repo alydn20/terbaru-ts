@@ -3484,6 +3484,7 @@ app.get('/admin-login', (req, res) => {
           // Save monitoring session so admin can access /monitoring
           if (data.monitoringSession) {
             localStorage.setItem('goldmonitor_session', data.monitoringSession);
+            try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
           }
           window.location.href = '${redirect || '/admin/users'}';
         } else {
@@ -4036,25 +4037,10 @@ function scheduleMidnightChatReset() {
 }
 scheduleMidnightChatReset()
 
-// Reset semua session setiap Senin 00:00 (paksa login ulang mingguan)
-function scheduleWeeklySessionReset() {
-  const now = new Date()
-  const next = new Date(now)
-  // Hitung hari ke Senin berikutnya (day=1)
-  const daysUntilMonday = (8 - now.getDay()) % 7 || 7
-  next.setDate(now.getDate() + daysUntilMonday)
-  next.setHours(0, 0, 0, 0)
-  const ms = next - now
-  setTimeout(async () => {
-    try {
-      await redis.del(REDIS_KEYS.SESSIONS)
-      broadcastSSE({ type: 'session_expired' })
-    } catch (e) {
-    }
-    scheduleWeeklySessionReset() // jadwal ulang Senin depan
-  }, ms)
-}
-scheduleWeeklySessionReset()
+// [DINONAKTIFKAN] Reset semua session setiap Senin 00:00.
+// Ini penyebab SEMUA user ter-logout massal tiap Senin 00:00 (terlihat di log 2026-07-06).
+// Kebijakan sekarang: user tidak pernah di-logout otomatis kecuali ditendang limit 3 device.
+// function scheduleWeeklySessionReset() { ... } — dihapus dari jadwal.
 
 // Price Alert Bot: cek pergerakan harga setiap 30 menit
 let _priceSnapshot30 = null
@@ -5129,6 +5115,19 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   const _clientIp = getClientIp(req)
   const _clientUa = parseBrowser(req.headers['user-agent'])
 
+  // Login ulang dari device yang sama: ganti session lama milik device ini,
+  // JANGAN menendang device lain (mencegah ping-pong logout antar device user sendiri)
+  const { oldSession } = req.body
+  if (oldSession) {
+    try {
+      const oldPhone = await redis.hget(REDIS_KEYS.SESSIONS, oldSession)
+      if (oldPhone === normalizedPhone) {
+        await redis.hdel(REDIS_KEYS.SESSIONS, oldSession)
+        await redis.hdel(REDIS_KEYS.SESSION_META, oldSession)
+      }
+    } catch (e) {}
+  }
+
   // Check existing sessions (max 2 devices, kecuali admin phone tidak ada limit).
   // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
   if (normalizedPhone !== ADMIN_PHONE) {
@@ -5137,7 +5136,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     for (const [sessId, sessPhone] of Object.entries(allSessions)) {
       if (sessPhone === normalizedPhone) userSessions.push(sessId)
     }
-    while (userSessions.length >= 2) {
+    while (userSessions.length >= 3) { // max 3 device per user
       const oldSess = userSessions.shift()
       const _kickedMetaRaw = await redis.hget(REDIS_KEYS.SESSION_META, oldSess)
       const _kickedMeta = _kickedMetaRaw ? JSON.parse(_kickedMetaRaw) : {}
@@ -5268,14 +5267,20 @@ app.get('/api/verify-session', async (req, res) => {
     }
 
     const check = await isUserValid(phone)
-    if (!check.valid) return res.json({ valid: false, reason: check.reason })
+    // reason 'error' = Redis/server bermasalah, BUKAN session tidak valid — jangan buat client logout
+    if (!check.valid) {
+      if (check.reason === 'error') return res.json({ valid: false, reason: 'server_error' })
+      return res.json({ valid: false, reason: check.reason })
+    }
 
     // Check if user is admin (akun internal 'admin' ATAU nomor admin)
     const isAdmin = phone === 'admin' || ADMIN_PHONES.includes(phone)
 
     res.json({ valid: true, user: check.user, phone, isAdmin })
   } catch (e) {
-    res.json({ valid: false })
+    // Error transien (mis. Redis timeout) — beri tanda agar client TIDAK menghapus session
+    console.error(`[${new Date().toISOString()}] [VERIFY_SESSION_ERROR]`, e && e.message ? e.message : e)
+    res.json({ valid: false, reason: 'server_error' })
   }
 })
 
@@ -7120,7 +7125,7 @@ app.get('/login', (_req, res) => {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Sesi Berakhir — Login di Perangkat Lain
         </div>
-        <div style="color:#c9a86a;font-size:0.76em;line-height:1.5;">Akun Anda baru saja masuk di perangkat lain. Demi keamanan, maksimal <b>2 perangkat aktif</b> per akun — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali untuk melanjutkan.</div>
+        <div style="color:#c9a86a;font-size:0.76em;line-height:1.5;">Akun Anda baru saja masuk di perangkat lain. Demi keamanan, maksimal <b>3 perangkat aktif</b> per akun — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali untuk melanjutkan.</div>
       </div>
 
       <!-- Step Indicator -->
@@ -7260,7 +7265,8 @@ app.get('/login', (_req, res) => {
                   window.location.replace('/monitoring');
                 }
               });
-          } else {
+          } else if (data.reason !== 'server_error') {
+            // server_error = gangguan sementara — jangan hapus session yang mungkin masih valid
             localStorage.removeItem('goldmonitor_session');
           }
         })
@@ -7443,13 +7449,16 @@ app.get('/login', (_req, res) => {
         const res = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: currentPhone, pin })
+          // oldSession: session lama device ini (kalau ada) — server akan menggantinya,
+          // bukan menendang session device lain
+          body: JSON.stringify({ phone: currentPhone, pin, oldSession: localStorage.getItem('goldmonitor_session') || undefined })
         });
 
         const data = await res.json();
 
         if (data.success) {
           localStorage.setItem('goldmonitor_session', data.sessionId);
+          try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
           currentSession = data.sessionId;
 
           if (data.requirePinChange) {
@@ -7598,7 +7607,7 @@ app.get('/auth/:token', async (req, res) => {
       }
 
       // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain"
-      while (userSessions.length >= 2) {
+      while (userSessions.length >= 3) { // max 3 device per user
         const oldSess = userSessions.shift()
         await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
         await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
@@ -7670,6 +7679,7 @@ app.get('/auth/:token', async (req, res) => {
 '  </div>' +
 '  <script>' +
 '    localStorage.setItem("goldmonitor_session", "' + sessionId + '");' +
+'    try { localStorage.setItem("gold_sess_ok_at", String(Date.now())); } catch(e) {}' +
 '    setTimeout(function() {' +
 '      window.location.replace("/monitoring");' +
 '    }, 1500);' +
@@ -17047,11 +17057,43 @@ app.get('/monitoring', async (_req, res) => {
       localStorage.removeItem('goldmonitor_session');
       try { localStorage.setItem('gold_kicked_notice', String(Date.now())); } catch(e) {}
       try {
-        showConfirm('Akun Anda baru saja login di perangkat lain. Demi keamanan, maksimal 2 perangkat aktif — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali jika ingin memakai perangkat ini.', 'Login di Perangkat Lain')
+        showConfirm('Akun Anda baru saja login di perangkat lain. Demi keamanan, maksimal 3 perangkat aktif — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali jika ingin memakai perangkat ini.', 'Login di Perangkat Lain')
           .then(function(){ window.location.replace('/login'); });
         // fallback: redirect otomatis kalau modal tidak ditutup
         setTimeout(function(){ window.location.replace('/login'); }, 12000);
       } catch(e) {
+        window.location.replace('/login');
+      }
+    }
+
+    // ── Kebijakan session: user yang sedang memantau TIDAK PERNAH logout sendiri.
+    // Satu-satunya logout instan = ditendang karena login di perangkat lain (max 3 device).
+    // Kegagalan lain (Redis error, session hilang di server, jaringan) diberi toleransi
+    // 24 jam sejak verifikasi sukses terakhir — lewat itu baru diarahkan ke login.
+    var SESSION_GRACE_MS = 24 * 60 * 60 * 1000;
+    function _sessionOk() {
+      try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
+    }
+    function _sessionGraceExpired() {
+      try {
+        var t = parseInt(localStorage.getItem('gold_sess_ok_at') || '0', 10);
+        if (!t) { _sessionOk(); return false; } // belum pernah tercatat — mulai hitung dari sekarang
+        return (Date.now() - t) > SESSION_GRACE_MS;
+      } catch(e) { return false; }
+    }
+    function _handleInvalidSession(data) {
+      if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
+      // Akun expired = keputusan definitif server (bukan error) — langsung keluar
+      if (data.reason === 'expired') {
+        localStorage.removeItem('goldmonitor_session');
+        window.location.replace('/login');
+        return;
+      }
+      // Apapun penyebab lainnya (Redis error, session hilang, dll): jangan usir user
+      // yang sedang memantau. Baru keluar bila sudah >24 jam tidak pernah tervalidasi.
+      if (_sessionGraceExpired()) {
+        localStorage.removeItem('goldmonitor_session');
+        try { localStorage.removeItem('gold_sess_ok_at'); } catch(e) {}
         window.location.replace('/login');
       }
     }
@@ -17063,10 +17105,8 @@ app.get('/monitoring', async (_req, res) => {
       fetch('/api/verify-session?session=' + session)
         .then(r => r.json())
         .then(data => {
-          if (data.valid) return;
-          if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
-          localStorage.removeItem('goldmonitor_session');
-          window.location.replace('/login');
+          if (data.valid) { _sessionOk(); return; }
+          _handleInvalidSession(data);
         })
         .catch(() => {}); // jaringan bermasalah — jangan logout paksa
     }, 30000);
@@ -17083,11 +17123,10 @@ app.get('/monitoring', async (_req, res) => {
         .then(r => r.json())
         .then(data => {
           if (!data.valid) {
-            if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
-            localStorage.removeItem('goldmonitor_session');
-            window.location.replace('/login');
+            _handleInvalidSession(data); // toleransi 24 jam kecuali ditendang device lain
             return;
           }
+          _sessionOk();
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
@@ -17208,10 +17247,10 @@ app.get('/monitoring', async (_req, res) => {
         const session = localStorage.getItem('goldmonitor_session') || '';
         const res = await fetch('/monitoring/api?session=' + encodeURIComponent(session), { cache: 'no-store' });
 
-        // If unauthorized, redirect to login
+        // 403 = session bermasalah — JANGAN logout di sini. Biarkan pengecekan
+        // verify-session (30 detik) yang memutuskan: kicked → notif+logout,
+        // selain itu toleransi 24 jam. Lewati siklus ini saja.
         if (res.status === 403) {
-          localStorage.removeItem('goldmonitor_session');
-          window.location.replace('/login');
           return;
         }
 
@@ -18342,11 +18381,14 @@ app.get('/monitoring/api', async (req, res) => {
   }
 
   let phone = null
+  let sessCheckError = false
   try {
     phone = await redis.hget(REDIS_KEYS.SESSIONS, session)
-  } catch (e) {}
+  } catch (e) {
+    sessCheckError = true // Redis bermasalah — jangan hukum user, tetap layani data
+  }
 
-  if (!phone) {
+  if (!phone && !sessCheckError) {
     return res.status(403).json({ error: 'Unauthorized - Invalid session' })
   }
 
