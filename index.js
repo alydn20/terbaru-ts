@@ -10097,18 +10097,44 @@ ${authScript}
             var st = t.enabled
               ? '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 8px;border-radius:6px;font-size:0.85em;font-weight:600;">AKTIF</span>'
               : '<span style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);padding:1px 8px;border-radius:6px;font-size:0.85em;font-weight:600;">NONAKTIF</span>';
+            var safeName = String(t.name || '-').replace(/[<>"&]/g, '');
             return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
-              '<td style="padding:8px 10px;color:#e6edf3;">' + t.name + '</td>' +
-              '<td style="padding:8px 10px;"><code style="font-family:monospace;font-size:0.9em;color:#f7931a;background:rgba(247,147,26,0.08);padding:2px 6px;border-radius:5px;cursor:pointer;" title="Klik untuk salin" onclick="navigator.clipboard&&navigator.clipboard.writeText(\'' + t.key + '\').then(()=>{this.textContent=\'Tersalin!\';setTimeout(()=>{this.textContent=\'' + t.key.slice(0, 16) + '...\';},1200);})">' + t.key.slice(0, 16) + '...</code></td>' +
+              '<td style="padding:8px 10px;color:#e6edf3;">' + safeName + '</td>' +
+              '<td style="padding:8px 10px;"><code class="api-key-code" data-key="' + t.key + '" style="font-family:monospace;font-size:0.9em;color:#f7931a;background:rgba(247,147,26,0.08);padding:2px 6px;border-radius:5px;cursor:pointer;" title="Klik untuk salin">' + t.key.slice(0, 16) + '...</code></td>' +
               '<td style="padding:8px 10px;">' + st + '</td>' +
               '<td style="padding:8px 10px;color:#9ca3af;font-family:monospace;">' + (t.hits || 0) + '</td>' +
               '<td style="padding:8px 10px;white-space:nowrap;">' +
-                '<button class="action-btn ' + (t.enabled ? 'block' : 'unblock') + '" onclick="toggleApiToken(\'' + t.key + '\')">' + (t.enabled ? 'Nonaktifkan' : 'Aktifkan') + '</button> ' +
-                '<button class="action-btn delete" onclick="deleteApiToken(\'' + t.key + '\', \'' + t.name.replace(/'/g, '') + '\')">Hapus</button>' +
+                '<button class="action-btn ' + (t.enabled ? 'block' : 'unblock') + '" data-act="toggle" data-key="' + t.key + '">' + (t.enabled ? 'Nonaktifkan' : 'Aktifkan') + '</button> ' +
+                '<button class="action-btn delete" data-act="del" data-key="' + t.key + '" data-name="' + safeName + '">Hapus</button>' +
               '</td></tr>';
           }).join('');
+          _wireApiTokenTable();
         })
         .catch(() => {});
+    }
+
+    // Event delegation — hindari onclick inline (bermasalah dengan tanda kutip di dalam key)
+    function _wireApiTokenTable() {
+      var tb = document.getElementById('apiTokenBody');
+      if (!tb || tb._wired) return;
+      tb._wired = true;
+      tb.addEventListener('click', function(e) {
+        var el = e.target.closest ? e.target.closest('.api-key-code, [data-act]') : null;
+        if (!el) return;
+        var key = el.getAttribute('data-key') || '';
+        if (el.classList.contains('api-key-code')) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(key).then(function() {
+              el.textContent = 'Tersalin!';
+              setTimeout(function() { el.textContent = key.slice(0, 16) + '...'; }, 1200);
+            }).catch(function() {});
+          }
+          return;
+        }
+        var act = el.getAttribute('data-act');
+        if (act === 'toggle') toggleApiToken(key);
+        else if (act === 'del') deleteApiToken(key, el.getAttribute('data-name') || '');
+      });
     }
 
     function createApiToken() {
