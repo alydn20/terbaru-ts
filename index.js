@@ -305,7 +305,8 @@ const REDIS_KEYS = {
   THEME_SETTINGS: 'gold:theme_settings',   // String: nama tema aktif (navy/purple/green/red/teal/slate)
   FRESH_TOKEN: 'gold:fresh_token',         // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
   KICKED_SESSIONS: 'gold:kicked_sessions', // Hash: sessionId -> timestamp (session ditendang karena login di perangkat lain)
-  SESSION_META: 'gold:session_meta'        // Hash: sessionId -> JSON {ip, ua, time}
+  SESSION_META: 'gold:session_meta',       // Hash: sessionId -> JSON {ip, ua, time}
+  API_TOKENS: 'gold:api_tokens'            // Hash: apiKey -> JSON { name, enabled, createdAt } untuk API eksternal
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -349,6 +350,48 @@ async function loadFreshToken() {
 }
 loadFreshToken()
 setInterval(loadFreshToken, 5 * 60 * 1000)
+
+// ==================== API EKSTERNAL (token-based) ====================
+// Cache API key di memory — validasi tidak menyentuh Redis di jalur panas.
+let apiTokensCache = {}
+async function loadApiTokens() {
+  try {
+    const val = await redis.hgetall(REDIS_KEYS.API_TOKENS)
+    const parsed = {}
+    for (const [k, v] of Object.entries(val || {})) {
+      try { parsed[k] = typeof v === 'string' ? JSON.parse(v) : v } catch (e) {}
+    }
+    apiTokensCache = parsed
+  } catch (e) {}
+}
+loadApiTokens()
+setInterval(loadApiTokens, 5 * 60 * 1000)
+
+// Rate limit per API key: 120 request/menit
+const _apiKeyHits = new Map()
+function requireApiToken(req, res, next) {
+  // CORS agar bisa dipanggil dari browser/domain lain
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Headers', 'X-API-Key, Content-Type')
+  const key = req.headers['x-api-key'] || req.query.api_key || ''
+  const meta = key && apiTokensCache[key]
+  if (!meta) {
+    return res.status(401).json({ success: false, error: 'API key tidak valid. Sertakan header X-API-Key atau query ?api_key=' })
+  }
+  if (meta.enabled === false) {
+    return res.status(403).json({ success: false, error: 'API key dinonaktifkan oleh admin' })
+  }
+  const now = Date.now()
+  let rl = _apiKeyHits.get(key)
+  if (!rl || now > rl.resetAt) { rl = { count: 0, resetAt: now + 60000 }; _apiKeyHits.set(key, rl) }
+  rl.count++
+  if (rl.count > 120) {
+    return res.status(429).json({ success: false, error: 'Rate limit terlampaui: maksimal 120 request/menit per API key' })
+  }
+  meta.lastUsed = now
+  meta.hits = (meta.hits || 0) + 1
+  next()
+}
 
 let themeCache = { bg1: '#000000', bg2: '#000000', bg3: '#000000', card: '#0a0a0a', header: '#000000' }
 
@@ -3611,6 +3654,64 @@ app.get('/health', (_req, res) => {
   })
 })
 
+// ==================== PUBLIC API v1 (butuh API key) ====================
+// Dokumentasi lengkap: /admin/api-docs (khusus admin)
+
+// Preflight CORS untuk semua endpoint v1
+app.options(/^\/api\/v1\/.*/, (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Headers', 'X-API-Key, Content-Type')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.status(204).end()
+})
+
+// GET /api/v1/price — harga emas Treasury saat ini
+app.get('/api/v1/price', requireApiToken, (_req, res) => {
+  const buy = lastKnownPrice?.buy || null
+  const sell = lastKnownPrice?.sell || null
+  res.json({
+    success: true,
+    data: {
+      buy,
+      sell,
+      spreadPercent: (buy && sell) ? Number((((sell - buy) / buy) * 100).toFixed(2)) : null,
+      usdIdr: cachedMarketData.usdIdr?.rate || null,
+      xauUsd: lastXauUsdPrice || null,
+      promoStatus: lastPromoStatus || null,
+      dailyHigh: typeof dailyHighBuy !== 'undefined' ? dailyHighBuy : null,
+      dailyLow: typeof dailyLowBuy !== 'undefined' ? dailyLowBuy : null,
+      updatedAt: lastKnownPrice?.updated_at || null,
+      serverTime: new Date().toISOString()
+    }
+  })
+})
+
+// GET /api/v1/history?limit=100 — riwayat harga per menit (max 500)
+app.get('/api/v1/history', requireApiToken, (req, res) => {
+  let limit = parseInt(req.query.limit, 10)
+  if (isNaN(limit) || limit < 1) limit = 100
+  if (limit > 500) limit = 500
+  const items = priceHistoryCache.slice(-limit).reverse()
+  res.json({ success: true, total: priceHistoryCache.length, count: items.length, data: items })
+})
+
+// GET /api/v1/promo-status — status promo Treasury ON/OFF
+app.get('/api/v1/promo-status', requireApiToken, (_req, res) => {
+  res.json({ success: true, data: { status: lastPromoStatus || 'UNKNOWN', serverTime: new Date().toISOString() } })
+})
+
+// GET /api/v1/market — data pasar (XAU/USD & USD/IDR)
+app.get('/api/v1/market', requireApiToken, (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      xauUsd: lastXauUsdPrice || null,
+      usdIdr: cachedMarketData.usdIdr?.rate || null,
+      serverTime: new Date().toISOString()
+    }
+  })
+})
+
 // API: QR status + image (untuk polling dari halaman QR)
 app.get('/api/qr-status', async (req, res) => {
   // Auth check via admin_auth cookie (sama dengan isAdminCookieValid)
@@ -4487,6 +4588,201 @@ app.get('/sw.js', (_req, res) => {
       );
     });
   `)
+})
+
+// ADMIN SSO — masuk panel admin langsung dari monitoring bila session milik nomor admin.
+// Tidak perlu login ulang: cookie admin + token localStorage di-set otomatis.
+app.get('/admin/sso', async (req, res) => {
+  const session = req.query.session || ''
+  try {
+    const phone = session ? await redis.hget(REDIS_KEYS.SESSIONS, session) : null
+    if (phone && (phone === 'admin' || ADMIN_PHONES.includes(phone))) {
+      const token = Buffer.from(SUPER_ADMIN.username + ':' + SUPER_ADMIN.password + ':' + Date.now()).toString('base64')
+      const maxAge = 12 * 60 * 60
+      res.setHeader('Set-Cookie', `admin_auth=${encodeURIComponent(token)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}; Path=/`)
+      pushLog(`Auth | SSO admin dari monitoring (+${phone})`)
+      // Set juga token client-side (dipakai getAuthCheckScript) lalu redirect
+      return res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Masuk Panel Admin...</title></head><body style="background:#000;color:#e7e9ea;font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">' +
+        '<p>Masuk ke panel admin...</p>' +
+        '<script>try{localStorage.setItem("super_admin_token", ' + JSON.stringify(token) + ');}catch(e){} window.location.replace("/admin/users");</script>' +
+        '</body></html>')
+    }
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] [ADMIN_SSO_ERROR]`, e && e.message ? e.message : e)
+  }
+  res.redirect('/admin-login?redirect=' + encodeURIComponent('/admin/users'))
+})
+
+// ==================== ADMIN: Dokumentasi API Eksternal ====================
+app.get('/admin/api-docs', (req, res) => {
+  if (!isAdminCookieValid(req)) {
+    return res.redirect('/admin-login?redirect=' + encodeURIComponent('/admin/api-docs'))
+  }
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+  const baseUrl = 'https://' + (req.headers.host || 'ts.muhamadaliyudin.my.id')
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dokumentasi API - Gold Price Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(1000px 500px at 85% -10%, rgba(247,147,26,0.07), transparent 60%),
+        linear-gradient(180deg, #070a10 0%, #0d1118 55%, #0a0e13 100%);
+      background-attachment: fixed;
+      min-height: 100vh; padding: 20px; color: #e7e9ea; line-height: 1.6;
+    }
+    .container { max-width: 860px; margin: 0 auto; }
+    .header {
+      padding: 18px 24px; margin-bottom: 24px;
+      background: linear-gradient(135deg, rgba(24,30,40,0.95), rgba(16,21,30,0.95));
+      border-radius: 16px; border: 1px solid rgba(247,147,26,0.14);
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    }
+    .header h1 { font-size: 1.3em; color: #fff; }
+    .header h1 span { color: #f7931a; }
+    .header a { color: #e7e9ea; text-decoration: none; padding: 8px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; font-size: 0.85em; }
+    .header a:hover { color: #f7931a; border-color: rgba(247,147,26,0.3); }
+    .card {
+      background: linear-gradient(170deg, rgba(22,28,38,0.88), rgba(16,21,30,0.88));
+      border-radius: 16px; padding: 24px; margin-bottom: 18px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    h2 { color: #f7931a; font-size: 1.05em; margin-bottom: 12px; }
+    h3 { color: #fff; font-size: 0.95em; margin: 18px 0 8px; }
+    p, li { color: #b9c2cc; font-size: 0.9em; }
+    ul { margin: 8px 0 8px 22px; }
+    code { background: rgba(247,147,26,0.1); border: 1px solid rgba(247,147,26,0.2); color: #f7931a; padding: 1px 6px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 0.9em; }
+    pre {
+      background: #0a0a0a; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+      padding: 14px 16px; overflow-x: auto; margin: 10px 0; font-size: 0.82em; line-height: 1.55;
+      font-family: 'Courier New', monospace; color: #c9d1d9;
+    }
+    pre .k { color: #f7931a; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 10px 0; }
+    th { text-align: left; color: #8b949e; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: 600; }
+    td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #c9d1d9; }
+    .method { display: inline-block; background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 0.85em; font-family: monospace; margin-right: 8px; }
+    .badge-warn { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.8em; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1><span>API</span> Dokumentasi — Gold Price Monitor</h1>
+      <a href="/admin/users">&larr; Kembali ke Panel Admin</a>
+    </div>
+
+    <div class="card">
+      <h2>1. Pengantar</h2>
+      <p>API eksternal untuk mengambil data harga emas Treasury, riwayat harga, status promo, dan data pasar secara real-time dari luar aplikasi (bot, spreadsheet, aplikasi lain, dll).</p>
+      <h3>Base URL</h3>
+      <pre>${baseUrl}</pre>
+      <h3>Autentikasi</h3>
+      <p>Semua endpoint membutuhkan <b>API key</b>. Generate/nonaktifkan key di <b>Panel Admin &rarr; Pengaturan &rarr; API Eksternal</b>. Kirim key dengan salah satu cara:</p>
+      <ul>
+        <li>Header: <code>X-API-Key: trs_xxxxx</code> (disarankan)</li>
+        <li>Query string: <code>?api_key=trs_xxxxx</code></li>
+      </ul>
+      <h3>Rate Limit</h3>
+      <p><span class="badge-warn">120 request / menit / API key</span> — lebihnya dijawab <code>429</code>. Data harga diperbarui tiap ±1 menit, jadi polling 1x per menit sudah cukup.</p>
+    </div>
+
+    <div class="card">
+      <h2>2. Endpoint</h2>
+
+      <h3><span class="method">GET</span>/api/v1/price</h3>
+      <p>Harga emas Treasury terkini beserta spread, kurs, XAU, status promo, dan tertinggi/terendah hari ini.</p>
+      <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/price</pre>
+      <pre>{
+  "success": true,
+  "data": {
+    "buy": 2504224,            // harga beli (Rp/gram)
+    "sell": 2420943,           // harga jual (Rp/gram)
+    "spreadPercent": -3.33,    // selisih jual vs beli (%)
+    "usdIdr": 18005,           // kurs USD/IDR
+    "xauUsd": 4182.94,         // harga emas dunia (USD/oz)
+    "promoStatus": "ON",       // status promo: ON / OFF
+    "dailyHigh": 2509092,      // beli tertinggi hari ini
+    "dailyLow": 2498929,       // beli terendah hari ini
+    "updatedAt": "2026-07-06 07:00:01",
+    "serverTime": "2026-07-06T00:00:05.123Z"
+  }
+}</pre>
+
+      <h3><span class="method">GET</span>/api/v1/history</h3>
+      <p>Riwayat harga per menit, terbaru dulu. Parameter: <code>limit</code> (default 100, maksimal 500).</p>
+      <pre>curl -H "X-API-Key: trs_xxxxx" "${baseUrl}/api/v1/history?limit=10"</pre>
+      <pre>{
+  "success": true,
+  "total": 1257,
+  "count": 10,
+  "data": [
+    {
+      "time": "07:00:01", "buy": 2504224, "sell": 2420943,
+      "buyChange": 42, "sellChange": 98, "spread": -3.3,
+      "usdIdr": 18005, "xauUsd": 4182.94,
+      "markup": 348, "markupStatus": "MARKUP"
+    }
+  ]
+}</pre>
+
+      <h3><span class="method">GET</span>/api/v1/promo-status</h3>
+      <p>Status promo Treasury saat ini.</p>
+      <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/promo-status</pre>
+      <pre>{ "success": true, "data": { "status": "ON", "serverTime": "..." } }</pre>
+
+      <h3><span class="method">GET</span>/api/v1/market</h3>
+      <p>Data pasar: harga emas dunia dan kurs.</p>
+      <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/market</pre>
+      <pre>{ "success": true, "data": { "xauUsd": 4182.94, "usdIdr": 18005, "serverTime": "..." } }</pre>
+    </div>
+
+    <div class="card">
+      <h2>3. Contoh Kode</h2>
+      <h3>JavaScript (fetch)</h3>
+      <pre>const res = await fetch('${baseUrl}/api/v1/price', {
+  headers: { 'X-API-Key': 'trs_xxxxx' }
+});
+const json = await res.json();
+console.log(json.data.buy); // 2504224</pre>
+      <h3>Python (requests)</h3>
+      <pre>import requests
+r = requests.get('${baseUrl}/api/v1/price',
+                 headers={'X-API-Key': 'trs_xxxxx'})
+print(r.json()['data']['buy'])</pre>
+      <h3>Google Sheets (Apps Script)</h3>
+      <pre>function hargaEmas() {
+  var r = UrlFetchApp.fetch('${baseUrl}/api/v1/price',
+    { headers: { 'X-API-Key': 'trs_xxxxx' } });
+  return JSON.parse(r.getContentText()).data.buy;
+}</pre>
+    </div>
+
+    <div class="card">
+      <h2>4. Kode Error</h2>
+      <table>
+        <tr><th>Kode</th><th>Arti</th><th>Solusi</th></tr>
+        <tr><td><code>401</code></td><td>API key tidak dikirim / tidak dikenal</td><td>Periksa header X-API-Key</td></tr>
+        <tr><td><code>403</code></td><td>API key dinonaktifkan admin</td><td>Aktifkan lagi di Panel Admin &rarr; Pengaturan</td></tr>
+        <tr><td><code>429</code></td><td>Lebih dari 120 request/menit</td><td>Kurangi frekuensi polling</td></tr>
+        <tr><td><code>500</code></td><td>Error internal server</td><td>Coba lagi; cek log Koyeb</td></tr>
+      </table>
+      <h3>Catatan</h3>
+      <ul>
+        <li>Semua endpoint mendukung <b>CORS</b> — bisa dipanggil langsung dari browser/frontend domain lain.</li>
+        <li>API key baru aktif maksimal 5 menit setelah dibuat di server lain (cache), biasanya langsung.</li>
+        <li>Statistik pemakaian (hits, last used) direset saat server restart.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>`
+  res.send(html)
 })
 
 // ADMIN LOGOUT
@@ -6270,6 +6566,74 @@ app.post('/api/admin/reset-fresh', express.json(), async (req, res) => {
     res.json({ success: true, token })
   } catch (e) {
     console.error(`[${new Date().toISOString()}] [ADMIN_RESET_FRESH_ERROR]`, e)
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// ==================== ADMIN: Kelola API Token Eksternal ====================
+function _requireAdminReq(req, res) {
+  if (!isAdminCookieValid(req) && req.headers['x-admin-password'] !== ADMIN_PASSWORD) {
+    res.json({ success: false, error: 'Unauthorized' })
+    return false
+  }
+  return true
+}
+
+// List semua API key
+app.get('/api/admin/api-tokens', (req, res) => {
+  if (!_requireAdminReq(req, res)) return
+  const items = Object.entries(apiTokensCache).map(([key, m]) => ({
+    key, name: m.name || '-', enabled: m.enabled !== false,
+    createdAt: m.createdAt || null, lastUsed: m.lastUsed || null, hits: m.hits || 0
+  })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+  res.json({ success: true, items })
+})
+
+// Generate API key baru
+app.post('/api/admin/api-tokens', express.json(), async (req, res) => {
+  if (!_requireAdminReq(req, res)) return
+  try {
+    const name = String((req.body && req.body.name) || 'default').trim().slice(0, 40) || 'default'
+    const key = 'trs_' + crypto.randomBytes(24).toString('hex')
+    const meta = { name, enabled: true, createdAt: Date.now() }
+    await redis.hset(REDIS_KEYS.API_TOKENS, { [key]: JSON.stringify(meta) })
+    apiTokensCache[key] = meta
+    pushLog(`🔑 API | Admin generate API key "${name}" (${key.slice(0, 12)}...)`)
+    res.json({ success: true, key, name })
+  } catch (e) {
+    console.error(`[${new Date().toISOString()}] [API_TOKEN_CREATE_ERROR]`, e)
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Enable/disable API key
+app.post('/api/admin/api-tokens/toggle', express.json(), async (req, res) => {
+  if (!_requireAdminReq(req, res)) return
+  try {
+    const { key } = req.body || {}
+    const meta = key && apiTokensCache[key]
+    if (!meta) return res.json({ success: false, error: 'API key tidak ditemukan' })
+    meta.enabled = meta.enabled === false
+    await redis.hset(REDIS_KEYS.API_TOKENS, { [key]: JSON.stringify({ name: meta.name, enabled: meta.enabled, createdAt: meta.createdAt }) })
+    pushLog(`🔑 API | Key "${meta.name}" ${meta.enabled ? 'DIAKTIFKAN' : 'DINONAKTIFKAN'} oleh admin`)
+    res.json({ success: true, enabled: meta.enabled })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Hapus API key permanen
+app.post('/api/admin/api-tokens/delete', express.json(), async (req, res) => {
+  if (!_requireAdminReq(req, res)) return
+  try {
+    const { key } = req.body || {}
+    if (!key || !apiTokensCache[key]) return res.json({ success: false, error: 'API key tidak ditemukan' })
+    const name = apiTokensCache[key].name
+    await redis.hdel(REDIS_KEYS.API_TOKENS, key)
+    delete apiTokensCache[key]
+    pushLog(`🔑 API | Key "${name}" DIHAPUS oleh admin`)
+    res.json({ success: true })
+  } catch (e) {
     res.json({ success: false, error: e.message })
   }
 })
@@ -8630,6 +8994,42 @@ ${authScript}
           <button class="btn btn-primary" id="resetFreshBtn" style="width:100%;" onclick="resetFreshAll()">Reset Tur + Sound/Getar untuk Semua User</button>
         </div>
 
+        <!-- API Eksternal -->
+        <div class="card">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+            </svg>
+            API Eksternal
+          </h2>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:6px;">Generate API key untuk mengambil data harga dari luar (bot, spreadsheet, aplikasi lain). Key bisa dinonaktifkan/dihapus kapan saja.</p>
+          <p style="margin-bottom:14px;"><a href="/admin/api-docs" target="_blank" style="color:#f7931a;font-size:0.85em;font-weight:600;text-decoration:none;">&#128214; Buka Dokumentasi API Lengkap &rarr;</a></p>
+          <div class="result-msg" id="apiTokenResult"></div>
+          <div class="form-group" style="display:flex;gap:10px;align-items:flex-end;">
+            <div style="flex:1;">
+              <label>Nama Key (mis. "bot-telegram", "sheet-laporan")</label>
+              <input type="text" id="apiTokenName" placeholder="nama key" maxlength="40" style="width:100%;">
+            </div>
+            <button class="btn btn-primary" style="white-space:nowrap;" onclick="createApiToken()">Generate Key</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.82em;">
+              <thead>
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Nama</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">API Key</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Status</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Hits</th>
+                  <th style="text-align:left;padding:8px 10px;color:#8b949e;font-weight:600;">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="apiTokenBody">
+                <tr><td colspan="5" style="text-align:center;padding:16px;color:#6b7280;">Memuat...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Sound Notifikasi -->
         <div class="card">
           <h2>
@@ -9173,6 +9573,7 @@ ${authScript}
       loadPromoLimit();
       loadMarkupSettingsAdmin();
       loadThemeAdmin();
+      loadApiTokensAdmin();
       loadBroadcastHistory();
       connectAdminSSE();
 
@@ -9679,6 +10080,80 @@ ${authScript}
           const inp = document.getElementById('promoLimitInput');
           if (inp && data.limit !== null) inp.value = data.limit;
         });
+    }
+
+    // ==================== API Eksternal: kelola API key ====================
+    function loadApiTokensAdmin() {
+      adminFetch('/api/admin/api-tokens')
+        .then(r => r.json())
+        .then(data => {
+          const tbody = document.getElementById('apiTokenBody');
+          if (!tbody) return;
+          if (!data.success || !data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:#6b7280;">Belum ada API key. Generate di atas.</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.items.map(function(t) {
+            var st = t.enabled
+              ? '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 8px;border-radius:6px;font-size:0.85em;font-weight:600;">AKTIF</span>'
+              : '<span style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);padding:1px 8px;border-radius:6px;font-size:0.85em;font-weight:600;">NONAKTIF</span>';
+            return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
+              '<td style="padding:8px 10px;color:#e6edf3;">' + t.name + '</td>' +
+              '<td style="padding:8px 10px;"><code style="font-family:monospace;font-size:0.9em;color:#f7931a;background:rgba(247,147,26,0.08);padding:2px 6px;border-radius:5px;cursor:pointer;" title="Klik untuk salin" onclick="navigator.clipboard&&navigator.clipboard.writeText(\'' + t.key + '\').then(()=>{this.textContent=\'Tersalin!\';setTimeout(()=>{this.textContent=\'' + t.key.slice(0, 16) + '...\';},1200);})">' + t.key.slice(0, 16) + '...</code></td>' +
+              '<td style="padding:8px 10px;">' + st + '</td>' +
+              '<td style="padding:8px 10px;color:#9ca3af;font-family:monospace;">' + (t.hits || 0) + '</td>' +
+              '<td style="padding:8px 10px;white-space:nowrap;">' +
+                '<button class="action-btn ' + (t.enabled ? 'block' : 'unblock') + '" onclick="toggleApiToken(\'' + t.key + '\')">' + (t.enabled ? 'Nonaktifkan' : 'Aktifkan') + '</button> ' +
+                '<button class="action-btn delete" onclick="deleteApiToken(\'' + t.key + '\', \'' + t.name.replace(/'/g, '') + '\')">Hapus</button>' +
+              '</td></tr>';
+          }).join('');
+        })
+        .catch(() => {});
+    }
+
+    function createApiToken() {
+      const nameEl = document.getElementById('apiTokenName');
+      const result = document.getElementById('apiTokenResult');
+      const name = (nameEl ? nameEl.value : '').trim() || 'default';
+      adminFetch('/api/admin/api-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          result.className = 'result-msg success';
+          result.innerHTML = 'Key dibuat! Salin sekarang: <code style="font-family:monospace;user-select:all;">' + data.key + '</code>';
+          if (nameEl) nameEl.value = '';
+          loadApiTokensAdmin();
+        } else {
+          result.className = 'result-msg error';
+          result.textContent = data.error || 'Gagal membuat key';
+          setTimeout(() => { result.textContent = ''; result.className = 'result-msg'; }, 4000);
+        }
+      })
+      .catch(err => {
+        result.className = 'result-msg error';
+        result.textContent = 'Error: ' + err.message;
+      });
+    }
+
+    function toggleApiToken(key) {
+      adminFetch('/api/admin/api-tokens/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      }).then(r => r.json()).then(() => loadApiTokensAdmin()).catch(() => {});
+    }
+
+    function deleteApiToken(key, name) {
+      if (!confirm('Hapus API key "' + name + '" permanen? Aplikasi luar yang memakainya akan langsung berhenti bisa akses.')) return;
+      adminFetch('/api/admin/api-tokens/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      }).then(r => r.json()).then(() => loadApiTokensAdmin()).catch(() => {});
     }
 
     // ==================== Reset Tur + Sound/Getar ====================
@@ -14424,7 +14899,7 @@ app.get('/monitoring', async (_req, res) => {
         <i data-lucide="settings" style="width:14px;height:14px;"></i>
         Setting
       </button>
-      <button class="nav-menu-item" id="adminPanelBtn" style="display:none;" onclick="window.location.href='/admin/users'" title="Panel Admin">
+      <button class="nav-menu-item" id="adminPanelBtn" style="display:none;" onclick="window.location.href='/admin/sso?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session')||'')" title="Panel Admin">
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
