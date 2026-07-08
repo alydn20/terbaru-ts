@@ -5544,6 +5544,21 @@ app.get('/api/check-pin-status', async (req, res) => {
 })
 
 // API: Verify session
+// Refresh session monitoring untuk admin: cookie admin masih valid tapi session
+// monitoring hilang dari Redis (mis. terhapus reset lama / eviction) — terbitkan
+// session baru otomatis tanpa perlu login ulang.
+app.get('/api/admin-session-refresh', async (req, res) => {
+  if (!isAdminCookieValid(req)) return res.json({ success: false })
+  try {
+    const adminSessionId = 'admin_' + crypto.randomBytes(16).toString('hex')
+    await redis.hset(REDIS_KEYS.SESSIONS, { [adminSessionId]: 'admin' })
+    pushLog('Auth | Session monitoring admin di-refresh otomatis (cookie masih valid)')
+    res.json({ success: true, sessionId: adminSessionId })
+  } catch (e) {
+    res.json({ success: false })
+  }
+})
+
 app.get('/api/verify-session', async (req, res) => {
   try {
     const sessionId = req.query.session
@@ -17588,12 +17603,32 @@ app.get('/monitoring', async (_req, res) => {
         return (Date.now() - t) > SESSION_GRACE_MS;
       } catch(e) { return false; }
     }
+    var _adminSessRefreshing = false;
     function _handleInvalidSession(data) {
       if (data.reason === 'kicked_other_device') { _kickedToLogin(); return; }
       // Akun expired = keputusan definitif server (bukan error) — langsung keluar
       if (data.reason === 'expired') {
         localStorage.removeItem('goldmonitor_session');
         window.location.replace('/login');
+        return;
+      }
+      // Session admin (dari panel) hilang di server tapi cookie admin masih valid:
+      // refresh otomatis tanpa login ulang, lalu muat ulang halaman sekali.
+      var _sess = localStorage.getItem('goldmonitor_session') || '';
+      if (_sess.indexOf('admin_') === 0 && !data.reason && !_adminSessRefreshing) {
+        _adminSessRefreshing = true;
+        fetch('/api/admin-session-refresh')
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (d.success && d.sessionId) {
+              localStorage.setItem('goldmonitor_session', d.sessionId);
+              _sessionOk();
+              window.location.reload();
+            } else {
+              _adminSessRefreshing = false;
+            }
+          })
+          .catch(function(){ _adminSessRefreshing = false; });
         return;
       }
       // Apapun penyebab lainnya (Redis error, session hilang, dll): jangan usir user
