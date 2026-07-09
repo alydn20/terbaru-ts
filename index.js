@@ -17588,10 +17588,13 @@ app.get('/monitoring', async (_req, res) => {
       }
     }
 
-    // ── Kebijakan session: user yang sedang memantau TIDAK PERNAH logout sendiri.
-    // Satu-satunya logout instan = ditendang karena login di perangkat lain (max 3 device).
-    // Kegagalan lain (Redis error, session hilang di server, jaringan) diberi toleransi
-    // 24 jam sejak verifikasi sukses terakhir — lewat itu baru diarahkan ke login.
+    // ── Kebijakan session:
+    // • Ditendang limit 3 device → notif + logout.
+    // • Akun expired → logout.
+    // • Session BENAR-BENAR hilang di server (jawaban tegas, bukan error) → logout rapi
+    //   dengan pemberitahuan — jangan biarkan user menggantung di halaman yang datanya 403.
+    // • Redis/server error (server_error) atau jaringan → toleransi 24 jam sejak verifikasi
+    //   sukses terakhir; user tetap memantau. Lewat 24 jam tanpa sukses → baru keluar.
     var SESSION_GRACE_MS = 24 * 60 * 60 * 1000;
     function _sessionOk() {
       try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
@@ -17631,11 +17634,30 @@ app.get('/monitoring', async (_req, res) => {
           .catch(function(){ _adminSessRefreshing = false; });
         return;
       }
-      // Apapun penyebab lainnya (Redis error, session hilang, dll): jangan usir user
-      // yang sedang memantau. Baru keluar bila sudah >24 jam tidak pernah tervalidasi.
-      if (_sessionGraceExpired()) {
-        localStorage.removeItem('goldmonitor_session');
-        try { localStorage.removeItem('gold_sess_ok_at'); } catch(e) {}
+      // server_error = Redis/server lagi bermasalah — session mungkin masih valid.
+      // Tahan user di halaman, baru keluar bila >24 jam tidak pernah tervalidasi.
+      if (data.reason === 'server_error') {
+        if (_sessionGraceExpired()) _sessionEndedToLogin();
+        return;
+      }
+      // Tanpa reason = server menjawab TEGAS bahwa session sudah tidak ada.
+      // Jangan biarkan user menggantung dengan halaman lumpuh (semua data 403) —
+      // beri tahu dengan sopan lalu arahkan ke login.
+      _sessionEndedToLogin();
+    }
+
+    var _sessionEnding = false;
+    function _sessionEndedToLogin() {
+      if (_sessionEnding) return;
+      _sessionEnding = true;
+      localStorage.removeItem('goldmonitor_session');
+      try { localStorage.removeItem('gold_sess_ok_at'); } catch(e) {}
+      try {
+        showConfirm('Sesi Anda telah berakhir. Silakan login kembali untuk melanjutkan memantau harga.', 'Sesi Berakhir')
+          .then(function(){ window.location.replace('/login'); });
+        // fallback: redirect otomatis kalau modal tidak ditutup
+        setTimeout(function(){ window.location.replace('/login'); }, 8000);
+      } catch(e) {
         window.location.replace('/login');
       }
     }
