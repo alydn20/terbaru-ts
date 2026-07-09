@@ -3680,6 +3680,8 @@ app.get('/api/v1/price', requireApiToken, (_req, res) => {
       promoStatus: lastPromoStatus || null,
       dailyHigh: typeof dailyHighBuy !== 'undefined' ? dailyHighBuy : null,
       dailyLow: typeof dailyLowBuy !== 'undefined' ? dailyLowBuy : null,
+      titikOn: (lowestOnPriceCache !== undefined && lowestOnPriceCache !== null) ? lowestOnPriceCache : null,
+      titikOnDate: lowestOnDateWIB || null,
       updatedAt: lastKnownPrice?.updated_at || null,
       serverTime: new Date().toISOString()
     }
@@ -3698,6 +3700,19 @@ app.get('/api/v1/history', requireApiToken, (req, res) => {
 // GET /api/v1/promo-status — status promo Treasury ON/OFF
 app.get('/api/v1/promo-status', requireApiToken, (_req, res) => {
   res.json({ success: true, data: { status: lastPromoStatus || 'UNKNOWN', serverTime: new Date().toISOString() } })
+})
+
+// GET /api/v1/titik-on — harga beli terendah saat promo ON (Titik ON)
+app.get('/api/v1/titik-on', requireApiToken, (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      titikOn: (lowestOnPriceCache !== undefined && lowestOnPriceCache !== null) ? lowestOnPriceCache : null,
+      date: lowestOnDateWIB || null, // tanggal WIB (YYYY-MM-DD) saat titik ON tercatat
+      promoStatus: lastPromoStatus || null,
+      serverTime: new Date().toISOString()
+    }
+  })
 })
 
 // GET /api/v1/market — data pasar (XAU/USD & USD/IDR)
@@ -4709,6 +4724,8 @@ app.get('/admin/api-docs', (req, res) => {
     "promoStatus": "ON",       // status promo: ON / OFF
     "dailyHigh": 2509092,      // beli tertinggi hari ini
     "dailyLow": 2498929,       // beli terendah hari ini
+    "titikOn": 2499141,        // Titik ON: beli terendah saat promo ON (null jika belum ada)
+    "titikOnDate": "2026-07-06", // tanggal WIB titik ON tercatat
     "updatedAt": "2026-07-06 07:00:01",
     "serverTime": "2026-07-06T00:00:05.123Z"
   }
@@ -4735,6 +4752,19 @@ app.get('/admin/api-docs', (req, res) => {
       <p>Status promo Treasury saat ini.</p>
       <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/promo-status</pre>
       <pre>{ "success": true, "data": { "status": "ON", "serverTime": "..." } }</pre>
+
+      <h3><span class="method">GET</span>/api/v1/titik-on</h3>
+      <p>Titik ON — harga beli terendah yang tercatat saat promo ON (direset saat promo OFF berkelanjutan / server tracking ulang). <code>titikOn</code> bernilai <code>null</code> bila belum ada catatan.</p>
+      <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/titik-on</pre>
+      <pre>{
+  "success": true,
+  "data": {
+    "titikOn": 2499141,        // Rp/gram
+    "date": "2026-07-06",      // tanggal WIB tercatat
+    "promoStatus": "ON",
+    "serverTime": "..."
+  }
+}</pre>
 
       <h3><span class="method">GET</span>/api/v1/market</h3>
       <p>Data pasar: harga emas dunia dan kurs.</p>
