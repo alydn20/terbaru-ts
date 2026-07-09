@@ -367,8 +367,7 @@ async function loadApiTokens() {
 loadApiTokens()
 setInterval(loadApiTokens, 5 * 60 * 1000)
 
-// Rate limit per API key: 120 request/menit
-const _apiKeyHits = new Map()
+// Tanpa rate limit — API key valid boleh memanggil sebebasnya
 function requireApiToken(req, res, next) {
   // CORS agar bisa dipanggil dari browser/domain lain
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -381,14 +380,7 @@ function requireApiToken(req, res, next) {
   if (meta.enabled === false) {
     return res.status(403).json({ success: false, error: 'API key dinonaktifkan oleh admin' })
   }
-  const now = Date.now()
-  let rl = _apiKeyHits.get(key)
-  if (!rl || now > rl.resetAt) { rl = { count: 0, resetAt: now + 60000 }; _apiKeyHits.set(key, rl) }
-  rl.count++
-  if (rl.count > 120) {
-    return res.status(429).json({ success: false, error: 'Rate limit terlampaui: maksimal 120 request/menit per API key' })
-  }
-  meta.lastUsed = now
+  meta.lastUsed = Date.now()
   meta.hits = (meta.hits || 0) + 1
   next()
 }
@@ -4704,7 +4696,7 @@ app.get('/admin/api-docs', (req, res) => {
         <li>Query string: <code>?api_key=trs_xxxxx</code></li>
       </ul>
       <h3>Rate Limit</h3>
-      <p><span class="badge-warn">120 request / menit / API key</span> — lebihnya dijawab <code>429</code>. Data harga diperbarui tiap ±1 menit, jadi polling 1x per menit sudah cukup.</p>
+      <p>Tidak ada batas request. Catatan: data harga diperbarui tiap ±1 menit, jadi polling 1x per menit sudah optimal.</p>
     </div>
 
     <div class="card">
@@ -4799,7 +4791,6 @@ print(r.json()['data']['buy'])</pre>
         <tr><th>Kode</th><th>Arti</th><th>Solusi</th></tr>
         <tr><td><code>401</code></td><td>API key tidak dikirim / tidak dikenal</td><td>Periksa header X-API-Key</td></tr>
         <tr><td><code>403</code></td><td>API key dinonaktifkan admin</td><td>Aktifkan lagi di Panel Admin &rarr; Pengaturan</td></tr>
-        <tr><td><code>429</code></td><td>Lebih dari 120 request/menit</td><td>Kurangi frekuensi polling</td></tr>
         <tr><td><code>500</code></td><td>Error internal server</td><td>Coba lagi; cek log Koyeb</td></tr>
       </table>
       <h3>Catatan</h3>
