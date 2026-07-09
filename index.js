@@ -93,6 +93,9 @@ const _REDIS_REST = (() => {
   return null
 })()
 
+// Log status fallback saat startup — untuk verifikasi build & konfigurasi di Koyeb
+console.log(`[${new Date().toISOString()}] [REDIS] REST fallback: ${_REDIS_REST ? 'AKTIF → ' + _REDIS_REST.url : 'TIDAK TERSEDIA (REDIS_URL bukan Upstash & env UPSTASH_REDIS_REST_* kosong)'}`)
+
 async function _redisRest(cmd) {
   if (!_REDIS_REST) throw new Error('REST fallback tidak tersedia')
   const res = await fetch(_REDIS_REST.url, {
@@ -107,6 +110,7 @@ async function _redisRest(cmd) {
 }
 
 let _restFallbackCount = 0
+let _restFailLogged = 0
 async function _tcpThenRest(tcpFn, restCmd) {
   try {
     return await tcpFn()
@@ -120,6 +124,11 @@ async function _tcpThenRest(tcpFn, restCmd) {
       }
       return result
     } catch (e2) {
+      // Log beberapa kegagalan REST pertama agar penyebabnya terlihat di Koyeb
+      if (_restFailLogged < 5) {
+        _restFailLogged++
+        console.error(`[${new Date().toISOString()}] [REDIS_REST_FALLBACK_GAGAL] ${e2 && e2.message ? e2.message : e2}`)
+      }
       throw e
     }
   }
