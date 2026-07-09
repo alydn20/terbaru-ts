@@ -48,27 +48,13 @@ webpush.setVapidDetails(
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// Redis (Upstash) via ioredis.
-// Upstash menutup koneksi TCP yang idle — tanpa keepalive, perintah pertama setelah
-// jeda dikirim lewat koneksi mati → menggantung sampai commandTimeout ("Command timed out").
+// Redis Cloud via ioredis
 const _ioredis = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
-  maxRetriesPerRequest: 5,
-  commandTimeout: 15000,
-  connectTimeout: 15000,
-  keepAlive: 15000,            // TCP keepalive agar koneksi tidak dianggap idle
-  noDelay: true,
-  retryStrategy: (times) => Math.min(times * 500, 5000),
-  reconnectOnError: (err) => {
-    // Koneksi basi/di-reset oleh Upstash — langsung reconnect, jangan tunggu timeout
-    const msg = err && err.message ? err.message : ''
-    return msg.includes('ECONNRESET') || msg.includes('EPIPE') || msg.includes('Connection is closed')
-  }
+  maxRetriesPerRequest: 3,
+  commandTimeout: 8000,
+  connectTimeout: 10000,
+  retryStrategy: (times) => Math.min(times * 500, 5000)
 })
-
-// PING berkala agar koneksi tidak pernah idle (Upstash memutus koneksi idle).
-// Juga berfungsi sebagai deteksi dini: kalau koneksi mati, reconnect terjadi di sini,
-// bukan saat request user berikutnya.
-setInterval(() => { _ioredis.ping().catch(() => {}) }, 30 * 1000)
 
 // Cache session di memory agar tidak logout saat Redis timeout
 const _sessionCache = new Map() // sessionId -> phone, TTL 5 menit
@@ -17016,42 +17002,17 @@ app.get('/monitoring', async (_req, res) => {
           customSoundOff = data.settings.soundOff || '';
           customSoundBigUp = data.settings.soundBigUp || '';
           customSoundBigDown = data.settings.soundBigDown || '';
-          return true;
         }
       } catch (e) {}
-      return false;
     }
-    // Muat custom sound; kalau gagal (server/jaringan sedang bermasalah) coba ulang
-    // hingga berhasil — tanpa ini user yang load-nya gagal cuma dapat beep default.
-    (function _loadSoundsWithRetry(attempt) {
-      loadCustomSounds().then(function(ok) {
-        if (!ok && attempt < 10) {
-          setTimeout(function() { _loadSoundsWithRetry(attempt + 1); }, Math.min(15000 * (attempt + 1), 60000));
-        }
-      });
-    })(0);
+    loadCustomSounds();
 
     function getAudioContext() {
       if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
       }
-      // Autoplay policy: context tercipta "suspended" sampai ada gesture — coba resume tiap dipakai
-      if (audioContext.state === 'suspended') {
-        try { audioContext.resume(); } catch(e) {}
-      }
       return audioContext;
     }
-    // Aktifkan audio pada sentuhan/klik pertama user (syarat autoplay browser).
-    // Tanpa ini, user yang hanya menonton tanpa pernah menyentuh halaman tidak akan
-    // mendengar suara sama sekali (context tetap suspended).
-    ['pointerdown', 'keydown', 'touchstart'].forEach(function(ev) {
-      window.addEventListener(ev, function() {
-        try {
-          const ctx = getAudioContext();
-          if (ctx.state === 'suspended') ctx.resume();
-        } catch(e) {}
-      }, { once: true, passive: true });
-    });
 
     // Init Lucide icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
