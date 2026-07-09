@@ -75,26 +75,76 @@ const _sessionCache = new Map() // sessionId -> phone, TTL 5 menit
 const SESSION_CACHE_TTL = 5 * 60 * 1000
 _ioredis.on('error', () => {})
 
+// ==================== UPSTASH REST FALLBACK ====================
+// Kalau perintah lewat TCP gagal (timeout/koneksi basi), ulangi lewat REST API
+// Upstash (HTTPS, stateless — tidak punya masalah koneksi idle sama sekali).
+// Kredensial: env UPSTASH_REDIS_REST_URL/TOKEN, atau diturunkan otomatis dari
+// REDIS_URL (di Upstash, password TCP = token REST).
+const _REDIS_REST = (() => {
+  try {
+    if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+      return { url: process.env.UPSTASH_REDIS_REST_URL.replace(/\/$/, ''), token: process.env.UPSTASH_REDIS_REST_TOKEN }
+    }
+    const u = new URL(process.env.REDIS_URL || '')
+    if (u.hostname.endsWith('.upstash.io') && u.password) {
+      return { url: 'https://' + u.hostname, token: decodeURIComponent(u.password) }
+    }
+  } catch (e) {}
+  return null
+})()
+
+async function _redisRest(cmd) {
+  if (!_REDIS_REST) throw new Error('REST fallback tidak tersedia')
+  const res = await fetch(_REDIS_REST.url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + _REDIS_REST.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd.map(a => String(a))),
+    signal: AbortSignal.timeout(10000)
+  })
+  const data = await res.json()
+  if (data.error) throw new Error('Upstash REST: ' + data.error)
+  return data.result
+}
+
+let _restFallbackCount = 0
+async function _tcpThenRest(tcpFn, restCmd) {
+  try {
+    return await tcpFn()
+  } catch (e) {
+    // TCP gagal → coba lewat REST. Kalau REST juga gagal, lempar error TCP asli.
+    try {
+      const result = await _redisRest(restCmd)
+      _restFallbackCount++
+      if (_restFallbackCount === 1 || _restFallbackCount % 50 === 0) {
+        console.log(`[${new Date().toISOString()}] [REDIS_REST_FALLBACK] TCP gagal (${e && e.message}), dilayani via REST (total fallback: ${_restFallbackCount})`)
+      }
+      return result
+    } catch (e2) {
+      throw e
+    }
+  }
+}
+
 // Wrapper agar API-nya kompatibel dengan kode lama (hset object form, hgetall null)
 const redis = {
   async get(key) {
-    return _ioredis.get(key)
+    return _tcpThenRest(() => _ioredis.get(key), ['GET', key])
   },
   async set(key, val) {
-    return _ioredis.set(key, val)
+    return _tcpThenRest(() => _ioredis.set(key, val), ['SET', key, val])
   },
   async del(key) {
-    return _ioredis.del(key)
+    return _tcpThenRest(() => _ioredis.del(key), ['DEL', key])
   },
   async hget(key, field) {
     try {
-      const val = await _ioredis.hget(key, field)
+      const val = await _tcpThenRest(() => _ioredis.hget(key, field), ['HGET', key, field])
       if (key === 'gold:sessions' && val) {
         _sessionCache.set(field, { phone: val, exp: Date.now() + SESSION_CACHE_TTL })
       }
       return val
     } catch (e) {
-      // Redis timeout: pakai cache memory agar user tidak logout
+      // TCP & REST sama-sama gagal: pakai cache memory agar user tidak logout
       if (key === 'gold:sessions') {
         const cached = _sessionCache.get(field)
         if (cached && cached.exp > Date.now()) return cached.phone
@@ -110,24 +160,30 @@ const redis = {
         _sessionCache.set(f, { phone: v, exp: Date.now() + SESSION_CACHE_TTL })
       }
     }
-    return _ioredis.hset(key, ...args)
+    return _tcpThenRest(() => _ioredis.hset(key, ...args), ['HSET', key, ...args])
   },
   async hdel(key, field) {
     if (key === 'gold:sessions') _sessionCache.delete(field)
-    return _ioredis.hdel(key, field)
+    return _tcpThenRest(() => _ioredis.hdel(key, field), ['HDEL', key, field])
   },
   async hgetall(key) {
-    const res = await _ioredis.hgetall(key)
-    return (res && Object.keys(res).length > 0) ? res : null
+    const res = await _tcpThenRest(() => _ioredis.hgetall(key), ['HGETALL', key])
+    // REST mengembalikan array datar [field, value, ...] — konversi ke object
+    let obj = res
+    if (Array.isArray(res)) {
+      obj = {}
+      for (let i = 0; i < res.length; i += 2) obj[res[i]] = res[i + 1]
+    }
+    return (obj && Object.keys(obj).length > 0) ? obj : null
   },
   async rpush(key, val) {
-    return _ioredis.rpush(key, val)
+    return _tcpThenRest(() => _ioredis.rpush(key, val), ['RPUSH', key, val])
   },
   async lrange(key, start, stop) {
-    return _ioredis.lrange(key, start, stop)
+    return _tcpThenRest(() => _ioredis.lrange(key, start, stop), ['LRANGE', key, start, stop])
   },
   async ltrim(key, start, stop) {
-    return _ioredis.ltrim(key, start, stop)
+    return _tcpThenRest(() => _ioredis.ltrim(key, start, stop), ['LTRIM', key, start, stop])
   }
 }
 
