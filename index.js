@@ -95,6 +95,13 @@ const _REDIS_REST = (() => {
 
 // Log status fallback saat startup — untuk verifikasi build & konfigurasi di Koyeb
 console.log(`[${new Date().toISOString()}] [REDIS] REST fallback: ${_REDIS_REST ? 'AKTIF → ' + _REDIS_REST.url : 'TIDAK TERSEDIA (REDIS_URL bukan Upstash & env UPSTASH_REDIS_REST_* kosong)'}`)
+// Log host TCP (tanpa password) — untuk tahu database mana yang sebenarnya dipakai
+try {
+  const _u = new URL(process.env.REDIS_URL || 'redis://localhost:6379')
+  console.log(`[${new Date().toISOString()}] [REDIS] TCP host: ${_u.hostname}:${_u.port || 6379} (scheme: ${_u.protocol}, password: ${_u.password ? 'ada' : 'KOSONG'})`)
+} catch (e) {
+  console.log(`[${new Date().toISOString()}] [REDIS] REDIS_URL tidak bisa diparse sebagai URL`)
+}
 
 async function _redisRest(cmd) {
   if (!_REDIS_REST) throw new Error('REST fallback tidak tersedia')
