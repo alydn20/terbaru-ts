@@ -12993,10 +12993,17 @@ app.get('/monitoring', async (_req, res) => {
       background: rgba(245,158,11,0.18);
       box-shadow: 0 0 16px rgba(245,158,11,0.25), inset 0 1px 0 rgba(245,158,11,0.2);
     }
-    /* History table: hide non-essential cols on mobile */
+    /* History table: kolom non-esensial disembunyikan di mobile — bisa diaktifkan
+       lewat Setting > Kolom Riwayat (class hist-col-* di body) */
     .col-spread, .col-usdidr, .col-markup { }
     @media (max-width: 600px) {
-      .col-spread, .col-usdidr, .col-markup { display: none !important; }
+      body:not(.hist-col-spread) .col-spread { display: none !important; }
+      body:not(.hist-col-usdidr) .col-usdidr { display: none !important; }
+      body:not(.hist-col-status) .col-markup { display: none !important; }
+    }
+    /* Menu Kolom Riwayat hanya relevan di mobile */
+    @media (min-width: 769px) {
+      #histColsRow { display: none !important; }
     }
 
     /* Promo Suggestions Modal */
@@ -14136,7 +14143,10 @@ app.get('/monitoring', async (_req, res) => {
       .history-table th:nth-child(2) { min-width: 105px; flex: 0 0 auto; }
       .history-table th:nth-child(3) { min-width: 100px; flex: 0 0 auto; }
       .history-table th.th-nominal { width: 72px; flex: 0 0 72px; text-align: right; }
-      .history-table th.col-spread, .history-table th.col-usdidr, .history-table th.col-markup { display: none; }
+      body:not(.hist-col-spread) .history-table th.col-spread { display: none; }
+      body:not(.hist-col-usdidr) .history-table th.col-usdidr { display: none; }
+      body:not(.hist-col-status) .history-table th.col-markup { display: none; }
+      .history-table th.col-spread, .history-table th.col-usdidr, .history-table th.col-markup { min-width: 62px; flex: 0 0 auto; }
       .history-table td { display: block; border: none; padding: 0; font-size: 0.65em; white-space: nowrap; }
       .history-table td.time-col { color: #9ca3af; font-size: 0.62em; width: 72px; flex-shrink: 0; overflow: hidden; }
       .history-table td:nth-child(2) { font-weight: 700; min-width: 105px; flex: 0 0 auto; }
@@ -14145,9 +14155,10 @@ app.get('/monitoring', async (_req, res) => {
       .history-table td.td-nominal .nom-gram { color: var(--text-primary); font-size: 0.9em; width: 100%; text-align: right; }
       .history-table td.td-nominal br { display: none; }
       .history-table td.td-nominal small { display: block; width: 100%; text-align: right; }
-      .history-table td.col-spread,
-      .history-table td.col-usdidr,
-      .history-table td.col-markup { display: none; }
+      body:not(.hist-col-spread) .history-table td.col-spread { display: none; }
+      body:not(.hist-col-usdidr) .history-table td.col-usdidr { display: none; }
+      body:not(.hist-col-status) .history-table td.col-markup { display: none; }
+      .history-table td.col-spread, .history-table td.col-usdidr, .history-table td.col-markup { min-width: 62px; flex: 0 0 auto; font-size: 0.62em; }
       .history-pagination { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
       .page-btn { padding: 7px 12px; font-size: 0.8em; }
       .page-info { font-size: 0.78em; }
@@ -16725,11 +16736,11 @@ app.get('/monitoring', async (_req, res) => {
 
     // Tutup semua floating panel (biar hanya 1 dropdown terbuka)
     function _closeAllPanels() {
-      ['soundPanel','soundFxPanel','getarPanel','settingsPanel'].forEach(function(id){
+      ['soundPanel','soundFxPanel','getarPanel','settingsPanel','histColsPanel'].forEach(function(id){
         const p = document.getElementById(id);
         if (p) p.style.display = 'none';
       });
-      _soundPanelOpen = false; _soundFxOpen = false; _getarOpen = false; _settingsPanelOpen = false;
+      _soundPanelOpen = false; _soundFxOpen = false; _getarOpen = false; _settingsPanelOpen = false; _histColsOpen = false;
     }
     let _soundPanelOpen = false;
     function openSoundPanel(e) {
@@ -16828,6 +16839,51 @@ app.get('/monitoring', async (_req, res) => {
       if (!_getarOpen) return;
       const panel = document.getElementById('getarPanel');
       if (panel && !panel.contains(e.target)) closeGetar();
+    });
+
+    // ── Kolom Riwayat (khusus mobile): pilih kolom Spread/USD-IDR/Status di tabel ──
+    const HIST_COLS_KEY = 'histColsMobile';
+    let histCols = (function() {
+      const def = { spread: false, usdidr: false, status: false };
+      try { return Object.assign(def, JSON.parse(localStorage.getItem(HIST_COLS_KEY) || '{}')); }
+      catch(e) { return def; }
+    })();
+    function _applyHistCols() {
+      document.body.classList.toggle('hist-col-spread', !!histCols.spread);
+      document.body.classList.toggle('hist-col-usdidr', !!histCols.usdidr);
+      document.body.classList.toggle('hist-col-status', !!histCols.status);
+    }
+    _applyHistCols();
+    function toggleHistCol(key, el) {
+      histCols[key] = !!(el && el.checked);
+      try { localStorage.setItem(HIST_COLS_KEY, JSON.stringify(histCols)); } catch(e) {}
+      _applyHistCols();
+    }
+    window.toggleHistCol = toggleHistCol;
+    let _histColsOpen = false;
+    function openHistCols(e) {
+      if (e) e.stopPropagation();
+      closeSettingsPanel();
+      const panel = document.getElementById('histColsPanel');
+      if (!panel) return;
+      const s = document.getElementById('sw_histSpread'); if (s) s.checked = !!histCols.spread;
+      const u = document.getElementById('sw_histUsdidr'); if (u) u.checked = !!histCols.usdidr;
+      const m = document.getElementById('sw_histStatus'); if (m) m.checked = !!histCols.status;
+      _histColsOpen = true;
+      panel.style.display = 'block';
+      _positionSubPanel(panel);
+    }
+    window.openHistCols = openHistCols;
+    function closeHistCols() {
+      _histColsOpen = false;
+      const panel = document.getElementById('histColsPanel');
+      if (panel) panel.style.display = 'none';
+    }
+    window.closeHistCols = closeHistCols;
+    document.addEventListener('click', function(e) {
+      if (!_histColsOpen) return;
+      const panel = document.getElementById('histColsPanel');
+      if (panel && !panel.contains(e.target)) closeHistCols();
     });
 
     // Settings chooser panel (Tampilan / Pilih Nominal)
@@ -18949,6 +19005,35 @@ app.get('/monitoring', async (_req, res) => {
       <div class="sound-row-label">Pilih Nominal<span class="sound-row-sub">Atur nominal investasi</span></div>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
+    <div class="sound-row" id="histColsRow" style="cursor:pointer" onclick="openHistCols()">
+      <div class="sound-row-icon" style="background:rgba(74,222,128,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg></div>
+      <div class="sound-row-label">Kolom Riwayat<span class="sound-row-sub">Spread, USD/IDR &amp; Status di tabel</span></div>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+  </div>
+
+  <!-- Sub-panel: kolom tabel riwayat (khusus mobile) -->
+  <div id="histColsPanel" class="sound-panel" style="display:none" onclick="event.stopPropagation()">
+    <div class="sound-panel-header">
+      <span style="display:inline-flex;align-items:center;gap:6px;"><button class="sound-panel-back" title="Kembali" onclick="closeHistCols();openSettingsPanel()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>Kolom Riwayat</span>
+      <button class="sound-panel-close" onclick="closeHistCols()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(74,222,128,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+      <div class="sound-row-label">Spread<span class="sound-row-sub">Selisih beli vs jual (%)</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_histSpread" onchange="toggleHistCol('spread',this)"><span class="sound-sw-track"></span></label>
+    </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(167,139,250,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <div class="sound-row-label">USD/IDR<span class="sound-row-sub">Kurs dolar per baris</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_histUsdidr" onchange="toggleHistCol('usdidr',this)"><span class="sound-sw-track"></span></label>
+    </div>
+    <div class="sound-row">
+      <div class="sound-row-icon" style="background:rgba(251,191,36,0.15)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div class="sound-row-label">Status<span class="sound-row-sub">MARKUP / MARKDOWN</span></div>
+      <label class="sound-sw"><input type="checkbox" id="sw_histStatus" onchange="toggleHistCol('status',this)"><span class="sound-sw-track"></span></label>
+    </div>
+    <div style="padding:8px 14px 12px;color:#6b7280;font-size:0.68em;line-height:1.5;">Hanya berlaku di tampilan mobile. Di desktop semua kolom selalu tampil.</div>
   </div>
 </body>
 </html>`
