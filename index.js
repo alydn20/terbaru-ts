@@ -17002,17 +17002,42 @@ app.get('/monitoring', async (_req, res) => {
           customSoundOff = data.settings.soundOff || '';
           customSoundBigUp = data.settings.soundBigUp || '';
           customSoundBigDown = data.settings.soundBigDown || '';
+          return true;
         }
       } catch (e) {}
+      return false;
     }
-    loadCustomSounds();
+    // Muat custom sound; kalau gagal (server/jaringan sedang bermasalah) coba ulang
+    // hingga berhasil — tanpa ini user yang load-nya gagal cuma dapat beep default.
+    (function _loadSoundsWithRetry(attempt) {
+      loadCustomSounds().then(function(ok) {
+        if (!ok && attempt < 10) {
+          setTimeout(function() { _loadSoundsWithRetry(attempt + 1); }, Math.min(15000 * (attempt + 1), 60000));
+        }
+      });
+    })(0);
 
     function getAudioContext() {
       if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
       }
+      // Autoplay policy: context tercipta "suspended" sampai ada gesture — coba resume tiap dipakai
+      if (audioContext.state === 'suspended') {
+        try { audioContext.resume(); } catch(e) {}
+      }
       return audioContext;
     }
+    // Aktifkan audio pada sentuhan/klik pertama user (syarat autoplay browser).
+    // Tanpa ini, user yang hanya menonton tanpa pernah menyentuh halaman tidak akan
+    // mendengar suara sama sekali (context tetap suspended).
+    ['pointerdown', 'keydown', 'touchstart'].forEach(function(ev) {
+      window.addEventListener(ev, function() {
+        try {
+          const ctx = getAudioContext();
+          if (ctx.state === 'suspended') ctx.resume();
+        } catch(e) {}
+      }, { once: true, passive: true });
+    });
 
     // Init Lucide icons
     if (typeof lucide !== 'undefined') lucide.createIcons();
