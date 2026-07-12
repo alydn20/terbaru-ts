@@ -7637,7 +7637,7 @@ app.get('/login', (_req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" style="display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
