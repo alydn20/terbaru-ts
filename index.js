@@ -5437,6 +5437,10 @@ app.post('/api/check-user', rateLimit(10, 60000), express.json(), async (req, re
   const { phone } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
 
+  // Verifikasi Cloudflare Turnstile (anti-bot) — hanya aktif bila TURNSTILE_SECRET_KEY diset
+  const tsOk = await verifyTurnstile(req.body['cf-turnstile-response'], req.ip)
+  if (!tsOk) return res.json({ success: false, error: 'Verifikasi keamanan gagal. Muat ulang halaman dan coba lagi.' })
+
   const normalizedPhone = normalizePhone(phone)
   const check = await isUserValid(normalizedPhone)
 
@@ -7278,6 +7282,7 @@ app.post('/api/admin-phones', express.json(), (req, res) => {
 // ==================== LOGIN PAGE ====================
 app.get('/login', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+  const tsSiteKey = process.env.TURNSTILE_SITE_KEY || ''
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -7286,6 +7291,7 @@ app.get('/login', (_req, res) => {
   <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.png">
+  ${tsSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ''}
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
   <title>Login - Gold Price Monitor</title>
   <style>
@@ -7631,6 +7637,7 @@ app.get('/login', (_req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7902,6 +7909,8 @@ app.get('/login', (_req, res) => {
         showMessage('Terjadi kesalahan. Coba lagi.', 'error');
       }
 
+      // Token Turnstile sekali pakai — reset agar percobaan berikutnya dapat token baru
+      if (window.turnstile) { try { turnstile.reset(); } catch {} }
       setLoading(btn, false);
       btn.textContent = 'Masuk ke Akun';
     }
