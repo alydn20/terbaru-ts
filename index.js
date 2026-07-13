@@ -7637,7 +7637,7 @@ app.get('/login', (_req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" style="display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" data-execution="execute" data-callback="onTurnstileSuccess" data-error-callback="onTurnstileError" data-expired-callback="onTurnstileExpired" style="display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7722,6 +7722,23 @@ app.get('/login', (_req, res) => {
     let currentPhone = '';
     let currentSession = '';
     let userName = '';
+
+    // Turnstile: ambil token SEGAR saat klik (mode execute) agar tidak terkunci token basi/kosong
+    let _tsResolve = null;
+    window.onTurnstileSuccess = function (token) { if (_tsResolve) { _tsResolve(token || ''); _tsResolve = null; } };
+    window.onTurnstileError = function () { if (_tsResolve) { _tsResolve(''); _tsResolve = null; } };
+    window.onTurnstileExpired = function () { try { turnstile.reset(); } catch (e) {} };
+    async function getFreshTsToken(timeoutMs = 15000) {
+      if (!window.turnstile) return ''; // Turnstile tidak dikonfigurasi → biarkan server yang memutuskan
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (t) => { if (!done) { done = true; _tsResolve = null; resolve(t || ''); } };
+        _tsResolve = finish;
+        try { turnstile.reset(); } catch (e) {}
+        try { turnstile.execute(); } catch (e) { finish(''); }
+        setTimeout(() => finish(''), timeoutMs);
+      });
+    }
 
     // Tampilkan pemberitahuan bila sesi sebelumnya dikeluarkan karena login di perangkat lain
     try {
@@ -7871,8 +7888,7 @@ app.get('/login', (_req, res) => {
       hideMessage();
 
       try {
-        let tsToken = '';
-        if (window.turnstile) { try { tsToken = turnstile.getResponse() || ''; } catch {} }
+        const tsToken = await getFreshTsToken();
         const res = await fetch('/api/check-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -7909,8 +7925,6 @@ app.get('/login', (_req, res) => {
         showMessage('Terjadi kesalahan. Coba lagi.', 'error');
       }
 
-      // Token Turnstile sekali pakai — reset agar percobaan berikutnya dapat token baru
-      if (window.turnstile) { try { turnstile.reset(); } catch {} }
       setLoading(btn, false);
       btn.textContent = 'Masuk ke Akun';
     }
