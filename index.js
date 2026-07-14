@@ -7601,6 +7601,13 @@ app.get('/login', (_req, res) => {
   </style>
 </head>
 <body>
+  <!-- Overlay loading: sembunyikan form (& Cloudflare) sampai status login dipastikan.
+       User yang masih login hanya melihat spinner ini lalu langsung ke /monitoring. -->
+  <div id="authLoading" style="position:fixed;inset:0;background:#000000;display:flex;align-items:center;justify-content:center;z-index:99999;">
+    <div style="width:40px;height:40px;border:3px solid rgba(247,147,26,0.25);border-top-color:#f7931a;border-radius:50%;animation:authspin 0.8s linear infinite;"></div>
+  </div>
+  <style>@keyframes authspin{to{transform:rotate(360deg)}}</style>
+
   <div class="container">
     <div class="card">
       <div class="logo-container">
@@ -7753,9 +7760,17 @@ app.get('/login', (_req, res) => {
       }
     } catch (e) {}
 
+    // Sembunyikan overlay loading → tampilkan form login (hanya untuk user yang belum login)
+    function hideAuthLoading() { const el = document.getElementById('authLoading'); if (el) el.style.display = 'none'; }
+    // Pengaman: kalau pengecekan sesi menggantung, jangan biarkan user terjebak di spinner selamanya
+    const _authLoadingFallback = setTimeout(hideAuthLoading, 8000);
+
     // Check if already logged in
     const existingSession = localStorage.getItem('goldmonitor_session');
-    if (existingSession) {
+    if (!existingSession) {
+      clearTimeout(_authLoadingFallback);
+      hideAuthLoading();
+    } else {
       fetch('/api/verify-session?session=' + existingSession)
         .then(r => r.json())
         .then(data => {
@@ -7766,21 +7781,27 @@ app.get('/login', (_req, res) => {
               .then(pinData => {
                 if (pinData.requirePinChange) {
                   currentSession = existingSession;
+                  clearTimeout(_authLoadingFallback);
+                  hideAuthLoading();
                   document.getElementById('changePinModal').classList.add('show');
                   setupPinInputs(document.querySelectorAll('.new-pin'), () => {
                     document.querySelector('.confirm-pin').focus();
                   });
                   setupPinInputs(document.querySelectorAll('.confirm-pin'), () => saveNewPin());
                 } else {
+                  // Sesi valid → langsung ke monitoring; overlay tetap tampil sampai pindah halaman
                   window.location.replace('/monitoring');
                 }
-              });
-          } else if (data.reason !== 'server_error') {
-            // server_error = gangguan sementara — jangan hapus session yang mungkin masih valid
-            localStorage.removeItem('goldmonitor_session');
+              })
+              .catch(() => { clearTimeout(_authLoadingFallback); hideAuthLoading(); });
+          } else {
+            // Sesi tidak valid (kecuali gangguan sementara: jangan hapus sesi yang mungkin masih valid)
+            if (data.reason !== 'server_error') localStorage.removeItem('goldmonitor_session');
+            clearTimeout(_authLoadingFallback);
+            hideAuthLoading();
           }
         })
-        .catch(() => {});
+        .catch(() => { clearTimeout(_authLoadingFallback); hideAuthLoading(); });
     }
 
     function showMessage(text, type, elementId = 'message') {
