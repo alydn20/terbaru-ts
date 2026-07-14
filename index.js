@@ -7665,7 +7665,7 @@ app.get('/login', async (req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-retry="auto" data-retry-interval="3000" data-refresh-expired="auto" data-refresh-timeout="auto" data-error-callback="onTurnstileError" data-expired-callback="onTurnstileExpired" data-timeout-callback="onTurnstileTimeout" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7750,6 +7750,12 @@ app.get('/login', async (req, res) => {
     let currentPhone = '';
     let currentSession = '';
     let userName = '';
+
+    // Turnstile auto-recovery: kalau verifikasi error/expired/timeout, reset otomatis supaya
+    // kotak muncul & mencoba lagi sendiri TANPA perlu refresh manual (khususnya Safari iOS).
+    window.onTurnstileError = function () { try { turnstile.reset(); } catch (e) {} return true; };
+    window.onTurnstileExpired = function () { try { turnstile.reset(); } catch (e) {} };
+    window.onTurnstileTimeout = function () { try { turnstile.reset(); } catch (e) {} };
 
     // Tampilkan pemberitahuan bila sesi sebelumnya dikeluarkan karena login di perangkat lain
     try {
@@ -7959,6 +7965,9 @@ app.get('/login', async (req, res) => {
         showMessage('Terjadi kesalahan. Coba lagi.', 'error');
       }
 
+      // Token Turnstile sekali pakai — reset agar percobaan berikutnya otomatis dapat token baru
+      // (tanpa perlu refresh manual saat verifikasi sebelumnya gagal).
+      if (window.turnstile) { try { turnstile.reset(); } catch (e) {} }
       setLoading(btn, false);
       btn.textContent = 'Masuk ke Akun';
     }
