@@ -7751,16 +7751,20 @@ app.get('/login', async (req, res) => {
     let currentSession = '';
     let userName = '';
 
-    // Auto-lanjut: kalau user sudah klik "Masuk" tapi verifikasi belum selesai, begitu token
-    // siap login diproses OTOMATIS — user tidak perlu klik dua kali.
-    let _pendingCheck = false;
-    let _pendingTimer = null;
+    // Auto-lanjut: kalau user sudah klik "Masuk" tapi verifikasi belum selesai, TETAP tunggu;
+    // begitu Cloudflare berhasil, login diproses OTOMATIS — user tidak perlu klik lagi meski lama.
+    let _wantLogin = false;
+    let _nudgeTimer = null;
+    let _giveUpTimer = null;
+    function _stopWaiting() {
+      _wantLogin = false;
+      if (_nudgeTimer) { clearInterval(_nudgeTimer); _nudgeTimer = null; }
+      if (_giveUpTimer) { clearTimeout(_giveUpTimer); _giveUpTimer = null; }
+    }
     window.onTurnstileSuccess = function () {
-      if (_pendingCheck) {
-        _pendingCheck = false;
-        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
-        checkUser();
-      }
+      var f = document.getElementById('phoneForm');
+      var onPhoneStep = f && f.style.display !== 'none';
+      if (_wantLogin && onPhoneStep) { checkUser(); }
     };
     // Turnstile auto-recovery: kalau verifikasi error/expired/timeout, reset otomatis supaya
     // kotak muncul & mencoba lagi sendiri TANPA perlu refresh manual (khususnya Safari iOS).
@@ -7935,21 +7939,32 @@ app.get('/login', async (req, res) => {
         // Kalau kotak verifikasi ada tapi belum selesai, jangan kirim dulu — hindari pesan "gagal"
         // dan pemborosan rate-limit. Minta user menunggu kotak Cloudflare selesai/diselesaikan.
         if (document.querySelector('.cf-turnstile') && !tsToken) {
-          // Token belum siap — tandai agar login LANJUT OTOMATIS begitu verifikasi selesai.
-          // Tombol dibiarkan loading; user tidak perlu klik lagi.
-          _pendingCheck = true;
+          // Token belum siap — TETAP tunggu (tombol loading). onTurnstileSuccess akan melanjutkan
+          // otomatis begitu Cloudflare berhasil, meski lama. Jangan batalkan sendiri.
+          _wantLogin = true;
           showMessage('Memverifikasi keamanan, mohon tunggu…', 'info');
-          if (_pendingTimer) clearTimeout(_pendingTimer);
-          _pendingTimer = setTimeout(function () {
-            if (_pendingCheck) {
-              _pendingCheck = false;
-              showMessage('Verifikasi keamanan lama merespons. Coba klik lagi.', 'error');
-              setLoading(btn, false);
-              btn.textContent = 'Masuk ke Akun';
-              if (window.turnstile) { try { turnstile.reset(); } catch (e) {} }
-            }
-          }, 30000);
-          return; // biarkan tombol tetap loading; onTurnstileSuccess akan melanjutkan sendiri
+          if (!_nudgeTimer) {
+            // Dorong ulang tiap 15 detik kalau verifikasi macet (khas jaringan seluler iPhone).
+            _nudgeTimer = setInterval(function () {
+              if (_wantLogin) {
+                showMessage('Verifikasi keamanan agak lama di jaringan ini, mohon tunggu…', 'info');
+                try { turnstile.reset(); } catch (e) {}
+              }
+            }, 15000);
+          }
+          if (!_giveUpTimer) {
+            // Baru menyerah setelah 90 detik (bukan 30) supaya jaringan lambat tetap sempat lolos.
+            _giveUpTimer = setTimeout(function () {
+              if (_wantLogin) {
+                _stopWaiting();
+                showMessage('Verifikasi keamanan gagal merespons. Coba klik "Masuk ke Akun" lagi.', 'error');
+                setLoading(btn, false);
+                btn.textContent = 'Masuk ke Akun';
+                try { turnstile.reset(); } catch (e) {}
+              }
+            }, 90000);
+          }
+          return; // tombol tetap loading; onTurnstileSuccess akan melanjutkan sendiri
         }
         const res = await fetch('/api/check-user', {
           method: 'POST',
@@ -7987,8 +8002,8 @@ app.get('/login', async (req, res) => {
         showMessage('Terjadi kesalahan. Coba lagi.', 'error');
       }
 
-      // Token Turnstile sekali pakai — reset agar percobaan berikutnya otomatis dapat token baru
-      // (tanpa perlu refresh manual saat verifikasi sebelumnya gagal).
+      // Selesai (berhasil/gagal) — hentikan penungguan auto-lanjut & reset token untuk percobaan baru.
+      _stopWaiting();
       if (window.turnstile) { try { turnstile.reset(); } catch (e) {} }
       setLoading(btn, false);
       btn.textContent = 'Masuk ke Akun';
