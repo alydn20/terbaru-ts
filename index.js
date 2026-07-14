@@ -5577,6 +5577,10 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: loc }) }).catch(() => {})
   })
 
+  // Cookie sesi tahan lama (di-set server) — jauh lebih awet di Safari iOS daripada localStorage.
+  const _sessMaxAge = 90 * 24 * 60 * 60 // 90 hari (detik)
+  res.setHeader('Set-Cookie', `gold_sess=${encodeURIComponent(sessionId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${_sessMaxAge}; Path=/`)
+
   res.json({
     success: true,
     sessionId,
@@ -5698,6 +5702,10 @@ app.get('/api/verify-session', async (req, res) => {
     // Check if user is admin (akun internal 'admin' ATAU nomor admin)
     const isAdmin = phone === 'admin' || ADMIN_PHONES.includes(phone)
 
+    // Perbarui cookie sesi (sliding expiry) + bootstrap sesi lama yang hanya tersimpan di localStorage
+    const _sessMaxAge = 90 * 24 * 60 * 60
+    res.setHeader('Set-Cookie', `gold_sess=${encodeURIComponent(sessionId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${_sessMaxAge}; Path=/`)
+
     res.json({ valid: true, user: check.user, phone, isAdmin })
   } catch (e) {
     // Error transien (mis. Redis timeout) — beri tanda agar client TIDAK menghapus session
@@ -5712,6 +5720,7 @@ app.post('/api/logout', express.json(), async (req, res) => {
   if (session) {
     await redis.hdel(REDIS_KEYS.SESSIONS, session)
   }
+  res.setHeader('Set-Cookie', 'gold_sess=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
   res.json({ success: true })
 })
 
@@ -7280,7 +7289,19 @@ app.post('/api/admin-phones', express.json(), (req, res) => {
 })
 
 // ==================== LOGIN PAGE ====================
-app.get('/login', (_req, res) => {
+app.get('/login', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+  // Sudah login (cookie sesi valid) → langsung ke monitoring, tanpa lihat halaman login/Cloudflare.
+  try {
+    const _sess = parseCookies(req).gold_sess
+    if (_sess) {
+      const _phone = await redis.hget(REDIS_KEYS.SESSIONS, _sess)
+      if (_phone) {
+        const _chk = await isUserValid(_phone)
+        if (_chk.valid) return res.redirect('/monitoring')
+      }
+    }
+  } catch (e) {}
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   const tsSiteKey = process.env.TURNSTILE_SITE_KEY || ''
   const html = `<!DOCTYPE html>
@@ -7644,7 +7665,7 @@ app.get('/login', (_req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" data-execution="execute" data-callback="onTurnstileSuccess" data-error-callback="onTurnstileError" data-expired-callback="onTurnstileExpired" style="display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" style="display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7729,23 +7750,6 @@ app.get('/login', (_req, res) => {
     let currentPhone = '';
     let currentSession = '';
     let userName = '';
-
-    // Turnstile: ambil token SEGAR saat klik (mode execute) agar tidak terkunci token basi/kosong
-    let _tsResolve = null;
-    window.onTurnstileSuccess = function (token) { if (_tsResolve) { _tsResolve(token || ''); _tsResolve = null; } };
-    window.onTurnstileError = function () { if (_tsResolve) { _tsResolve(''); _tsResolve = null; } };
-    window.onTurnstileExpired = function () { try { turnstile.reset(); } catch (e) {} };
-    async function getFreshTsToken(timeoutMs = 15000) {
-      if (!window.turnstile) return ''; // Turnstile tidak dikonfigurasi → biarkan server yang memutuskan
-      return new Promise((resolve) => {
-        let done = false;
-        const finish = (t) => { if (!done) { done = true; _tsResolve = null; resolve(t || ''); } };
-        _tsResolve = finish;
-        try { turnstile.reset(); } catch (e) {}
-        try { turnstile.execute(); } catch (e) { finish(''); }
-        setTimeout(() => finish(''), timeoutMs);
-      });
-    }
 
     // Tampilkan pemberitahuan bila sesi sebelumnya dikeluarkan karena login di perangkat lain
     try {
@@ -7909,7 +7913,8 @@ app.get('/login', (_req, res) => {
       hideMessage();
 
       try {
-        const tsToken = await getFreshTsToken();
+        let tsToken = '';
+        if (window.turnstile) { try { tsToken = turnstile.getResponse() || ''; } catch (e) {} }
         const res = await fetch('/api/check-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -11678,14 +11683,28 @@ ${authScript}
 })
 
 // MONITORING PAGE - Professional Gold Price Dashboard
-app.get('/monitoring', async (_req, res) => {
+app.get('/monitoring', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.setHeader('Pragma', 'no-cache')
   res.setHeader('Pragma', 'no-cache')
   res.setHeader('Expires', '0')
+  // Pulihkan sesi dari cookie ke localStorage — Safari iOS sering menghapus localStorage,
+  // cookie server lebih awet. Ini mencegah user yang sudah login balik ke halaman login.
+  let _sessBootstrap = ''
+  try {
+    const _sess = parseCookies(req).gold_sess
+    if (_sess) {
+      const _phone = await redis.hget(REDIS_KEYS.SESSIONS, _sess)
+      if (_phone) {
+        const _chk = await isUserValid(_phone)
+        if (_chk.valid) _sessBootstrap = `<script>try{if(!localStorage.getItem('goldmonitor_session'))localStorage.setItem('goldmonitor_session',${JSON.stringify(_sess)});}catch(e){}</script>`
+      }
+    }
+  } catch (e) {}
   const html = `<!DOCTYPE html>
 <html>
 <head>
+  ${_sessBootstrap}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#000000">
