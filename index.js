@@ -7665,7 +7665,7 @@ app.get('/login', async (req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-appearance="interaction-only" style="display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7915,6 +7915,14 @@ app.get('/login', async (req, res) => {
       try {
         let tsToken = '';
         if (window.turnstile) { try { tsToken = turnstile.getResponse() || ''; } catch (e) {} }
+        // Kalau kotak verifikasi ada tapi belum selesai, jangan kirim dulu — hindari pesan "gagal"
+        // dan pemborosan rate-limit. Minta user menunggu kotak Cloudflare selesai/diselesaikan.
+        if (document.querySelector('.cf-turnstile') && !tsToken) {
+          showMessage('Selesaikan verifikasi keamanan di atas dulu (tunggu 1-2 detik), lalu klik lagi.', 'error');
+          setLoading(btn, false);
+          btn.textContent = 'Masuk ke Akun';
+          return;
+        }
         const res = await fetch('/api/check-user', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
