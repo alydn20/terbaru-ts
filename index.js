@@ -7665,7 +7665,7 @@ app.get('/login', async (req, res) => {
             <input type="tel" id="phoneInput" placeholder="8xxxxxxxxxx" maxlength="12" autocomplete="tel">
           </div>
         </div>
-        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-retry="auto" data-retry-interval="3000" data-refresh-expired="auto" data-refresh-timeout="auto" data-error-callback="onTurnstileError" data-expired-callback="onTurnstileExpired" data-timeout-callback="onTurnstileTimeout" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
+        ${tsSiteKey ? `<div class="cf-turnstile" data-sitekey="${tsSiteKey}" data-theme="dark" data-retry="auto" data-retry-interval="3000" data-refresh-expired="auto" data-refresh-timeout="auto" data-callback="onTurnstileSuccess" data-error-callback="onTurnstileError" data-expired-callback="onTurnstileExpired" data-timeout-callback="onTurnstileTimeout" style="margin:0 0 16px;display:flex;justify-content:center;"></div>` : ''}
         <button class="btn btn-primary" id="checkBtn" onclick="checkUser()">
           Masuk ke Akun
         </button>
@@ -7751,6 +7751,17 @@ app.get('/login', async (req, res) => {
     let currentSession = '';
     let userName = '';
 
+    // Auto-lanjut: kalau user sudah klik "Masuk" tapi verifikasi belum selesai, begitu token
+    // siap login diproses OTOMATIS — user tidak perlu klik dua kali.
+    let _pendingCheck = false;
+    let _pendingTimer = null;
+    window.onTurnstileSuccess = function () {
+      if (_pendingCheck) {
+        _pendingCheck = false;
+        if (_pendingTimer) { clearTimeout(_pendingTimer); _pendingTimer = null; }
+        checkUser();
+      }
+    };
     // Turnstile auto-recovery: kalau verifikasi error/expired/timeout, reset otomatis supaya
     // kotak muncul & mencoba lagi sendiri TANPA perlu refresh manual (khususnya Safari iOS).
     window.onTurnstileError = function () { try { turnstile.reset(); } catch (e) {} return true; };
@@ -7924,10 +7935,21 @@ app.get('/login', async (req, res) => {
         // Kalau kotak verifikasi ada tapi belum selesai, jangan kirim dulu — hindari pesan "gagal"
         // dan pemborosan rate-limit. Minta user menunggu kotak Cloudflare selesai/diselesaikan.
         if (document.querySelector('.cf-turnstile') && !tsToken) {
-          showMessage('Selesaikan verifikasi keamanan di atas dulu (tunggu 1-2 detik), lalu klik lagi.', 'error');
-          setLoading(btn, false);
-          btn.textContent = 'Masuk ke Akun';
-          return;
+          // Token belum siap — tandai agar login LANJUT OTOMATIS begitu verifikasi selesai.
+          // Tombol dibiarkan loading; user tidak perlu klik lagi.
+          _pendingCheck = true;
+          showMessage('Memverifikasi keamanan, mohon tunggu…', 'info');
+          if (_pendingTimer) clearTimeout(_pendingTimer);
+          _pendingTimer = setTimeout(function () {
+            if (_pendingCheck) {
+              _pendingCheck = false;
+              showMessage('Verifikasi keamanan lama merespons. Coba klik lagi.', 'error');
+              setLoading(btn, false);
+              btn.textContent = 'Masuk ke Akun';
+              if (window.turnstile) { try { turnstile.reset(); } catch (e) {} }
+            }
+          }, 30000);
+          return; // biarkan tombol tetap loading; onTurnstileSuccess akan melanjutkan sendiri
         }
         const res = await fetch('/api/check-user', {
           method: 'POST',
