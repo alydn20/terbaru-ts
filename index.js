@@ -19476,7 +19476,19 @@ function scheduleReconnect(delay) {
 async function isGroupAdmin(sock, groupJid, participantJid) {
   try {
     const metadata = await sock.groupMetadata(groupJid)
-    const participant = metadata.participants.find(p => p.id === participantJid)
+    // Buang suffix device (:12) lalu ambil bagian sebelum '@' utk cocokkan lintas format (@s.whatsapp.net / @lid)
+    const stripDevice = (jid) => (jid || '').replace(/:[0-9]+/, '')
+    const target = stripDevice(participantJid)
+    const targetNum = target.split('@')[0]
+    const participant = metadata.participants.find(p => {
+      const pid = stripDevice(p.id)
+      const plid = stripDevice(p.lid || '')
+      const pjid = stripDevice(p.jid || '')
+      return pid === target || plid === target || pjid === target ||
+        pid.split('@')[0] === targetNum ||
+        plid.split('@')[0] === targetNum ||
+        pjid.split('@')[0] === targetNum
+    })
     return participant && (participant.admin === 'admin' || participant.admin === 'superadmin')
   } catch (e) {
     return false
