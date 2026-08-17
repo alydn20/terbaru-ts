@@ -3988,8 +3988,7 @@ app.get('/qr-reset', async (req, res) => {
 
     // Delete local auth folder
     const fs = await import('fs')
-    const path = await import('path')
-    const authPath = path.join(process.cwd(), 'auth')
+    const authPath = '/tmp/wa_auth'
 
     if (fs.existsSync(authPath)) {
       fs.rmSync(authPath, { recursive: true, force: true })
@@ -6813,8 +6812,7 @@ app.post('/api/admin/wa-reset', express.json(), async (req, res) => {
 
     // Hapus folder auth lokal
     const fs = await import('fs')
-    const path = await import('path')
-    const authPath = path.join(process.cwd(), 'auth')
+    const authPath = '/tmp/wa_auth'
     if (fs.existsSync(authPath)) {
       fs.rmSync(authPath, { recursive: true, force: true })
       pushLog('WA | Auth folder deleted')
@@ -19557,8 +19555,8 @@ async function start() {
         isReady = false
         lastQr = null
         const fs = await import('fs')
-        if (fs.existsSync('./auth')) {
-          fs.rmSync('./auth', { recursive: true, force: true })
+        if (fs.existsSync('/tmp/wa_auth')) {
+          fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
           pushLog('WA | Auth folder deleted')
         }
         consecutive428 = 0
