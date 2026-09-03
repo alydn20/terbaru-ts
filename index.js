@@ -295,6 +295,8 @@ let pingInterval = null  // Interval ping WS - clear dulu sebelum buat baru
 
 // ------ STATE ------
 let lastQr = null
+let pairingCode = null       // kode pairing 8-digit aktif (metode login alternatif selain QR)
+let pendingPairingPhone = null // nomor yang di-request pairing code-nya — dikonsumsi sekali oleh start()
 const logs = []
 const loginHistory = [] // in-memory login log per nomor user
 const MAX_LOGIN_HISTORY = 300
@@ -587,6 +589,44 @@ async function clearRedisAuth() {
     pushLog('WA | Redis auth cleared')
   } catch (e) {
     pushLog('WA | Failed to clear Redis auth: ' + e.message)
+  }
+}
+
+// ==================== WA CREDS BACKUP (survive container restart) ====================
+// Auth aktif pakai file-based (/tmp/wa_auth) karena lebih cepat & tidak membebani Upstash
+// dengan ratusan write signal-session/sender-key. Tapi /tmp hilang total tiap kali container
+// restart/redeploy → tanpa ini, bot butuh scan QR baru SETIAP restart (penyebab utama
+// "sering logout"). Solusinya: backup ringan HANYA `creds` (identitas device linked, bukan
+// signal session store) ke Redis, lalu dipulihkan ke /tmp sebelum useMultiFileAuthState()
+// dipanggil. Signal session/sender-key yang hilang akan di-resync otomatis oleh WhatsApp
+// setelah reconnect — bukan penyebab logout.
+async function backupWaCredsToRedis(creds) {
+  try {
+    const serialized = JSON.stringify(creds, BufferJSON.replacer)
+    await redis.hset(REDIS_KEYS.WA_AUTH, { creds: serialized })
+  } catch (e) {}
+}
+
+async function restoreWaCredsToDisk(authPath) {
+  try {
+    const fs = await import('fs')
+    const path = await import('path')
+    const credsFile = path.join(authPath, 'creds.json')
+    if (fs.existsSync(credsFile)) return false // sudah ada lokal, tidak perlu restore
+
+    const data = await redis.hget(REDIS_KEYS.WA_AUTH, 'creds')
+    if (!data) return false
+
+    const str = typeof data === 'string' ? data : JSON.stringify(data)
+    JSON.parse(str, BufferJSON.reviver) // validasi bisa di-parse sebelum ditulis
+
+    fs.mkdirSync(authPath, { recursive: true })
+    fs.writeFileSync(credsFile, str)
+    pushLog('WA | Credentials dipulihkan dari Redis backup — reconnect tanpa scan QR')
+    return true
+  } catch (e) {
+    pushLog('WA | Gagal restore creds dari Redis: ' + (e && e.message ? e.message : e))
+    return false
   }
 }
 
@@ -3828,123 +3868,244 @@ app.get('/api/qr-status', async (req, res) => {
   res.json(response)
 })
 
+// API: Pairing-code status (untuk polling dari halaman QR saat mode "Nomor HP" aktif)
+app.get('/api/pairing-status', async (req, res) => {
+  if (!isAdminCookieValid(req)) return res.json({ auth: false })
+
+  if (isReady) return res.json({ status: 'connected' })
+  if (pairingCode) return res.json({ status: 'code', code: pairingCode })
+  if (pendingPairingPhone) return res.json({ status: 'waiting' }) // sudah di-request, tunggu socket siap
+  return res.json({ status: 'idle' }) // belum ada request pairing code sama sekali
+})
+
+// API: Minta kode pairing untuk nomor HP tertentu (alternatif scan QR).
+// Sama seperti /qr-reset: sesi lama dihapus dulu karena requestPairingCode()
+// hanya bisa dipakai selagi sesi belum "registered" (belum pernah link).
+app.post('/api/wa-pairing-request', express.json(), async (req, res) => {
+  if (!isAdminCookieValid(req)) return res.json({ success: false, error: 'Unauthorized' })
+
+  const rawPhone = (req.body && req.body.phone || '').toString()
+  const digitsOnly = rawPhone.replace(/\D/g, '')
+  if (digitsOnly.length < 8 || digitsOnly.length > 15) {
+    return res.json({ success: false, error: 'Nomor HP tidak valid' })
+  }
+  const phone = normalizePhone(rawPhone)
+
+  try {
+    pushLog(`WA | Admin meminta pairing code untuk +${phone}...`)
+
+    if (sock) {
+      sock.ev.removeAllListeners()
+      await sock.logout().catch(() => {})
+      sock = null
+    }
+
+    isReady = false
+    lastQr = null
+    pairingCode = null
+    pendingPairingPhone = phone
+    reconnectAttempts = 0
+    consecutive428 = 0
+    isStarting = false
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+
+    // Hapus auth lama (Redis + lokal) — pairing code butuh sesi yang belum registered
+    await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
+    const fs = await import('fs')
+    if (fs.existsSync('/tmp/wa_auth')) {
+      fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
+    }
+
+    scheduleReconnect(1000)
+    res.json({ success: true })
+  } catch (e) {
+    pushLog('WA | Pairing request error: ' + e.message)
+    res.json({ success: false, error: e.message })
+  }
+})
+
 app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
   // Auth check akan di-inject di halaman
   const authScript = getAuthCheckScript('/qr')
-  if (!lastQr) {
-    const statusMsg = isReady
-      ? '<span style="color:#00ff88;">✓ WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small>'
-      : '<span style="color:#ffaa00;">⏳ Menunggu QR Code...</span><br><small style="color:#71767b;">Jika tidak muncul dalam 30 detik, coba Reset.</small>'
 
+  if (isReady) {
     return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>WhatsApp Status</title></head><body>
     ${authScript}
     <div style="text-align:center;padding:20px;font-family:sans-serif;background:#0f1419;color:#e7e9ea;min-height:100vh;">
       <h2 style="color:#f7931a;">WhatsApp Bot Status</h2>
       <div style="margin:30px 0;padding:20px;background:#1a1f26;border-radius:12px;border:1px solid #2f3640;">
-        <p style="font-size:1.2em;">${statusMsg}</p>
+        <p style="font-size:1.2em;"><span style="color:#00ff88;">✓ WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small></p>
       </div>
-
-      ${isReady ? `
       <div style="margin:20px 0;padding:15px;background:rgba(0,255,136,0.1);border:1px solid #00ff88;border-radius:10px;">
         <p style="color:#00ff88;margin-bottom:10px;">Bot sudah aktif!</p>
         <p style="color:#71767b;font-size:0.9em;">Jika ingin ganti nomor WA atau login ulang, klik Reset di bawah.</p>
       </div>
-      ` : ''}
-
       <div style="margin-top:30px;">
         <a href="/qr-reset" style="display:inline-block;margin:10px;padding:12px 25px;background:#ff4444;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Reset / Login Ulang</a>
         <a href="/qr" style="display:inline-block;margin:10px;padding:12px 25px;background:#2f3640;color:white;text-decoration:none;border-radius:8px;">Refresh</a>
       </div>
-
-      <div style="margin-top:30px;padding:15px;background:#1a1f26;border-radius:10px;text-align:left;max-width:400px;margin-left:auto;margin-right:auto;">
-        <p style="color:#f7931a;font-weight:bold;margin-bottom:10px;">Jika tidak bisa "Tautkan Perangkat":</p>
-        <ol style="color:#71767b;font-size:0.85em;line-height:1.8;padding-left:20px;">
-          <li>Buka WhatsApp di HP</li>
-          <li>Pergi ke Settings > Linked Devices</li>
-          <li>Hapus semua device yang terhubung</li>
-          <li>Klik "Reset / Login Ulang" di atas</li>
-          <li>Scan QR code yang muncul</li>
-        </ol>
-      </div>
-
-      <p style="margin-top:20px;color:#555;font-size:0.8em;">Auto-refresh dalam 10 detik...</p>
-      <script>setTimeout(() => window.location.reload(), 10000);</script>
     </div>
   </body></html>`)
   }
 
-  // Render halaman QR dengan auto-polling (update QR tanpa reload halaman)
-  return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Scan QR WhatsApp</title></head><body>
+  // Belum terhubung — tampilkan halaman dengan 2 pilihan metode login: Scan QR atau Nomor HP (pairing code)
+  return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hubungkan WhatsApp</title></head><body>
     ${authScript}
     <div style="text-align:center;padding:20px;font-family:sans-serif;background:#0f1419;color:#e7e9ea;min-height:100vh;">
-      <h2 style="color:#f7931a;" id="title">Scan QR dengan WhatsApp</h2>
-      <div id="qrBox" style="background:white;padding:15px;border-radius:15px;display:inline-block;margin:20px 0;">
-        <img id="qrImg" src="" style="max-width:280px;display:block;"/>
+      <h2 style="color:#f7931a;" id="title">Hubungkan WhatsApp</h2>
+
+      <div style="display:flex;justify-content:center;gap:8px;margin:16px 0 20px;">
+        <button id="tabQrBtn" onclick="switchTab('qr')" style="padding:10px 18px;border-radius:8px;border:1px solid #f7931a;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;">📷 Scan QR</button>
+        <button id="tabPhoneBtn" onclick="switchTab('phone')" style="padding:10px 18px;border-radius:8px;border:1px solid #2f3640;background:#1a1f26;color:#e7e9ea;cursor:pointer;">🔢 Nomor HP</button>
       </div>
-      <div id="statusBox" style="display:none;margin:20px auto;padding:20px;background:#1a1f26;border-radius:12px;max-width:320px;">
-        <p id="statusText" style="color:#ffaa00;font-size:1em;"></p>
+
+      <div id="panelQr">
+        <div id="qrBox" style="background:white;padding:15px;border-radius:15px;display:inline-block;margin:10px 0;">
+          <img id="qrImg" src="" style="max-width:280px;display:block;"/>
+        </div>
+        <div id="qrStatusBox" style="display:none;margin:20px auto;padding:20px;background:#1a1f26;border-radius:12px;max-width:320px;">
+          <p id="qrStatusText" style="color:#ffaa00;font-size:1em;"></p>
+        </div>
+        <div style="margin:10px auto;padding:15px;background:#1a1f26;border-radius:10px;max-width:350px;text-align:left;">
+          <p style="color:#f7931a;font-weight:bold;margin-bottom:8px;">Cara Scan:</p>
+          <p style="color:#71767b;font-size:0.9em;line-height:1.6;">
+            1. Buka WhatsApp di HP<br>
+            2. Tap ⋮ atau Settings<br>
+            3. Pilih "Linked Devices"<br>
+            4. Tap "Link a Device"<br>
+            5. Arahkan kamera ke QR di atas
+          </p>
+        </div>
+        <p id="qrTimerText" style="margin-top:10px;color:#555;font-size:0.8em;">Mengambil QR...</p>
       </div>
-      <div style="margin:10px auto;padding:15px;background:#1a1f26;border-radius:10px;max-width:350px;">
-        <p style="color:#f7931a;font-weight:bold;margin-bottom:8px;">Cara Scan:</p>
-        <p style="color:#71767b;font-size:0.9em;line-height:1.6;">
-          1. Buka WhatsApp di HP<br>
-          2. Tap ⋮ atau Settings<br>
-          3. Pilih "Linked Devices"<br>
-          4. Tap "Link a Device"<br>
-          5. Arahkan kamera ke QR di atas
-        </p>
+
+      <div id="panelPhone" style="display:none;">
+        <div id="phoneFormBox" style="margin:10px auto;padding:20px;background:#1a1f26;border-radius:12px;max-width:340px;">
+          <p style="color:#71767b;font-size:0.85em;margin-bottom:10px;text-align:left;">Masukkan nomor WhatsApp yang mau dihubungkan (dengan kode negara, misal 628123456789):</p>
+          <input id="phoneInput" type="tel" placeholder="628123456789" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2f3640;background:#0f1419;color:#e7e9ea;font-size:1em;box-sizing:border-box;margin-bottom:10px;"/>
+          <button id="requestCodeBtn" onclick="requestPairingCode()" style="width:100%;padding:12px;border-radius:8px;border:none;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;font-size:1em;">Kirim Kode</button>
+          <p id="phoneError" style="color:#ff4444;font-size:0.85em;margin-top:8px;display:none;"></p>
+        </div>
+        <div id="codeBox" style="display:none;margin:20px auto;padding:20px;background:#1a1f26;border:1px solid #f7931a;border-radius:12px;max-width:340px;">
+          <p style="color:#71767b;font-size:0.85em;margin-bottom:10px;">Kode Pairing:</p>
+          <p id="codeText" style="color:#00ff88;font-size:2em;font-weight:bold;letter-spacing:3px;margin-bottom:10px;"></p>
+          <p style="color:#71767b;font-size:0.85em;line-height:1.6;text-align:left;">
+            1. Buka WhatsApp di HP<br>
+            2. Tap ⋮ atau Settings > Linked Devices<br>
+            3. Tap "Link a Device" > "Link with phone number instead"<br>
+            4. Masukkan kode di atas
+          </p>
+        </div>
+        <div id="phoneStatusBox" style="display:none;margin:20px auto;padding:20px;background:#1a1f26;border-radius:12px;max-width:320px;">
+          <p id="phoneStatusText" style="color:#ffaa00;font-size:1em;"></p>
+        </div>
       </div>
-      <p id="timerText" style="margin-top:10px;color:#555;font-size:0.8em;">Mengambil QR...</p>
-      <a href="/qr-reset?confirm=yes" style="display:inline-block;margin-top:12px;padding:10px 20px;background:#ff4444;color:white;text-decoration:none;border-radius:8px;font-size:0.85em;">Reset / Ganti WA</a>
+
+      <a href="/qr-reset?confirm=yes" style="display:inline-block;margin-top:20px;padding:10px 20px;background:#ff4444;color:white;text-decoration:none;border-radius:8px;font-size:0.85em;">Reset / Ganti WA</a>
     </div>
     <script>
-      let pollInterval;
-      let countdown = 60;
-      let countdownTimer;
+      let activeTab = 'qr';
+      let qrCountdown = 60, qrCountdownTimer;
 
-      function startCountdown() {
-        clearInterval(countdownTimer);
-        countdown = 60;
-        countdownTimer = setInterval(() => {
-          countdown--;
-          document.getElementById('timerText').textContent = 'QR diperbarui otomatis, expires dalam ' + countdown + 's';
-          if (countdown <= 0) clearInterval(countdownTimer);
+      function switchTab(tab) {
+        activeTab = tab;
+        document.getElementById('panelQr').style.display = tab === 'qr' ? 'block' : 'none';
+        document.getElementById('panelPhone').style.display = tab === 'phone' ? 'block' : 'none';
+        document.getElementById('tabQrBtn').style.background = tab === 'qr' ? '#f7931a' : '#1a1f26';
+        document.getElementById('tabQrBtn').style.color = tab === 'qr' ? '#0f1419' : '#e7e9ea';
+        document.getElementById('tabPhoneBtn').style.background = tab === 'phone' ? '#f7931a' : '#1a1f26';
+        document.getElementById('tabPhoneBtn').style.color = tab === 'phone' ? '#0f1419' : '#e7e9ea';
+      }
+
+      function startQrCountdown() {
+        clearInterval(qrCountdownTimer);
+        qrCountdown = 60;
+        qrCountdownTimer = setInterval(() => {
+          qrCountdown--;
+          document.getElementById('qrTimerText').textContent = 'QR diperbarui otomatis, expires dalam ' + qrCountdown + 's';
+          if (qrCountdown <= 0) clearInterval(qrCountdownTimer);
         }, 1000);
+      }
+
+      function onConnected() {
+        clearInterval(qrCountdownTimer);
+        document.getElementById('title').textContent = '✅ WhatsApp Terhubung!';
+        document.getElementById('title').style.color = '#00ff88';
+        document.getElementById('panelQr').style.display = 'none';
+        document.getElementById('panelPhone').style.display = 'none';
+        document.querySelectorAll('button[id^="tab"]').forEach(b => b.style.display = 'none');
+        setTimeout(() => window.location.href = '/admin/users', 3000);
       }
 
       async function pollQR() {
         try {
           const r = await fetch('/api/qr-status');
           const data = await r.json();
-          if (data.status === 'connected') {
-            clearInterval(pollInterval);
-            clearInterval(countdownTimer);
-            document.getElementById('qrBox').style.display = 'none';
-            document.getElementById('title').textContent = '✅ WhatsApp Terhubung!';
-            document.getElementById('title').style.color = '#00ff88';
-            document.getElementById('statusBox').style.display = 'block';
-            document.getElementById('statusText').style.color = '#00ff88';
-            document.getElementById('statusText').textContent = 'Bot aktif dan siap digunakan.';
-            document.getElementById('timerText').textContent = '';
-            setTimeout(() => window.location.href = '/admin/users', 3000);
-          } else if (data.status === 'qr' && data.dataUrl) {
+          if (data.status === 'connected') { onConnected(); return; }
+          if (data.status === 'qr' && data.dataUrl) {
             document.getElementById('qrImg').src = data.dataUrl;
             document.getElementById('qrBox').style.display = 'inline-block';
-            document.getElementById('statusBox').style.display = 'none';
-            startCountdown();
+            document.getElementById('qrStatusBox').style.display = 'none';
+            startQrCountdown();
           } else {
             document.getElementById('qrBox').style.display = 'none';
-            document.getElementById('statusBox').style.display = 'block';
-            document.getElementById('statusText').textContent = data.auth === false ? '🔒 Silakan login admin terlebih dahulu.' : '⏳ Menunggu QR dari WhatsApp server...';
-            document.getElementById('timerText').textContent = 'Polling tiap 3 detik...';
+            document.getElementById('qrStatusBox').style.display = 'block';
+            document.getElementById('qrStatusText').textContent = data.auth === false ? '🔒 Silakan login admin terlebih dahulu.' : '⏳ Menunggu QR dari WhatsApp server...';
+            document.getElementById('qrTimerText').textContent = 'Polling tiap 3 detik...';
           }
         } catch(e) {
-          document.getElementById('timerText').textContent = 'Error polling, coba lagi...';
+          document.getElementById('qrTimerText').textContent = 'Error polling, coba lagi...';
         }
       }
 
+      async function requestPairingCode() {
+        const phone = document.getElementById('phoneInput').value.replace(/\\D/g, '');
+        const errEl = document.getElementById('phoneError');
+        errEl.style.display = 'none';
+        if (phone.length < 8) { errEl.textContent = 'Nomor HP tidak valid'; errEl.style.display = 'block'; return; }
+        const btn = document.getElementById('requestCodeBtn');
+        btn.disabled = true; btn.textContent = 'Mengirim...';
+        try {
+          const r = await fetch('/api/wa-pairing-request', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone })
+          });
+          const data = await r.json();
+          if (!data.success) {
+            errEl.textContent = data.error || 'Gagal meminta kode pairing';
+            errEl.style.display = 'block';
+            btn.disabled = false; btn.textContent = 'Kirim Kode';
+            return;
+          }
+          document.getElementById('phoneFormBox').style.display = 'none';
+          document.getElementById('phoneStatusBox').style.display = 'block';
+          document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+        } catch (e) {
+          errEl.textContent = 'Gagal terhubung ke server, coba lagi';
+          errEl.style.display = 'block';
+          btn.disabled = false; btn.textContent = 'Kirim Kode';
+        }
+      }
+
+      async function pollPhone() {
+        try {
+          const r = await fetch('/api/pairing-status');
+          const data = await r.json();
+          if (data.status === 'connected') { onConnected(); return; }
+          if (data.status === 'code' && data.code) {
+            document.getElementById('phoneStatusBox').style.display = 'none';
+            document.getElementById('codeBox').style.display = 'block';
+            document.getElementById('codeText').textContent = data.code;
+          } else if (data.status === 'waiting') {
+            document.getElementById('phoneStatusBox').style.display = 'block';
+            document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+          }
+        } catch (e) {}
+      }
+
+      switchTab('qr');
       pollQR();
-      pollInterval = setInterval(pollQR, 3000);
+      setInterval(() => { if (activeTab === 'qr') pollQR(); else pollPhone(); }, 3000);
     <\/script>
   </body></html>`)
 })
@@ -3977,6 +4138,8 @@ app.get('/qr-reset', async (req, res) => {
 
     isReady = false
     lastQr = null
+    pairingCode = null
+    pendingPairingPhone = null
     reconnectAttempts = 0
     consecutive428 = 0
     isStarting = false
@@ -6805,6 +6968,8 @@ app.post('/api/admin/wa-reset', express.json(), async (req, res) => {
 
     isReady = false
     lastQr = null
+    pairingCode = null
+    pendingPairingPhone = null
 
     // Hapus Redis auth agar QR muncul baru
     await redis.del(REDIS_KEYS.WA_AUTH)
@@ -9081,11 +9246,11 @@ ${authScript}
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">🔁 Refresh</button>
-              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">📷 Lihat QR</a>
+              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">🔗 Hubungkan (QR / Nomor HP)</a>
               <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">⚠️ Reset / Ganti WA</button>
             </div>
           </div>
-          <p style="color:#6b7280;font-size:0.78em;">Reset akan logout dari WA saat ini dan meminta scan QR baru. Cocok untuk ganti nomor WA yang terhubung.</p>
+          <p style="color:#6b7280;font-size:0.78em;">Reset akan logout dari WA saat ini dan meminta login ulang (scan QR atau kode pairing via nomor HP). Cocok untuk ganti nomor WA yang terhubung.</p>
         </div>
 
         <div class="card">
@@ -10893,7 +11058,7 @@ ${authScript}
             dot.style.boxShadow = 'none';
             text.textContent = '❌ Tidak terhubung';
             text.style.color = '#ef4444';
-            phone.textContent = 'Klik "Lihat QR" untuk menghubungkan';
+            phone.textContent = 'Klik "Hubungkan" untuk scan QR atau pakai nomor HP';
           }
         })
         .catch(() => {});
@@ -10901,7 +11066,7 @@ ${authScript}
 
     async function resetWaConnection() {
       const confirmed = await showConfirm(
-        'Ini akan logout dari WhatsApp saat ini dan memerlukan scan QR ulang untuk menghubungkan nomor baru.\\n\\nLanjutkan?',
+        'Ini akan logout dari WhatsApp saat ini dan memerlukan login ulang (scan QR atau kode pairing nomor HP) untuk menghubungkan nomor baru.\\n\\nLanjutkan?',
         { title: '⚠️ Reset Koneksi WhatsApp', type: 'warning' }
       );
       if (!confirmed) return;
@@ -19507,11 +19672,14 @@ async function start() {
   await loadPromoLimit()
   await loadNominalSettings()
 
-  // Use file-based auth (tmp folder, tidak persist saat restart)
-  const { state, saveCreds } = await useMultiFileAuthState('/tmp/wa_auth')
+  // File-based auth (tmp folder) untuk performa, dengan backup `creds` di Redis agar
+  // tetap bisa reconnect tanpa scan QR ulang walau /tmp hilang saat restart/redeploy.
+  const _waAuthPath = '/tmp/wa_auth'
+  const _restoredFromRedis = await restoreWaCredsToDisk(_waAuthPath)
+  const { state, saveCreds } = await useMultiFileAuthState(_waAuthPath)
   const { version } = await fetchLatestBaileysVersion()
 
-  pushLog('WA | Using file-based auth (/tmp/wa_auth)')
+  pushLog(`WA | Using file-based auth (/tmp/wa_auth)${_restoredFromRedis ? ' [restored from Redis]' : ''}`)
 
   sock = makeWASocket({
     version,
@@ -19535,6 +19703,24 @@ async function start() {
     if (sock?.ws?.readyState === 1) sock.ws.ping()
   }, 30000)
 
+  // Metode login alternatif: pairing code (ketik kode di HP) alih-alih scan QR.
+  // Harus di-request sekali di awal, selama sesi belum "registered" (belum pernah link).
+  if (pendingPairingPhone && !state.creds.registered) {
+    const _phoneForPairing = pendingPairingPhone
+    pendingPairingPhone = null
+    setTimeout(async () => {
+      try {
+        if (!sock) return
+        const code = await sock.requestPairingCode(_phoneForPairing)
+        pairingCode = code
+        pushLog(`WA | Kode pairing untuk +${_phoneForPairing}: ${code}`)
+      } catch (e) {
+        pairingCode = null
+        pushLog('WA | Gagal request kode pairing: ' + (e && e.message ? e.message : e))
+      }
+    }, 3000) // beri jeda agar koneksi socket siap sebelum diminta kode
+  }
+
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u
     
@@ -19554,11 +19740,15 @@ async function start() {
         if (sock) { sock.ev.removeAllListeners(); sock = null }
         isReady = false
         lastQr = null
+        pairingCode = null
         const fs = await import('fs')
         if (fs.existsSync('/tmp/wa_auth')) {
           fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
           pushLog('WA | Auth folder deleted')
         }
+        // Sesi benar-benar invalid (logged out / 428 berulang) — hapus juga backup Redis
+        // agar tidak terus dipulihkan creds mati yang bikin loop reconnect gagal terus.
+        await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
         consecutive428 = 0
         reconnectAttempts = 0
         scheduleReconnect(3000)
@@ -19610,6 +19800,7 @@ async function start() {
 
     } else if (connection === 'open') {
       lastQr = null
+      pairingCode = null
       reconnectAttempts = 0
       consecutive428 = 0
       isStarting = false // Koneksi berhasil, buka gate untuk reconnect berikutnya jika perlu
@@ -19640,7 +19831,10 @@ async function start() {
     }
   })
 
-  sock.ev.on('creds.update', saveCreds)
+  sock.ev.on('creds.update', async () => {
+    await saveCreds()
+    backupWaCredsToRedis(state.creds) // fire-and-forget, jangan blokir event loop Baileys
+  })
 
   // ==================== GROUP PARTICIPANT UPDATE ====================
   sock.ev.on('group-participants.update', async (update) => {
