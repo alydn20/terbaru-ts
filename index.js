@@ -192,6 +192,10 @@ const redis = {
     }
     return (obj && Object.keys(obj).length > 0) ? obj : null
   },
+  async hkeys(key) {
+    const res = await _tcpThenRest(() => _ioredis.hkeys(key), ['HKEYS', key])
+    return Array.isArray(res) ? res : []
+  },
   async rpush(key, val) {
     return _tcpThenRest(() => _ioredis.rpush(key, val), ['RPUSH', key, val])
   },
@@ -6008,16 +6012,19 @@ app.get('/api/admin/users', async (req, res) => {
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
 
   try {
-    const [users, blockedUsers, pinData] = await Promise.all([
+    // Status push diambil sekaligus (HKEYS) — dulu 1 HGET per user berurutan, sangat lambat
+    const [users, blockedUsers, pinData, pushSubPhones] = await Promise.all([
       redis.hgetall(REDIS_KEYS.USERS),
       redis.hgetall(REDIS_KEYS.BLOCKED_USERS),
-      redis.hgetall(REDIS_KEYS.USER_PINS)
+      redis.hgetall(REDIS_KEYS.USER_PINS),
+      redis.hkeys(REDIS_KEYS.PUSH_SUBS)
     ])
+    const pushSubSet = new Set(pushSubPhones)
     const result = []
 
     for (const [phone, data] of Object.entries(users || {})) {
       const user = typeof data === 'string' ? JSON.parse(data) : data
-      const hasPushSub = await redis.hget(REDIS_KEYS.PUSH_SUBS, phone)
+      const hasPushSub = pushSubSet.has(phone)
       const isBlocked = !!blockedUsers?.[phone]
 
       // Check PIN status
@@ -6123,34 +6130,31 @@ app.post('/api/admin/users/bulk', express.json(), async (req, res) => {
 
   if (!phones || !Array.isArray(phones)) return res.json({ success: false, error: 'phones array required' })
 
-  let added = 0
   let skipped = 0
   const now = Date.now()
 
+  // Ambil semua user sekali saja, lalu tulis semua user baru dalam 1 HSET
+  // (dulu 2 panggilan Redis per nomor → ratusan nomor jadi sangat lambat)
+  const existingUsers = await redis.hgetall(REDIS_KEYS.USERS) || {}
+  const newUsers = {}
+
   for (const phone of phones) {
     const normalizedPhone = normalizePhone(phone)
-    if (!normalizedPhone || normalizedPhone.length < 9) {
+    if (!normalizedPhone || normalizedPhone.length < 9 || existingUsers[normalizedPhone] || newUsers[normalizedPhone]) {
       skipped++
       continue
     }
 
-    // Check if exists
-    const existing = await redis.hget(REDIS_KEYS.USERS, normalizedPhone)
-    if (existing) {
-      skipped++
-      continue
-    }
-
-    const userData = JSON.stringify({
+    newUsers[normalizedPhone] = JSON.stringify({
       name: 'Member ' + normalizedPhone,
       createdAt: now,
       expired: null,
       source: 'bulk_import'
     })
-
-    await redis.hset(REDIS_KEYS.USERS, { [normalizedPhone]: userData })
-    added++
   }
+
+  const added = Object.keys(newUsers).length
+  if (added > 0) await redis.hset(REDIS_KEYS.USERS, newUsers)
 
   pushLog(`Admin | Bulk import: ${added} added, ${skipped} skipped`)
   res.json({ success: true, added, skipped, total: phones.length })
@@ -11566,6 +11570,8 @@ ${authScript}
         // Format biasa: satu per baris atau pisah koma
         phones = text.split(/[\\n,]+/).map(p => p.trim()).filter(p => p.length >= 8);
       }
+      // Buang nomor dobel (paste dari inspect WhatsApp berisi daftar yang sama 2x)
+      phones = [...new Set(phones)];
 
       if (phones.length === 0) { showAlert('Tidak ada nomor valid', 'warning'); return; }
 
@@ -11603,10 +11609,10 @@ ${authScript}
           const waMatches = text.match(/\\+62[\\d\\s\\-]+/g);
           let count;
           if (waMatches && waMatches.length > 0) {
-            count = waMatches.filter(p => p.replace(/[\\s\\-]/g, '').length >= 10).length;
+            count = new Set(waMatches.map(p => p.replace(/[\\s\\-]/g, '').trim()).filter(p => p.length >= 10)).size;
             preview.textContent = 'Terdeteksi ' + count + ' nomor dari format WhatsApp';
           } else {
-            count = text.split(/[\\n,]+/).filter(p => p.trim().length >= 8).length;
+            count = new Set(text.split(/[\\n,]+/).map(p => p.trim()).filter(p => p.length >= 8)).size;
             preview.textContent = 'Terdeteksi ' + count + ' nomor';
           }
           preview.style.display = count > 0 ? 'block' : 'none';
