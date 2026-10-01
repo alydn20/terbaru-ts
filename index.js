@@ -307,6 +307,7 @@ const logs = []
 const loginHistory = [] // in-memory login log per nomor user
 const MAX_LOGIN_HISTORY = 300
 const processedMsgIds = new Set()
+let _lastDecryptFailLog = 0 // throttle log pesan WA yang gagal didekripsi
 const lastReplyAtPerChat = new Map()
 let lastGlobalReplyAt = 0
 const pendingEmasReplies = new Map() // target → { pendingMsg, requestTime }
@@ -19746,7 +19747,8 @@ async function start() {
 
   sock = makeWASocket({
     version,
-    logger: pino({ level: 'silent' }),
+    // WA_LOG_LEVEL=warn/debug untuk melihat error internal Baileys (mis. gagal dekripsi) di log server
+    logger: pino({ level: process.env.WA_LOG_LEVEL || 'silent' }),
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
@@ -19868,6 +19870,7 @@ async function start() {
       consecutive428 = 0
       isStarting = false // Koneksi berhasil, buka gate untuk reconnect berikutnya jika perlu
       pushLog('WA | Connected')
+      pushLog(`WA | Nomor bot: ${sock?.user?.id || '-'} | LID: ${sock?.user?.lid || '-'} | grup monitor: ${monitoredGroupId || '-'} | admin: ${ADMIN_PHONES.join(',') || '-'}`)
       pushLog('WA | Warming up 15s...')
 
       isReady = false
@@ -20470,6 +20473,30 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
     }
   })
 
+  // ==================== DIAGNOSTIK PESAN MASUK ====================
+  // Catat SEMUA pesan masuk (sebelum filter apa pun) agar terlihat kenapa command tidak dibalas.
+  // Matikan dengan env WA_DEBUG_MESSAGES=0 kalau log terlalu ramai.
+  sock.ev.on('messages.upsert', (ev) => {
+    if (process.env.WA_DEBUG_MESSAGES === '0') return
+    for (const msg of ev.messages || []) {
+      try {
+        const k = msg.key || {}
+        const content = msg.message ? Object.keys(msg.message).filter(x => x !== 'messageContextInfo').join(',') : 'KOSONG'
+        const txt = extractText(msg)
+        const flags = [
+          `type=${ev.type}`,
+          `ready=${isReady}`,
+          `fromMe=${!!k.fromMe}`,
+          k.remoteJid === monitoredGroupId ? 'grup=MONITOR' : '',
+          msg.messageStubType ? `stub=${msg.messageStubType}${msg.messageStubParameters?.length ? '(' + msg.messageStubParameters.join('|') + ')' : ''}` : ''
+        ].filter(Boolean).join(' ')
+        pushLog(`WA IN | ${k.remoteJid || '-'} dari ${k.participant || k.remoteJid || '-'} | ${flags} | isi=${content}${txt ? ' | "' + String(txt).substring(0, 40) + '"' : ''}`)
+      } catch (e) {
+        pushLog('WA IN | gagal log pesan: ' + e.message)
+      }
+    }
+  })
+
   // ==================== USER COMMANDS (cekoon, emas) ====================
   // cekoon  : subscribe broadcast promo ON/OFF + harga (admin grup atau owner DM)
   // emas    : cek harga real-time (semua anggota grup bisa, DM hanya owner)
@@ -20478,6 +20505,17 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
     for (const msg of ev.messages) {
       try {
+        // Pesan yang gagal didekripsi datang sebagai stub CIPHERTEXT (2) tanpa isi —
+        // sebelumnya dibuang diam-diam sehingga "emas" tidak dibalas tanpa jejak di log
+        if (msg.messageStubType === 2 && !msg.key?.fromMe) {
+          const nowTs = Date.now()
+          if (nowTs - _lastDecryptFailLog > 60000) {
+            _lastDecryptFailLog = nowTs
+            pushLog(`WA | ⚠️ Pesan dari ${(msg.key.remoteJid || '').substring(0, 20)} gagal didekripsi (${msg.messageStubParameters?.[0] || 'unknown'}) — jika terus muncul, Reset WA lalu login ulang`)
+          }
+          continue
+        }
+
         if (shouldIgnoreMessage(msg)) continue
 
         const stanzaId = msg.key.id
@@ -20489,6 +20527,9 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
+        if (/\b(cekoon|cekoonnonaktif|emas)\b/.test(text)) {
+          pushLog(`WA | Pesan command diterima dari ${sendTarget.substring(0, 20)}: "${text.substring(0, 30)}"`)
+        }
         const senderJid = msg.key.participant || msg.key.remoteJid
 
         // Daftar command yang dikenali
