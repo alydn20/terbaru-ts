@@ -9334,8 +9334,8 @@ ${authScript}
                 <input type="number" id="newNominalAmount" placeholder="100000000">
               </div>
               <div class="form-group" style="margin:0;">
-                <label>Diskon (%)</label>
-                <input type="number" id="newNominalDiscount" placeholder="3.35" step="0.01">
+                <label>Diskon (Rp)</label>
+                <input type="number" id="newNominalDiscount" placeholder="3350000" step="1">
               </div>
               <button class="btn btn-sm" style="background:#22c55e;height:38px;" onclick="addNominal()">+ Tambah</button>
             </div>
@@ -9350,7 +9350,7 @@ ${authScript}
                   <th>ID</th>
                   <th>Label</th>
                   <th>Nominal</th>
-                  <th>Diskon (%)</th>
+                  <th>Diskon (Rp)</th>
                   <th>Status</th>
                   <th>Aksi</th>
                 </tr>
@@ -10816,8 +10816,8 @@ ${authScript}
           '<td style="text-align:center;"><input type="radio" name="promoRef" ' + promoChecked + ' onchange="setPromoRef(' + idx + ')" style="width:18px;height:18px;cursor:pointer;accent-color:#22c55e;" title="Patokan Promo ON/OFF"></td>' +
           '<td><input type="text" value="' + nom.id + '" onchange="updateNominal(' + idx + ', &apos;id&apos;, this.value)" style="width:60px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
           '<td><input type="text" value="' + nom.label + '" onchange="updateNominal(' + idx + ', &apos;label&apos;, this.value)" style="width:60px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
-          '<td><input type="number" value="' + nom.amount + '" onchange="updateNominal(' + idx + ', &apos;amount&apos;, parseFloat(this.value))" style="width:120px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
-          '<td><input type="number" value="' + parseFloat((nom.discountRate * 100).toFixed(3)) + '" onchange="updateNominal(' + idx + ', &apos;discountRate&apos;, parseFloat(this.value) / 100)" step="0.001" style="width:80px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
+          '<td><input type="number" value="' + nom.amount + '" onchange="updateNominalAmount(' + idx + ', parseFloat(this.value))" style="width:120px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
+          '<td><input type="number" value="' + Math.round(nom.amount * nom.discountRate) + '" onchange="updateNominalDiscountRp(' + idx + ', parseFloat(this.value))" step="1" style="width:120px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:4px 8px;border-radius:4px;color:#e7e9ea;"></td>' +
           '<td><span class="badge ' + statusClass + '">' + statusText + '</span></td>' +
           '<td>' +
             '<button class="action-btn" style="background:' + toggleColor + ';" onclick="toggleNominal(' + idx + ')">' + toggleText + '</button> ' +
@@ -10840,6 +10840,22 @@ ${authScript}
       }
     }
 
+    // Diskon diinput dalam Rupiah, disimpan sebagai discountRate (diskon / nominal)
+    function updateNominalDiscountRp(idx, discountRp) {
+      const nom = currentNominals[idx];
+      if (!nom || isNaN(discountRp) || !nom.amount) return;
+      nom.discountRate = discountRp / nom.amount;
+    }
+
+    // Saat nominal diubah, diskon Rupiah tetap sama
+    function updateNominalAmount(idx, amount) {
+      const nom = currentNominals[idx];
+      if (!nom || isNaN(amount) || amount <= 0) return;
+      const discountRp = Math.round(nom.amount * nom.discountRate);
+      nom.amount = amount;
+      nom.discountRate = discountRp / amount;
+    }
+
     function toggleNominal(idx) {
       if (currentNominals[idx]) {
         currentNominals[idx].active = !currentNominals[idx].active;
@@ -10860,7 +10876,8 @@ ${authScript}
       const id = document.getElementById('newNominalId').value.trim();
       const label = document.getElementById('newNominalLabel').value.trim();
       const amount = parseFloat(document.getElementById('newNominalAmount').value);
-      const discountRate = parseFloat(document.getElementById('newNominalDiscount').value) / 100;
+      const discountRp = parseFloat(document.getElementById('newNominalDiscount').value);
+      const discountRate = amount ? discountRp / amount : NaN;
 
       if (!id || !label || !amount || isNaN(discountRate)) {
         showAlert('Semua field harus diisi dengan benar!', 'danger');
