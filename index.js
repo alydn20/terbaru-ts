@@ -307,6 +307,7 @@ const logs = []
 const loginHistory = [] // in-memory login log per nomor user
 const MAX_LOGIN_HISTORY = 300
 const processedMsgIds = new Set()
+let _lastDecryptFailLog = 0 // throttle log pesan WA yang gagal didekripsi
 const lastReplyAtPerChat = new Map()
 let lastGlobalReplyAt = 0
 const pendingEmasReplies = new Map() // target → { pendingMsg, requestTime }
@@ -20478,6 +20479,17 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
     for (const msg of ev.messages) {
       try {
+        // Pesan yang gagal didekripsi datang sebagai stub CIPHERTEXT (2) tanpa isi —
+        // sebelumnya dibuang diam-diam sehingga "emas" tidak dibalas tanpa jejak di log
+        if (msg.messageStubType === 2 && !msg.key?.fromMe) {
+          const nowTs = Date.now()
+          if (nowTs - _lastDecryptFailLog > 60000) {
+            _lastDecryptFailLog = nowTs
+            pushLog(`WA | ⚠️ Pesan dari ${(msg.key.remoteJid || '').substring(0, 20)} gagal didekripsi (${msg.messageStubParameters?.[0] || 'unknown'}) — jika terus muncul, Reset WA lalu login ulang`)
+          }
+          continue
+        }
+
         if (shouldIgnoreMessage(msg)) continue
 
         const stanzaId = msg.key.id
@@ -20489,6 +20501,9 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
+        if (/\b(cekoon|cekoonnonaktif|emas)\b/.test(text)) {
+          pushLog(`WA | Pesan command diterima dari ${sendTarget.substring(0, 20)}: "${text.substring(0, 30)}"`)
+        }
         const senderJid = msg.key.participant || msg.key.remoteJid
 
         // Daftar command yang dikenali
