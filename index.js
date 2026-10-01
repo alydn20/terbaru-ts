@@ -602,14 +602,36 @@ async function clearRedisAuth() {
 // Auth aktif pakai file-based (/tmp/wa_auth) karena lebih cepat & tidak membebani Upstash
 // dengan ratusan write signal-session/sender-key. Tapi /tmp hilang total tiap kali container
 // restart/redeploy → tanpa ini, bot butuh scan QR baru SETIAP restart (penyebab utama
-// "sering logout"). Solusinya: backup ringan HANYA `creds` (identitas device linked, bukan
-// signal session store) ke Redis, lalu dipulihkan ke /tmp sebelum useMultiFileAuthState()
-// dipanggil. Signal session/sender-key yang hilang akan di-resync otomatis oleh WhatsApp
-// setelah reconnect — bukan penyebab logout.
+// "sering logout"). Solusinya: backup `creds` + signal keys ke Redis, lalu dipulihkan ke /tmp
+// sebelum useMultiFileAuthState() dipanggil. Kalau hanya creds yang pulih, pre-key/session
+// hilang → pesan masuk gagal didekripsi ("Bad MAC") dan command grup tidak terbaca.
 async function backupWaCredsToRedis(creds) {
   try {
     const serialized = JSON.stringify(creds, BufferJSON.replacer)
     await redis.hset(REDIS_KEYS.WA_AUTH, { creds: serialized })
+  } catch (e) {}
+}
+
+// Nama file sama persis dengan useMultiFileAuthState Baileys
+const _waKeyFileName = (type, id) => `${type}-${id}.json`.replace(/\//g, '__').replace(/:/g, '-')
+
+// Backup signal keys (session, pre-key, sender-key, dll) ke Redis setiap kali berubah.
+// Tanpa ini, setelah restart hanya creds yang pulih sementara pre-key/session hilang →
+// pesan masuk gagal didekripsi ("Bad MAC") dan bot tidak bisa membaca command (mis. "emas").
+async function backupWaKeysToRedis(data) {
+  try {
+    const fields = {}
+    const removed = []
+    for (const type in data) {
+      for (const id in data[type]) {
+        const field = 'key:' + _waKeyFileName(type, id)
+        const value = data[type][id]
+        if (value) fields[field] = JSON.stringify(value, BufferJSON.replacer)
+        else removed.push(field)
+      }
+    }
+    if (Object.keys(fields).length > 0) await redis.hset(REDIS_KEYS.WA_AUTH, fields)
+    for (const field of removed) await redis.hdel(REDIS_KEYS.WA_AUTH, field)
   } catch (e) {}
 }
 
@@ -620,7 +642,8 @@ async function restoreWaCredsToDisk(authPath) {
     const credsFile = path.join(authPath, 'creds.json')
     if (fs.existsSync(credsFile)) return false // sudah ada lokal, tidak perlu restore
 
-    const data = await redis.hget(REDIS_KEYS.WA_AUTH, 'creds')
+    const all = await redis.hgetall(REDIS_KEYS.WA_AUTH)
+    const data = all && all.creds
     if (!data) return false
 
     const str = typeof data === 'string' ? data : JSON.stringify(data)
@@ -628,7 +651,15 @@ async function restoreWaCredsToDisk(authPath) {
 
     fs.mkdirSync(authPath, { recursive: true })
     fs.writeFileSync(credsFile, str)
-    pushLog('WA | Credentials dipulihkan dari Redis backup — reconnect tanpa scan QR')
+
+    // Pulihkan juga signal keys agar pesan masuk tetap bisa didekripsi
+    let keyCount = 0
+    for (const [field, value] of Object.entries(all)) {
+      if (!field.startsWith('key:')) continue
+      fs.writeFileSync(path.join(authPath, field.substring(4)), typeof value === 'string' ? value : JSON.stringify(value))
+      keyCount++
+    }
+    pushLog(`WA | Credentials + ${keyCount} signal keys dipulihkan dari Redis backup — reconnect tanpa scan QR`)
     return true
   } catch (e) {
     pushLog('WA | Gagal restore creds dari Redis: ' + (e && e.message ? e.message : e))
@@ -19703,6 +19734,12 @@ async function start() {
   const _waAuthPath = '/tmp/wa_auth'
   const _restoredFromRedis = await restoreWaCredsToDisk(_waAuthPath)
   const { state, saveCreds } = await useMultiFileAuthState(_waAuthPath)
+  // Setiap perubahan signal keys ikut di-backup ke Redis (fire-and-forget)
+  const _origKeysSet = state.keys.set.bind(state.keys)
+  state.keys.set = async (data) => {
+    await _origKeysSet(data)
+    backupWaKeysToRedis(data)
+  }
   const { version } = await fetchLatestBaileysVersion()
 
   pushLog(`WA | Using file-based auth (/tmp/wa_auth)${_restoredFromRedis ? ' [restored from Redis]' : ''}`)
