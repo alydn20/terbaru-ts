@@ -6123,34 +6123,31 @@ app.post('/api/admin/users/bulk', express.json(), async (req, res) => {
 
   if (!phones || !Array.isArray(phones)) return res.json({ success: false, error: 'phones array required' })
 
-  let added = 0
   let skipped = 0
   const now = Date.now()
 
+  // Ambil semua user sekali saja, lalu tulis semua user baru dalam 1 HSET
+  // (dulu 2 panggilan Redis per nomor → ratusan nomor jadi sangat lambat)
+  const existingUsers = await redis.hgetall(REDIS_KEYS.USERS) || {}
+  const newUsers = {}
+
   for (const phone of phones) {
     const normalizedPhone = normalizePhone(phone)
-    if (!normalizedPhone || normalizedPhone.length < 9) {
+    if (!normalizedPhone || normalizedPhone.length < 9 || existingUsers[normalizedPhone] || newUsers[normalizedPhone]) {
       skipped++
       continue
     }
 
-    // Check if exists
-    const existing = await redis.hget(REDIS_KEYS.USERS, normalizedPhone)
-    if (existing) {
-      skipped++
-      continue
-    }
-
-    const userData = JSON.stringify({
+    newUsers[normalizedPhone] = JSON.stringify({
       name: 'Member ' + normalizedPhone,
       createdAt: now,
       expired: null,
       source: 'bulk_import'
     })
-
-    await redis.hset(REDIS_KEYS.USERS, { [normalizedPhone]: userData })
-    added++
   }
+
+  const added = Object.keys(newUsers).length
+  if (added > 0) await redis.hset(REDIS_KEYS.USERS, newUsers)
 
   pushLog(`Admin | Bulk import: ${added} added, ${skipped} skipped`)
   res.json({ success: true, added, skipped, total: phones.length })
@@ -11566,6 +11563,8 @@ ${authScript}
         // Format biasa: satu per baris atau pisah koma
         phones = text.split(/[\\n,]+/).map(p => p.trim()).filter(p => p.length >= 8);
       }
+      // Buang nomor dobel (paste dari inspect WhatsApp berisi daftar yang sama 2x)
+      phones = [...new Set(phones)];
 
       if (phones.length === 0) { showAlert('Tidak ada nomor valid', 'warning'); return; }
 
@@ -11603,10 +11602,10 @@ ${authScript}
           const waMatches = text.match(/\\+62[\\d\\s\\-]+/g);
           let count;
           if (waMatches && waMatches.length > 0) {
-            count = waMatches.filter(p => p.replace(/[\\s\\-]/g, '').length >= 10).length;
+            count = new Set(waMatches.map(p => p.replace(/[\\s\\-]/g, '').trim()).filter(p => p.length >= 10)).size;
             preview.textContent = 'Terdeteksi ' + count + ' nomor dari format WhatsApp';
           } else {
-            count = text.split(/[\\n,]+/).filter(p => p.trim().length >= 8).length;
+            count = new Set(text.split(/[\\n,]+/).map(p => p.trim()).filter(p => p.length >= 8)).size;
             preview.textContent = 'Terdeteksi ' + count + ' nomor';
           }
           preview.style.display = count > 0 ? 'block' : 'none';
