@@ -6992,6 +6992,62 @@ app.post('/api/admin/reset-titik-on', express.json(), async (req, res) => {
 
 
 // Admin: Reset WA connection (logout + restart, scan QR ulang)
+// Admin: Perbaiki sesi enkripsi WA TANPA logout (untuk error "Bad MAC" / pesan grup tidak terbaca).
+// Hapus session & sender-key yang rusak, unggah pre-key baru, lalu reconnect. Creds (identitas
+// device linked) tetap utuh → tidak perlu scan QR, notifikasi harga tetap jalan.
+app.post('/api/admin/wa-repair-session', express.json(), async (req, res) => {
+  const { password } = req.body
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  if (!sock) return res.json({ success: false, error: 'WA belum terhubung' })
+
+  try {
+    pushLog('WA | Admin: perbaiki sesi enkripsi (tanpa logout)...')
+
+    // 1. Unggah pre-key baru selagi koneksi masih terbuka
+    let preKeyMsg = ''
+    try {
+      await sock.uploadPreKeys()
+      preKeyMsg = 'pre-key baru diunggah'
+    } catch (e) {
+      preKeyMsg = 'gagal unggah pre-key: ' + e.message
+    }
+    pushLog('WA | Repair: ' + preKeyMsg)
+
+    // 2. Tutup socket (tanpa logout) agar cache signal key di memori ikut dibuang
+    sock.ev.removeAllListeners()
+    try { sock.end(undefined) } catch (e) {}
+    sock = null
+    isReady = false
+
+    // 3. Hapus session & sender-key di disk dan di backup Redis
+    const isBrokenKey = (name) => /^(session-|sender-key-)/.test(name)
+    const fs = await import('fs')
+    const path = await import('path')
+    const authPath = '/tmp/wa_auth'
+    let fileCount = 0
+    if (fs.existsSync(authPath)) {
+      for (const f of fs.readdirSync(authPath)) {
+        if (isBrokenKey(f)) { fs.rmSync(path.join(authPath, f), { force: true }); fileCount++ }
+      }
+    }
+    const fields = (await redis.hkeys(REDIS_KEYS.WA_AUTH)).filter(f => f.startsWith('key:') && isBrokenKey(f.substring(4)))
+    for (let i = 0; i < fields.length; i += 50) {
+      await Promise.all(fields.slice(i, i + 50).map(f => redis.hdel(REDIS_KEYS.WA_AUTH, f)))
+    }
+    pushLog(`WA | Repair: ${fileCount} file sesi & ${fields.length} backup Redis dihapus — reconnect...`)
+
+    // 4. Reconnect dengan creds yang sama
+    reconnectAttempts = 0
+    consecutive428 = 0
+    scheduleReconnect(2000)
+
+    res.json({ success: true, message: `Sesi diperbaiki (${fileCount} sesi dihapus, ${preKeyMsg}). WA reconnect dalam beberapa detik — tidak perlu scan ulang.` })
+  } catch (e) {
+    pushLog('WA | Repair error: ' + e.message)
+    res.json({ success: false, error: e.message })
+  }
+})
+
 app.post('/api/admin/wa-reset', express.json(), async (req, res) => {
   const { password } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
@@ -9286,9 +9342,11 @@ ${authScript}
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">🔁 Refresh</button>
               <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">🔗 Hubungkan (QR / Nomor HP)</a>
+              <button class="btn btn-sm" style="background:#22c55e;color:#000;" onclick="repairWaSession()">🛠️ Perbaiki Sesi (tanpa logout)</button>
               <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">⚠️ Reset / Ganti WA</button>
             </div>
           </div>
+          <p style="color:#6b7280;font-size:0.78em;margin-bottom:4px;"><strong>Perbaiki Sesi</strong>: untuk bot yang tidak membalas command di grup (error "Bad MAC" di log). Tidak logout, tidak perlu scan ulang.</p>
           <p style="color:#6b7280;font-size:0.78em;">Reset akan logout dari WA saat ini dan meminta login ulang (scan QR atau kode pairing via nomor HP). Cocok untuk ganti nomor WA yang terhubung.</p>
         </div>
 
@@ -11118,6 +11176,36 @@ ${authScript}
           }
         })
         .catch(() => {});
+    }
+
+    async function repairWaSession() {
+      const confirmed = await showConfirm(
+        'Hapus sesi enkripsi yang rusak lalu reconnect WA. Tidak logout dan tidak perlu scan ulang.\\n\\nLanjutkan?',
+        { title: '🛠️ Perbaiki Sesi WhatsApp', type: 'warning' }
+      );
+      if (!confirmed) return;
+
+      const result = document.getElementById('waResetResult');
+      result.className = 'result-msg success';
+      result.textContent = 'Memperbaiki sesi WA...';
+
+      adminFetch('/api/admin/wa-repair-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          result.className = 'result-msg success';
+          result.textContent = '✅ ' + data.message;
+          setTimeout(() => loadWaStatus(), 5000);
+        } else {
+          result.className = 'result-msg error';
+          result.textContent = 'Error: ' + data.error;
+        }
+        setTimeout(() => result.className = 'result-msg', 10000);
+      });
     }
 
     async function resetWaConnection() {
