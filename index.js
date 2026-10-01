@@ -19747,7 +19747,8 @@ async function start() {
 
   sock = makeWASocket({
     version,
-    logger: pino({ level: 'silent' }),
+    // WA_LOG_LEVEL=warn/debug untuk melihat error internal Baileys (mis. gagal dekripsi) di log server
+    logger: pino({ level: process.env.WA_LOG_LEVEL || 'silent' }),
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
@@ -19869,6 +19870,7 @@ async function start() {
       consecutive428 = 0
       isStarting = false // Koneksi berhasil, buka gate untuk reconnect berikutnya jika perlu
       pushLog('WA | Connected')
+      pushLog(`WA | Nomor bot: ${sock?.user?.id || '-'} | LID: ${sock?.user?.lid || '-'} | grup monitor: ${monitoredGroupId || '-'} | admin: ${ADMIN_PHONES.join(',') || '-'}`)
       pushLog('WA | Warming up 15s...')
 
       isReady = false
@@ -20467,6 +20469,30 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
       } catch (e) {
         pushLog(`WA CMD | Error: ${e.message}`)
+      }
+    }
+  })
+
+  // ==================== DIAGNOSTIK PESAN MASUK ====================
+  // Catat SEMUA pesan masuk (sebelum filter apa pun) agar terlihat kenapa command tidak dibalas.
+  // Matikan dengan env WA_DEBUG_MESSAGES=0 kalau log terlalu ramai.
+  sock.ev.on('messages.upsert', (ev) => {
+    if (process.env.WA_DEBUG_MESSAGES === '0') return
+    for (const msg of ev.messages || []) {
+      try {
+        const k = msg.key || {}
+        const content = msg.message ? Object.keys(msg.message).filter(x => x !== 'messageContextInfo').join(',') : 'KOSONG'
+        const txt = extractText(msg)
+        const flags = [
+          `type=${ev.type}`,
+          `ready=${isReady}`,
+          `fromMe=${!!k.fromMe}`,
+          k.remoteJid === monitoredGroupId ? 'grup=MONITOR' : '',
+          msg.messageStubType ? `stub=${msg.messageStubType}${msg.messageStubParameters?.length ? '(' + msg.messageStubParameters.join('|') + ')' : ''}` : ''
+        ].filter(Boolean).join(' ')
+        pushLog(`WA IN | ${k.remoteJid || '-'} dari ${k.participant || k.remoteJid || '-'} | ${flags} | isi=${content}${txt ? ' | "' + String(txt).substring(0, 40) + '"' : ''}`)
+      } catch (e) {
+        pushLog('WA IN | gagal log pesan: ' + e.message)
       }
     }
   })
