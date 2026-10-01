@@ -192,6 +192,10 @@ const redis = {
     }
     return (obj && Object.keys(obj).length > 0) ? obj : null
   },
+  async hkeys(key) {
+    const res = await _tcpThenRest(() => _ioredis.hkeys(key), ['HKEYS', key])
+    return Array.isArray(res) ? res : []
+  },
   async rpush(key, val) {
     return _tcpThenRest(() => _ioredis.rpush(key, val), ['RPUSH', key, val])
   },
@@ -6008,16 +6012,19 @@ app.get('/api/admin/users', async (req, res) => {
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
 
   try {
-    const [users, blockedUsers, pinData] = await Promise.all([
+    // Status push diambil sekaligus (HKEYS) — dulu 1 HGET per user berurutan, sangat lambat
+    const [users, blockedUsers, pinData, pushSubPhones] = await Promise.all([
       redis.hgetall(REDIS_KEYS.USERS),
       redis.hgetall(REDIS_KEYS.BLOCKED_USERS),
-      redis.hgetall(REDIS_KEYS.USER_PINS)
+      redis.hgetall(REDIS_KEYS.USER_PINS),
+      redis.hkeys(REDIS_KEYS.PUSH_SUBS)
     ])
+    const pushSubSet = new Set(pushSubPhones)
     const result = []
 
     for (const [phone, data] of Object.entries(users || {})) {
       const user = typeof data === 'string' ? JSON.parse(data) : data
-      const hasPushSub = await redis.hget(REDIS_KEYS.PUSH_SUBS, phone)
+      const hasPushSub = pushSubSet.has(phone)
       const isBlocked = !!blockedUsers?.[phone]
 
       // Check PIN status
