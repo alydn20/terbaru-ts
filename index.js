@@ -222,15 +222,17 @@ const TREASURY_CREDENTIALS = {
   "latitude": "0.0",
   "longitude": "0.0",
   "scope": "*",
-  "email": "085167003319",
-  "password": "@Ahaqos20",
+  "email": process.env.TREASURY_EMAIL || "085167003319",
+  "password": process.env.TREASURY_PASSWORD || "@Ahaqos20",
   "app_name": null,
   "provider": null,
   "token": null,
-  "device_id": "android-V417IR-Asus/AI2401/AI2401:12/V417IR/118:user/release-keys",
-  "shield_id": "440c8624bf64bb19cf837ba523cce794",
-  "shield_session_id": "6aea0479c8ce4f2f829577ca82c9de07"
+  "device_id": process.env.TREASURY_DEVICE_ID || "android-V417IR-Asus/AI2401/AI2401:12/V417IR/118:user/release-keys",
+  "shield_id": process.env.TREASURY_DEVICE_ID ? null : "440c8624bf64bb19cf837ba523cce794",
+  "shield_session_id": process.env.TREASURY_SHIELD_SESSION_ID || "6aea0479c8ce4f2f829577ca82c9de07"
 }
+// Versi app Treasury — kalau server balas HTTP 406 "versi baru ... sudah tersedia", naikkan angka ini
+const TREASURY_APP_VERSION = process.env.TREASURY_APP_VERSION || '8.0.91'
 
 // Anti-spam settings
 const COOLDOWN_PER_CHAT = 60000
@@ -1959,7 +1961,8 @@ async function refreshTreasuryToken() {
       headers: {
         'accept': 'application/json',
         'content-type': 'application/json',
-        'x-app-version': '8.0.90',
+        'user-agent': 'Dart/3.9 (dart:io)',
+        'x-app-version': TREASURY_APP_VERSION,
         'x-language': 'id',
         'x-platform': 'android',
         'x-version': '1.0'
@@ -2010,7 +2013,7 @@ async function fetchNominalPromo(retryCount = 0) {
       'accept': 'application/json',
       'authorization': `Bearer ${treasuryToken}`,
       'content-type': 'application/json',
-      'x-app-version': '8.0.90',
+      'x-app-version': TREASURY_APP_VERSION,
       'x-language': 'id',
       'x-platform': 'android',
       'x-version': '1.0'
@@ -2494,7 +2497,7 @@ async function fetchPromoSuggestions() {
         'accept': 'application/json',
         'authorization': `Bearer ${treasuryToken}`,
         'content-type': 'application/json',
-        'x-app-version': '8.0.90',
+        'x-app-version': TREASURY_APP_VERSION,
         'x-language': 'id',
         'x-platform': 'android',
         'x-version': '1.0'
