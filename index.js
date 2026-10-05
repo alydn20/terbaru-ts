@@ -6999,6 +6999,7 @@ app.post('/api/admin/wa-repair-session', express.json(), async (req, res) => {
   const { password } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   if (!sock) return res.json({ success: false, error: 'WA belum terhubung' })
+  if (!sock.user) return res.json({ success: false, error: 'WA belum login (masih menunggu scan QR) - tidak ada sesi yang bisa diperbaiki. Scan QR / pairing dulu.' })
 
   try {
     pushLog('WA | Admin: perbaiki sesi enkripsi (tanpa logout)...')
@@ -19928,15 +19929,18 @@ async function start() {
         return
       }
 
-      // 428 = connectionClosed - sering terjadi saat sesi expired
-      // Setelah 2 kali berturut-turut, paksa QR baru
+      // 428 = connectionClosed - koneksi diputus server/jaringan, BUKAN logout.
+      // Jangan pernah hapus auth di sini: dulu 2x 428 beruntun (bisa terjadi dalam
+      // hitungan detik saat gangguan jaringan) langsung menghapus sesi + backup Redis
+      // sehingga bot minta scan QR ulang. Sesi yang benar-benar mati dibalas 401
+      // (loggedOut) oleh WhatsApp dan sudah ditangani di atas. Cukup reconnect terus
+      // dengan jeda yang makin panjang (maks 60 detik), tanpa batas percobaan.
       if (reason === 428) {
         consecutive428++
-        pushLog(`WA | connectionClosed (428) count: ${consecutive428}`)
-        if (consecutive428 >= 2) {
-          await clearAuthAndRestart('Sesi expired (428 berulang)')
-          return
-        }
+        const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, consecutive428 - 1), 60000)
+        pushLog(`WA | connectionClosed (428) ke-${consecutive428} - sesi dipertahankan, reconnect dalam ${Math.round(delay / 1000)}s`)
+        scheduleReconnect(delay)
+        return
       } else {
         consecutive428 = 0
       }
