@@ -606,12 +606,98 @@ async function clearRedisAuth() {
 // "sering logout"). Solusinya: backup `creds` + signal keys ke Redis, lalu dipulihkan ke /tmp
 // sebelum useMultiFileAuthState() dipanggil. Kalau hanya creds yang pulih, pre-key/session
 // hilang → pesan masuk gagal didekripsi ("Bad MAC") dan command grup tidak terbaca.
+// Backup yang masih berjalan — ditunggu saat shutdown agar state terakhir tidak hilang
+const _pendingWaBackups = new Set()
+function trackWaBackup(promise) {
+  _pendingWaBackups.add(promise)
+  promise.finally(() => _pendingWaBackups.delete(promise))
+  return promise
+}
+
 async function backupWaCredsToRedis(creds) {
   try {
     const serialized = JSON.stringify(creds, BufferJSON.replacer)
     await redis.hset(REDIS_KEYS.WA_AUTH, { creds: serialized })
   } catch (e) {}
 }
+
+// ==================== WA INSTANCE LOCK ====================
+// Hanya SATU proses yang boleh memegang koneksi WA. Saat redeploy, instance lama dan baru
+// sempat hidup bersamaan dengan creds yang sama → saling rebutan (440 conflict) dan masing-
+// masing memajukan signal session sendiri → kunci tidak sinkron ("Bad MAC") → command grup
+// tidak terbaca sampai scan QR ulang. Dengan lock ini instance baru menunggu sampai instance
+// lama melepas lock (saat SIGTERM) atau lock kedaluwarsa (instance lama mati mendadak).
+const WA_INSTANCE_ID = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+const WA_LOCK_KEY = 'gold:wa_lock'
+const WA_LOCK_TTL_MS = 30000
+let _waLockHeld = false
+let _lastLockWaitLog = 0
+
+async function acquireWaLock() {
+  try {
+    const ok = await _ioredis.set(WA_LOCK_KEY, WA_INSTANCE_ID, 'PX', WA_LOCK_TTL_MS, 'NX')
+    if (ok === 'OK') { _waLockHeld = true; return true }
+    const owner = await _ioredis.get(WA_LOCK_KEY)
+    if (owner === WA_INSTANCE_ID) {
+      await _ioredis.pexpire(WA_LOCK_KEY, WA_LOCK_TTL_MS)
+      _waLockHeld = true
+      return true
+    }
+    _waLockHeld = false
+    return false
+  } catch (e) {
+    // Redis bermasalah — jangan sampai bot tidak pernah connect, lanjut tanpa lock
+    return true
+  }
+}
+
+const _WA_LOCK_IF_OWNER = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call(ARGV[2], KEYS[1], ARGV[3]) else return -1 end"
+
+async function releaseWaLock() {
+  if (!_waLockHeld) return
+  _waLockHeld = false
+  try {
+    await _ioredis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", 1, WA_LOCK_KEY, WA_INSTANCE_ID)
+  } catch (e) {}
+}
+
+// Perpanjang lock selama proses hidup; kalau ternyata sudah dipegang proses lain, lepas koneksi
+setInterval(async () => {
+  if (!_waLockHeld) return
+  try {
+    const r = await _ioredis.eval(_WA_LOCK_IF_OWNER, 1, WA_LOCK_KEY, WA_INSTANCE_ID, 'pexpire', WA_LOCK_TTL_MS)
+    if (r === 1) return
+    // Bukan pemilik lagi: bisa karena lock kedaluwarsa (ambil lagi) atau diambil proses lain
+    if (await acquireWaLock()) return
+    _waLockHeld = false
+    pushLog('WA | Lock koneksi diambil proses lain - menutup koneksi di proses ini')
+    if (sock) { sock.ev.removeAllListeners(); try { sock.end(undefined) } catch (e) {} sock = null }
+    isReady = false
+    scheduleReconnect(5000)
+  } catch (e) {}
+}, 10000)
+
+// Saat platform menghentikan container (redeploy/restart): tutup WA dengan rapi, tunggu backup
+// signal keys selesai, lalu lepas lock supaya instance baru langsung bisa connect.
+let _shuttingDown = false
+async function gracefulShutdown(signal) {
+  if (_shuttingDown) return
+  _shuttingDown = true
+  pushLog(`WA | ${signal} diterima - menutup koneksi WA dan melepas lock...`)
+  try {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+    if (sock) { try { sock.end(undefined) } catch (e) {} }
+    await new Promise(r => setTimeout(r, 1500)) // beri waktu penulisan key terakhir
+    await Promise.race([
+      Promise.allSettled([..._pendingWaBackups]),
+      new Promise(r => setTimeout(r, 5000))
+    ])
+    await releaseWaLock()
+  } catch (e) {}
+  process.exit(0)
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
 
 // Nama file sama persis dengan useMultiFileAuthState Baileys
 const _waKeyFileName = (type, id) => `${type}-${id}.json`.replace(/\//g, '__').replace(/:/g, '-')
@@ -6991,6 +7077,57 @@ app.post('/api/admin/reset-titik-on', express.json(), async (req, res) => {
 })
 
 
+// Perbaiki sesi enkripsi tanpa logout: unggah pre-key baru, hapus session & sender-key
+// (disk + backup Redis), lalu reconnect dengan creds yang sama. Dipakai tombol admin dan
+// pemulihan otomatis saat banyak pesan gagal didekripsi.
+let _lastWaAutoRepair = 0
+const _waBadMacSenders = new Map() // pengirim -> waktu gagal dekripsi terakhir
+async function repairWaSession(source) {
+  pushLog(`WA | ${source}: perbaiki sesi enkripsi (tanpa logout)...`)
+
+  // 1. Unggah pre-key baru selagi koneksi masih terbuka
+  let preKeyMsg = ''
+  try {
+    await sock.uploadPreKeys()
+    preKeyMsg = 'pre-key baru diunggah'
+  } catch (e) {
+    preKeyMsg = 'gagal unggah pre-key: ' + e.message
+  }
+  pushLog('WA | Repair: ' + preKeyMsg)
+
+  // 2. Tutup socket (tanpa logout) agar cache signal key di memori ikut dibuang
+  if (sock) {
+    sock.ev.removeAllListeners()
+    try { sock.end(undefined) } catch (e) {}
+  }
+  sock = null
+  isReady = false
+  _waBadMacSenders.clear()
+
+  // 3. Hapus session & sender-key di disk dan di backup Redis
+  const isBrokenKey = (name) => /^(session-|sender-key-)/.test(name)
+  const fs = await import('fs')
+  const path = await import('path')
+  const authPath = '/tmp/wa_auth'
+  let fileCount = 0
+  if (fs.existsSync(authPath)) {
+    for (const f of fs.readdirSync(authPath)) {
+      if (isBrokenKey(f)) { fs.rmSync(path.join(authPath, f), { force: true }); fileCount++ }
+    }
+  }
+  const fields = (await redis.hkeys(REDIS_KEYS.WA_AUTH)).filter(f => f.startsWith('key:') && isBrokenKey(f.substring(4)))
+  for (let i = 0; i < fields.length; i += 50) {
+    await Promise.all(fields.slice(i, i + 50).map(f => redis.hdel(REDIS_KEYS.WA_AUTH, f)))
+  }
+  pushLog(`WA | Repair: ${fileCount} file sesi & ${fields.length} backup Redis dihapus — reconnect...`)
+
+  // 4. Reconnect dengan creds yang sama
+  reconnectAttempts = 0
+  consecutive428 = 0
+  scheduleReconnect(2000)
+  return { fileCount, preKeyMsg }
+}
+
 // Admin: Reset WA connection (logout + restart, scan QR ulang)
 // Admin: Perbaiki sesi enkripsi WA TANPA logout (untuk error "Bad MAC" / pesan grup tidak terbaca).
 // Hapus session & sender-key yang rusak, unggah pre-key baru, lalu reconnect. Creds (identitas
@@ -7002,47 +7139,8 @@ app.post('/api/admin/wa-repair-session', express.json(), async (req, res) => {
   if (!sock.user) return res.json({ success: false, error: 'WA belum login (masih menunggu scan QR) - tidak ada sesi yang bisa diperbaiki. Scan QR / pairing dulu.' })
 
   try {
-    pushLog('WA | Admin: perbaiki sesi enkripsi (tanpa logout)...')
-
-    // 1. Unggah pre-key baru selagi koneksi masih terbuka
-    let preKeyMsg = ''
-    try {
-      await sock.uploadPreKeys()
-      preKeyMsg = 'pre-key baru diunggah'
-    } catch (e) {
-      preKeyMsg = 'gagal unggah pre-key: ' + e.message
-    }
-    pushLog('WA | Repair: ' + preKeyMsg)
-
-    // 2. Tutup socket (tanpa logout) agar cache signal key di memori ikut dibuang
-    sock.ev.removeAllListeners()
-    try { sock.end(undefined) } catch (e) {}
-    sock = null
-    isReady = false
-
-    // 3. Hapus session & sender-key di disk dan di backup Redis
-    const isBrokenKey = (name) => /^(session-|sender-key-)/.test(name)
-    const fs = await import('fs')
-    const path = await import('path')
-    const authPath = '/tmp/wa_auth'
-    let fileCount = 0
-    if (fs.existsSync(authPath)) {
-      for (const f of fs.readdirSync(authPath)) {
-        if (isBrokenKey(f)) { fs.rmSync(path.join(authPath, f), { force: true }); fileCount++ }
-      }
-    }
-    const fields = (await redis.hkeys(REDIS_KEYS.WA_AUTH)).filter(f => f.startsWith('key:') && isBrokenKey(f.substring(4)))
-    for (let i = 0; i < fields.length; i += 50) {
-      await Promise.all(fields.slice(i, i + 50).map(f => redis.hdel(REDIS_KEYS.WA_AUTH, f)))
-    }
-    pushLog(`WA | Repair: ${fileCount} file sesi & ${fields.length} backup Redis dihapus — reconnect...`)
-
-    // 4. Reconnect dengan creds yang sama
-    reconnectAttempts = 0
-    consecutive428 = 0
-    scheduleReconnect(2000)
-
-    res.json({ success: true, message: `Sesi diperbaiki (${fileCount} sesi dihapus, ${preKeyMsg}). WA reconnect dalam beberapa detik — tidak perlu scan ulang.` })
+    const r = await repairWaSession('Admin')
+    res.json({ success: true, message: `Sesi diperbaiki (${r.fileCount} sesi dihapus, ${r.preKeyMsg}). WA reconnect dalam beberapa detik — tidak perlu scan ulang.` })
   } catch (e) {
     pushLog('WA | Repair error: ' + e.message)
     res.json({ success: false, error: e.message })
@@ -19812,6 +19910,16 @@ async function start() {
   }
   isStarting = true
   try {
+  if (_shuttingDown) { isStarting = false; return }
+  // Tunggu giliran: jangan connect selama proses lain masih memegang koneksi WA
+  if (!(await acquireWaLock())) {
+    if (Date.now() - _lastLockWaitLog > 60000) {
+      _lastLockWaitLog = Date.now()
+      pushLog('WA | Menunggu instance lain melepas koneksi WA (lock) - cek ulang tiap 5 detik...')
+    }
+    scheduleReconnect(5000)
+    return
+  }
   // Load data dari Redis saat startup
   await loadFromRedis()
   await loadMonitoredGroup()
@@ -19828,7 +19936,7 @@ async function start() {
   const _origKeysSet = state.keys.set.bind(state.keys)
   state.keys.set = async (data) => {
     await _origKeysSet(data)
-    backupWaKeysToRedis(data)
+    trackWaBackup(backupWaKeysToRedis(data))
   }
   const { version } = await fetchLatestBaileysVersion()
 
@@ -19945,14 +20053,24 @@ async function start() {
         consecutive428 = 0
       }
 
+      // 440 = connectionReplaced - ada koneksi lain yang login dengan sesi yang sama.
+      // Jangan langsung rebutan balik (itu yang merusak kunci enkripsi); tunggu lebih lama.
+      if (reason === 440) {
+        pushLog('WA | Sesi dipakai koneksi lain (440) - coba lagi dalam 20s. Pastikan bot hanya jalan di 1 instance.')
+        scheduleReconnect(20000)
+        return
+      }
+
+      // Tidak pernah menyerah: setelah batas percobaan, tetap coba tiap 60 detik
+      // (dulu berhenti total dan butuh reset manual).
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-        const delay = BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts)
+        const delay = Math.min(BASE_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts), 60000)
         reconnectAttempts++
         pushLog(`WA | Reconnect ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay/1000)}s`)
         scheduleReconnect(delay)
       } else {
-        pushLog('WA | Max reconnect reached - reset manual diperlukan')
-        isStarting = false // Buka gate agar wa-reset bisa trigger start() baru
+        pushLog('WA | Reconnect masih gagal - coba lagi tiap 60s')
+        scheduleReconnect(60000)
       }
 
     } else if (connection === 'open') {
@@ -19966,7 +20084,11 @@ async function start() {
       pushLog('WA | Warming up 15s...')
 
       isReady = false
+      _waBadMacSenders.clear()
+      const _openedSock = sock
       setTimeout(async () => {
+        // Timer dari koneksi lama (sudah reconnect) tidak boleh menandai bot ready
+        if (sock !== _openedSock) return
         try {
           const usdIdr = await fetchUSDIDRFromGoogle()
           cachedMarketData.usdIdr = usdIdr
@@ -19976,6 +20098,7 @@ async function start() {
           pushLog(`DATA | USD/IDR fallback`)
         }
 
+        if (sock !== _openedSock) return
         isReady = true
         pushLog('WA | Bot ready')
         checkPriceUpdate()
@@ -19991,7 +20114,7 @@ async function start() {
 
   sock.ev.on('creds.update', async () => {
     await saveCreds()
-    backupWaCredsToRedis(state.creds) // fire-and-forget, jangan blokir event loop Baileys
+    trackWaBackup(backupWaCredsToRedis(state.creds)) // fire-and-forget, jangan blokir event loop Baileys
   })
 
   // ==================== GROUP PARTICIPANT UPDATE ====================
@@ -20601,6 +20724,20 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
         // sebelumnya dibuang diam-diam sehingga "emas" tidak dibalas tanpa jejak di log
         if (msg.messageStubType === 2 && !msg.key?.fromMe) {
           const nowTs = Date.now()
+          // Pemulihan otomatis: kalau "Bad MAC" datang dari banyak pengirim berbeda (bukan
+          // perangkat bot sendiri), berarti kunci sesi tidak sinkron → perbaiki sendiri
+          // tanpa menunggu admin / scan QR. Maksimal sekali per 6 jam.
+          const _failSender = msg.key.participant || msg.key.remoteJid || ''
+          const _ownLid = (sock?.user?.lid || '').replace(/:[0-9]+@/, '@')
+          if (/Bad MAC/i.test(msg.messageStubParameters?.[0] || '') && _failSender && _failSender !== _ownLid) {
+            _waBadMacSenders.set(_failSender, nowTs)
+            for (const [k, t] of _waBadMacSenders) if (nowTs - t > 600000) _waBadMacSenders.delete(k)
+            if (_waBadMacSenders.size >= 5 && nowTs - _lastWaAutoRepair > 6 * 3600000 && sock?.user) {
+              _lastWaAutoRepair = nowTs
+              repairWaSession(`Otomatis (Bad MAC dari ${_waBadMacSenders.size} pengirim)`).catch(e => pushLog('WA | Auto-repair error: ' + e.message))
+              return
+            }
+          }
           if (nowTs - _lastDecryptFailLog > 60000) {
             _lastDecryptFailLog = nowTs
             pushLog(`WA | ⚠️ Pesan dari ${(msg.key.remoteJid || '').substring(0, 20)} gagal didekripsi (${msg.messageStubParameters?.[0] || 'unknown'}) — jika terus muncul, Reset WA lalu login ulang`)
