@@ -35,6 +35,66 @@ process.on('uncaughtException', (err) => {
   try { pushLog(`❌ UncaughtException: ${err && err.message ? err.message : String(err)}`) } catch (_) {}
 })
 
+// libsignal mencetak isi sesi (TERMASUK kunci privat) dan stack trace "Bad MAC" langsung ke
+// console setiap kali sesi dibuka/ditutup — membanjiri log dan membocorkan kunci ke log server.
+// Buang baris itu; kegagalan dekripsi cukup diringkas sekali per menit.
+let _signalDecryptFails = 0
+{
+  const _noisy = /^(Closing session|Opening session|Removing old closed session|Session already|Closing stale open session|Closing open session in favor|Migrating session|Decrypted message with closed session)/
+  const _decryptErr = /^(Failed to decrypt message with any known session|Session error:)/
+  for (const level of ['info', 'warn', 'error']) {
+    const orig = console[level].bind(console)
+    console[level] = (...args) => {
+      if (typeof args[0] === 'string') {
+        if (_noisy.test(args[0])) return
+        if (_decryptErr.test(args[0])) {
+          if (args[0].startsWith('Failed')) _signalDecryptFails++
+          return
+        }
+      }
+      orig(...args)
+    }
+  }
+  setInterval(() => {
+    if (_signalDecryptFails > 0) {
+      try { pushLog(`WA | ${_signalDecryptFails} pesan gagal didekripsi (Bad MAC) dalam 1 menit terakhir`) } catch (_) {}
+      _signalDecryptFails = 0
+    }
+  }, 60000)
+}
+
+// Cache untuk Baileys yang HARUS bertahan lintas reconnect:
+// - penghitung retry per pesan: tanpa ini hitungan kembali 0 tiap reconnect, sehingga satu
+//   perangkat yang terus minta kirim ulang membuat bot membuat sesi baru tanpa henti
+// - pesan terkirim: supaya permintaan kirim ulang dibalas isi pesan aslinya, bukan pesan kosong
+const _waMsgRetryStore = new Map() // key -> { v, exp }
+const waMsgRetryCache = {
+  get(key) {
+    const e = _waMsgRetryStore.get(key)
+    if (!e) return undefined
+    if (e.exp < Date.now()) { _waMsgRetryStore.delete(key); return undefined }
+    return e.v
+  },
+  set(key, v) {
+    if (_waMsgRetryStore.size > 5000) {
+      const now = Date.now()
+      for (const [k, e] of _waMsgRetryStore) if (e.exp < now) _waMsgRetryStore.delete(k)
+      if (_waMsgRetryStore.size > 5000) _waMsgRetryStore.clear()
+    }
+    _waMsgRetryStore.set(key, { v, exp: Date.now() + 3600000 })
+    return true
+  },
+  del(key) { _waMsgRetryStore.delete(key) },
+  flushAll() { _waMsgRetryStore.clear() }
+}
+const WA_MAX_MSG_RETRY = 3
+const _waSentMessages = new Map() // id pesan -> isi pesan (500 terakhir)
+function rememberWaSentMessage(msg) {
+  if (!msg?.key?.fromMe || !msg.key.id || !msg.message) return
+  _waSentMessages.set(msg.key.id, msg.message)
+  if (_waSentMessages.size > 500) _waSentMessages.delete(_waSentMessages.keys().next().value)
+}
+
 // VAPID Keys untuk Web Push Notifications
 const VAPID_PUBLIC_KEY = 'BPvtMmw2JMUUh55UKWO9cSo014LpHor_JDQSwda_MM_J2psg3SsFhzil22utOe5o8wSsQKv218mEQbrvEwN0U18'
 const VAPID_PRIVATE_KEY = 'KMp0F8Q9gzNWpRP1nBwr6xWbc__wG7LcDE17WNAuiHw'
@@ -19957,7 +20017,20 @@ async function start() {
     keepAliveIntervalMs: 25000,
     connectTimeoutMs: 60000,
     qrTimeout: 60000,
-    getMessage: async () => ({ conversation: '' })
+    msgRetryCounterCache: waMsgRetryCache,
+    maxMsgRetryCount: WA_MAX_MSG_RETRY,
+    // Permintaan kirim ulang: balas dengan isi pesan aslinya. Kalau pesannya sudah tidak
+    // disimpan, jangan kirim apa-apa (dulu mengirim pesan KOSONG) dan tetap hitung
+    // percobaannya supaya perangkat yang sama tidak memicu pembuatan sesi tanpa batas.
+    getMessage: async (key) => {
+      const stored = key?.id ? _waSentMessages.get(key.id) : undefined
+      if (stored) return stored
+      if (key?.id) {
+        const k = `${key.id}:${key.participant}`
+        waMsgRetryCache.set(k, (waMsgRetryCache.get(k) || 0) + 1)
+      }
+      return undefined
+    }
   })
 
   if (pingInterval) clearInterval(pingInterval)
@@ -20692,6 +20765,7 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
   // Catat SEMUA pesan masuk (sebelum filter apa pun) agar terlihat kenapa command tidak dibalas.
   // Matikan dengan env WA_DEBUG_MESSAGES=0 kalau log terlalu ramai.
   sock.ev.on('messages.upsert', (ev) => {
+    for (const msg of ev.messages || []) rememberWaSentMessage(msg)
     if (process.env.WA_DEBUG_MESSAGES === '0') return
     for (const msg of ev.messages || []) {
       try {
