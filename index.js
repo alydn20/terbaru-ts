@@ -4067,6 +4067,36 @@ app.get('/api/pairing-status', async (req, res) => {
   return res.json({ status: 'idle' }) // belum ada request pairing code sama sekali
 })
 
+// Mulai login lewat kode pairing untuk nomor ini (dipakai panel admin dan bot Telegram).
+// Sesi lama dihapus dulu: kode pairing hanya bisa diminta selagi sesi belum pernah tertaut.
+async function startWaPairing(phone) {
+  pushLog(`WA | Admin meminta pairing code untuk +${phone}...`)
+
+  if (sock) {
+    sock.ev.removeAllListeners()
+    await sock.logout().catch(() => {})
+    sock = null
+  }
+
+  isReady = false
+  lastQr = null
+  pairingCode = null
+  pendingPairingPhone = phone
+  reconnectAttempts = 0
+  consecutive428 = 0
+  isStarting = false
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+
+  // Hapus auth lama (Redis + lokal) — pairing code butuh sesi yang belum registered
+  await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
+  const fs = await import('fs')
+  if (fs.existsSync('/tmp/wa_auth')) {
+    fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
+  }
+
+  scheduleReconnect(1000)
+}
+
 // API: Minta kode pairing untuk nomor HP tertentu (alternatif scan QR).
 // Sama seperti /qr-reset: sesi lama dihapus dulu karena requestPairingCode()
 // hanya bisa dipakai selagi sesi belum "registered" (belum pernah link).
@@ -4081,31 +4111,7 @@ app.post('/api/wa-pairing-request', express.json(), async (req, res) => {
   const phone = normalizePhone(rawPhone)
 
   try {
-    pushLog(`WA | Admin meminta pairing code untuk +${phone}...`)
-
-    if (sock) {
-      sock.ev.removeAllListeners()
-      await sock.logout().catch(() => {})
-      sock = null
-    }
-
-    isReady = false
-    lastQr = null
-    pairingCode = null
-    pendingPairingPhone = phone
-    reconnectAttempts = 0
-    consecutive428 = 0
-    isStarting = false
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-
-    // Hapus auth lama (Redis + lokal) — pairing code butuh sesi yang belum registered
-    await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
-    const fs = await import('fs')
-    if (fs.existsSync('/tmp/wa_auth')) {
-      fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
-    }
-
-    scheduleReconnect(1000)
+    await startWaPairing(phone)
     res.json({ success: true })
   } catch (e) {
     pushLog('WA | Pairing request error: ' + e.message)
@@ -9946,7 +9952,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payAutoVerify" style="width:18px;height:18px;cursor:pointer;">
-            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, jelas salah = tolak otomatis, ragu = menunggu ACC manual. Laporan tetap dikirim ke Telegram dan WA admin.)</span></span>
+            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Nominal cocok dan tidak ada yang bertentangan = ACC otomatis, selain itu = tolak otomatis dengan alasannya dan orangnya bisa upload ulang. Anda tetap bisa ACC atau menolak sendiri. Laporan dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -19099,14 +19105,42 @@ app.get('/monitoring', async (req, res) => {
       var mk = function(tag, text, css) { var el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
       var btnCss = 'display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;border-radius:10px;padding:12px;margin:8px 0 14px;';
       box.appendChild(mk('div', 'Gabung Grup WA', 'font-weight:800;font-size:17px;margin-bottom:12px;'));
-      box.appendChild(mk('div', 'Langkah 1. Buka grup, lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
-      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#22c55e;color:#fff;');
-      a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
-      box.appendChild(a1);
-      box.appendChild(mk('div', 'Langkah 2. Setelah itu kabari admin supaya disetujui. Pesannya sudah terisi, tinggal kirim.', 'font-weight:600;'));
+      // Urutan dibalik: chat admin DULU. Tombol grup baru bisa ditekan setelah tombol chat ditekan,
+      // karena banyak yang langsung masuk grup tanpa mengabari admin.
+      box.appendChild(mk('div', 'Langkah 1. Kabari admin dulu. Pesannya sudah terisi, tinggal tekan kirim di WhatsApp.', 'font-weight:600;'));
       var a2 = mk('a', 'Chat Admin', btnCss + 'background:#f7931a;color:#000;');
       a2.href = 'https://wa.me/6285156260393?text=' + encodeURIComponent(pesan); a2.target = '_blank'; a2.rel = 'noopener';
       box.appendChild(a2);
+      box.appendChild(mk('div', 'Langkah 2. Setelah pesan terkirim, buka grup lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
+      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#374151;color:#9ca3af;');
+      a1.href = '#';
+      var hint = mk('div', 'Tombol grup aktif setelah Anda menekan Chat Admin.', 'font-size:12px;color:#9ca3af;margin:-8px 0 14px;');
+      var unlocked = false;
+      var lapor = function(action) {
+        try {
+          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '', action: action }) });
+        } catch (e) {}
+      };
+      a2.onclick = function() {
+        lapor('chat');
+        unlocked = true;
+        a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
+        a1.style.background = '#22c55e'; a1.style.color = '#fff';
+        hint.textContent = 'Kirim dulu pesannya di WhatsApp, lalu kembali ke sini dan tekan Buka Grup WhatsApp.';
+      };
+      a1.onclick = function(ev) {
+        if (!unlocked) {
+          ev.preventDefault();
+          hint.textContent = 'Tekan Chat Admin dulu dan kirim pesannya.';
+          hint.style.color = '#ef4444';
+          return;
+        }
+        // Server mencatat dan melapor ke admin bahwa nomor ini membuka link grup
+        lapor('group');
+      };
+      box.appendChild(a1);
+      box.appendChild(hint);
       var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
       tutup.onclick = function() { wrap.remove(); };
       box.appendChild(tutup);
@@ -20885,9 +20919,47 @@ async function telegramApi(token, method, body, isForm) {
 }
 
 // Kirim teks (dan foto, kalau ada) ke Telegram admin. Mengembalikan true kalau terkirim.
+// Emoji HANYA untuk Telegram (pesan ke WA admin dan website tetap polos). Ditambahkan di sini,
+// satu tempat, berdasarkan judul dan label baris, supaya teks aslinya tidak perlu diubah.
+const TG_TITLE_EMOJI = [
+  [/^DI-ACC OTOMATIS/, '✅'], [/^DITOLAK OTOMATIS/, '❌'], [/^BUKTI PERLU DICEK MANUAL/, '⚠️'],
+  [/^BUKTI BAYAR MENUNGGU ACC/, '💳'], [/^PERMINTAAN GABUNG GRUP/, '👥'], [/^MEMBUKA LINK GRUP/, '🔗'],
+  [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'],
+  [/^Habis dalam 3 hari/, '⏳'], [/^BOT WHATSAPP TER-LOGOUT/, '🚨']
+]
+const TG_LINE_EMOJI = [
+  [/^Nomor di website:/, '🌐'], [/^Nomor WA pengirim:/, '📱'], [/^Nomor:/, '📱'], [/^Nominal order:/, '💰'],
+  [/^Aktif sampai:/, '📆'], [/^Alasan:/, '📝'], [/^Status akun:/, '👤'], [/^Minta gabung grup:/, '👥'],
+  [/^Chat ke admin:/, '💬'], [/^Jam:/, '🕐'], [/^Hasil cek otomatis:/, '🔎'], [/^User terdaftar:/, '👤'],
+  [/^Menunggu ACC:/, '🧾'], [/^Belum upload bukti:/, '⚪'], [/^Sudah ACC, belum masuk grup:/, '👥'],
+  [/^Bot terhubung/, '✅'], [/^Tes notifikasi/, '🔔'], [/^Bukti BARU setelah ditolak/, '🔁']
+]
+function tgDecorate(text) {
+  return String(text).split('\n').map(line => {
+    // Judul: baris yang seluruhnya *tebal*
+    let m = /^\*([^*]+)\*(.*)$/.exec(line)
+    if (m) {
+      const t = TG_TITLE_EMOJI.find(([re]) => re.test(m[1]))
+      if (t) return t[1] + ' ' + line
+    }
+    // Baris hasil pemeriksaan: "- Nominal: cocok (...)"
+    m = /^- (.*)$/.exec(line)
+    if (m) {
+      const v = m[1]
+      const icon = /TIDAK cocok|GAGAL|BERBEDA/.test(v) ? '❌' : /: (cocok|berhasil)/.test(v) ? '✅' : /tidak terbaca|tidak dicek/.test(v) ? '⚪' : /^[0-9]{10}/.test(v.replace(/^ID transaksi: /, '')) ? '🆔' : '▫️'
+      return icon + ' ' + v
+    }
+    if (/^Kesimpulan:/.test(line)) return (/aman disetujui/.test(line) ? '✅' : '⚠️') + ' ' + line
+    if (/^• /.test(line)) return line
+    const l = TG_LINE_EMOJI.find(([re]) => re.test(line))
+    return l ? l[1] + ' ' + line : line
+  }).join('\n')
+}
+
 async function notifyAdminsTelegram(text, photo, opts) {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId) return false
+  text = tgDecorate(text)
   const plain = String(text).replace(/\*/g, '')
   // Format HTML Telegram: *tebal* jadi <b>, dan nomor HP dibungkus <code> supaya sekali ketuk
   // di Telegram nomornya langsung tersalin.
@@ -21232,6 +21304,7 @@ function tgOnlinePage() {
 function tgWaPage() {
   const phone = sock && sock.user && sock.user.id ? sock.user.id.split(':')[0].split('@')[0] : null
   const kb = [[{ text: 'Muat ulang', callback_data: 'm:wa' }]]
+  if (!isReady) kb.push([{ text: 'Tautkan dengan kode (tanpa QR)', callback_data: 'wa:pair' }])
   if (!isReady && lastQr) kb.push([{ text: 'Kirim QR ke sini', callback_data: 'wa:qr' }])
   kb.push(TG_HOME_ROW)
   return {
@@ -21242,6 +21315,27 @@ function tgWaPage() {
       '\n\nPengaturan grup dan perbaikan sesi tetap lewat panel admin web.',
     kb
   }
+}
+
+// Minta kode pairing lalu kirim ke Telegram. Admin mengetiknya di HP nomor bot.
+async function tgSendPairingCode(tg, phone) {
+  const say = (text, kb) => telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: kb || [TG_HOME_ROW] } }).catch(() => {})
+  try {
+    await startWaPairing(phone)
+  } catch (e) {
+    return say('Gagal memulai penautan: ' + tgEsc(e && e.message ? e.message : e))
+  }
+  // Kode muncul beberapa detik setelah koneksi ke WhatsApp siap
+  for (let i = 0; i < 20 && !pairingCode && !isReady; i++) await _tgSleep(1500)
+  if (isReady) return say('WhatsApp sudah tersambung.')
+  if (!pairingCode) {
+    return say('Kode belum keluar. WhatsApp mungkin sedang menolak permintaan dari nomor ini; tunggu beberapa menit lalu coba lagi, atau pakai QR.',
+      [[{ text: 'Coba lagi', callback_data: 'wa:pg:' + phone }, { text: 'Kirim QR ke sini', callback_data: 'wa:qr' }], TG_HOME_ROW])
+  }
+  const kode = String(pairingCode)
+  const rapi = kode.length === 8 ? kode.substring(0, 4) + '-' + kode.substring(4) : kode
+  return say('<b>Kode penautan untuk +' + phone + '</b>\n\n<code>' + tgEsc(rapi) + '</code>\n\nDi HP nomor bot:\n1. WhatsApp > Perangkat tertaut > Tautkan perangkat\n2. Pilih "Tautkan dengan nomor telepon"\n3. Ketik kode di atas\n\nKode berlaku sebentar saja. Kalau sudah kedaluwarsa, minta lagi.',
+    [[{ text: 'Minta kode baru', callback_data: 'wa:pg:' + phone }, { text: 'Cek status', callback_data: 'm:wa' }], TG_HOME_ROW])
 }
 
 async function tgSavePaymentSettings(changes) {
@@ -21337,15 +21431,18 @@ async function tgFlushLogs() {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId || tg.logPush === false) return
   const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }).replace('.', ':')
+  const ikon = b => /^ACC /.test(b) ? '✅' : /^Tolak /.test(b) ? '❌' : /^Cek bukti .*: LOLOS/.test(b) ? '🔎✅' : /^Cek bukti /.test(b) ? '🔎❌'
+    : /^Grup: /.test(b) ? '👥' : /^Expired: /.test(b) ? '⛔' : /^Reset PIN/.test(b) ? '🔑' : /^\[Error\]/.test(b) ? '❗' : /^\[WA\]/.test(b) ? '📱' : /^\[Bayar\]/.test(b) ? '💳' : '▫️'
   const line = x => {
     let body = tgPrettyLog(x.s).replace(/^\[(Otomatis|Manual)\] /, '')
+    body = ikon(body) + ' ' + body
     if (body.length > 300) body = body.substring(0, 297) + '...'
     return '<code>' + jam(x.t) + '</code> ' + tgEsc(body).replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
   }
   const groups = [
-    ['LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
-    ['LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
-    ['LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
+    ['🤖 LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
+    ['👤 LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
+    ['📋 LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
   ]
   // Tiap bagian dikirim sebagai pesan sendiri; yang panjang dipecah supaya tidak terpotong
   for (const [judul, list] of groups) {
@@ -21595,6 +21692,25 @@ async function handleTelegramCallback(tg, cq) {
   }
 
   // --- WhatsApp ---
+  // Tautkan ulang dengan kode: pilih nomor bot terakhir, atau ketik nomor lain
+  if (data === 'wa:pair') {
+    if (isReady) return toast('WhatsApp sudah tersambung. Tidak perlu ditautkan ulang.', true)
+    const last = await _ioredis.get('gold:wa_last_number').catch(() => null)
+    const kb = []
+    if (last && /^[0-9]{9,15}$/.test(last)) kb.push([{ text: 'Pakai +' + last, callback_data: 'wa:pg:' + last }])
+    kb.push(TG_HOME_ROW)
+    tgSetAwait('pair')
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, parse_mode: 'HTML', reply_markup: { inline_keyboard: kb },
+      text: '<b>Tautkan WhatsApp dengan kode</b>\n\n' + (kb.length > 1 ? 'Tekan tombol nomor di bawah, atau kirim' : 'Kirim') + ' nomor HP bot (format bebas: 0851..., +62851...).' })
+    return toast('')
+  }
+  if ((m = /^wa:pg:([0-9]{9,15})$/.exec(data))) {
+    if (isReady) return toast('WhatsApp sudah tersambung.', true)
+    tgSetAwait('')
+    await toast('Meminta kode ke WhatsApp...')
+    await tgSendPairingCode(tg, m[1])
+    return
+  }
   if (data === 'wa:qr') {
     if (isReady || !lastQr) { await show(tgWaPage()); return toast(isReady ? 'WhatsApp sudah tersambung.' : 'QR belum tersedia. Coba Muat ulang sebentar lagi.', true) }
     const mod = await import('qrcode')
@@ -21632,6 +21748,15 @@ async function handleTelegramMessage(tg, msg) {
     const out = []
     for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
+  }
+
+  if (awaiting === 'pair' && !text.startsWith('/')) {
+    const phone = tgParsePhones(text, 1)[0]
+    if (!phone) return say('Nomornya tidak terbaca. Kirim nomor HP bot, contoh: 085156260393')
+    tgSetAwait('')
+    if (isReady) return say('WhatsApp sudah tersambung. Tidak perlu ditautkan ulang.')
+    await say('Meminta kode ke WhatsApp untuk +' + phone + '...')
+    return tgSendPairingCode(tg, phone)
   }
 
   if (awaiting === 'rej' && !text.startsWith('/')) {
@@ -21829,6 +21954,7 @@ async function reportGroupJoinRequest(msg, text) {
   _joinCheckSeen.set(seenKey, now)
 
   const webPhone = tgParsePhones(text, 1)[0] || ''
+  if (webPhone) _joinCheckSeen.set(webPhone, now)
   const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
   const masalah = []
 
@@ -21909,6 +22035,72 @@ async function reportGroupJoinRequest(msg, text) {
     'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
 }
 
+// User menekan tombol di kotak "Gabung Grup WA". SETIAP klik dicatat di log (bagian Otomatis):
+//  - "Chat Admin": dicatat saja (isi chatnya dilaporkan terpisah saat pesannya benar-benar masuk).
+//  - "Buka Grup WhatsApp": 90 detik kemudian admin mendapat laporan lengkap, baik orangnya sudah
+//    chat admin maupun belum, beserta ada/tidaknya permintaan bergabung di grup.
+const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
+app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (req, res) => {
+  res.json({ success: true })
+  try {
+    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
+    if (!phone || phone === 'admin') return
+    const check = await isUserValid(phone)
+    if (!check.valid) return
+    const now = Date.now()
+    const action = req.body && req.body.action === 'chat' ? 'chat' : 'group'
+    for (const [k, t] of _groupOpenSeen) if (now - t > 3600000) _groupOpenSeen.delete(k)
+    // Klik berulang dalam 10 menit tidak dilaporkan lagi (per tombol)
+    const seenKey = action + ':' + phone
+    if (_groupOpenSeen.has(seenKey) && now - _groupOpenSeen.get(seenKey) < 10 * 60 * 1000) return
+    _groupOpenSeen.set(seenKey, now)
+    if (action === 'chat') {
+      pushLog(`AUTO | Grup: +${phone} menekan tombol Chat Admin di website`)
+      return
+    }
+    pushLog(`AUTO | Grup: +${phone} menekan tombol Buka Grup WhatsApp di website`)
+    setTimeout(() => {
+      reportGroupLinkOpened(phone, check.user, now).catch(e => pushLog('AUTO | Grup: laporan buka link error - ' + (e && e.message ? e.message : e)))
+    }, 90000)
+  } catch (e) {}
+})
+
+async function reportGroupLinkOpened(phone, user, openedAt) {
+  // Pesan chatnya ke admin sudah masuk? (dicatat saat pesan "mau gabung grup" diterima bot)
+  const sudahChat = _joinCheckSeen.has(phone) && _joinCheckSeen.get(phone) >= openedAt - 30 * 60 * 1000
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
+  const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+  let barisMinta = 'tidak dicek (grup belum diatur / bot terputus)'
+  if (sock && isReady && monitoredGroupId) {
+    try {
+      const list = await sock.groupRequestParticipantsList(monitoredGroupId)
+      let hidden = 0, ada = false
+      for (const r of list || []) {
+        const ph = phoneFromWaJid(r.jid) || phoneFromWaJid(r.phone_number)
+        if (!ph) hidden++
+        else if (ph === phone) ada = true
+      }
+      barisMinta = ada ? 'ADA di daftar permintaan'
+        : hidden > 0 ? 'tidak terlihat; ada ' + hidden + ' permintaan yang nomornya disembunyikan WhatsApp'
+        : 'belum terlihat (total ' + (list || []).length + ' permintaan menunggu)'
+    } catch (e) {
+      barisMinta = 'tidak bisa dibaca (' + String(e && e.message ? e.message : e).substring(0, 50) + ')'
+    }
+  }
+  const akun = 'aktif' + (user && user.expired ? ' sampai ' + tgl(user.expired) : ' (Lifetime)')
+  pushLog(`AUTO | Grup: +${phone} membuka link grup ${jam(openedAt)} - chat admin ${sudahChat ? 'sudah masuk' : 'BELUM masuk'}, akun ${akun}, minta gabung ${barisMinta}`)
+  let kb = null
+  const o = (await loadPaymentOrders()).filter(x => x.phone === phone && x.status === 'paid' && !x.inGroup).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+  if (o) kb = [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + o.id }]]
+  await notifyAdminsWa('*MEMBUKA LINK GRUP' + (sudahChat ? '' : ' (TANPA CHAT ADMIN)') + '*\n\n' +
+    'Nomor di website: +' + phone + '\n' +
+    'Jam: ' + jam(openedAt) + ' WIB\n' +
+    'Chat ke admin: ' + (sudahChat ? 'sudah masuk' : 'BELUM masuk') + '\n' +
+    'Status akun: ' + akun + '\n' +
+    'Minta gabung grup: ' + barisMinta + '\n\n' +
+    'Ini nomor yang LOGIN di website. Nomor WhatsApp yang dipakainya untuk bergabung bisa saja berbeda; cocokkan dengan permintaan bergabung di WhatsApp.', null, kb ? { kb } : null)
+}
+
 // User yang sedang login: link grup WA (dari pengaturan admin) + apakah ia perlu diajak bergabung.
 // Bot tidak melakukan apa pun di grup; user membuka link sendiri lalu mengabari admin lewat chat.
 app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
@@ -21961,8 +22153,10 @@ function scheduleNotInGroupReport() {
 // ---------- Pemeriksaan bukti otomatis (OCR) ----------
 // Teks di screenshot dibaca (Tesseract, berjalan di server sendiri) lalu diperiksa: nominal,
 // nama penerima, status transaksi, tanggal, dan apakah bukti/ID transaksinya pernah dipakai.
-// Hasilnya: 'accept' (ACC otomatis), 'reject' (tolak otomatis + alasan), atau 'manual'
-// (ragu / tidak terbaca: admin yang memutuskan lewat tombol di Telegram atau panel).
+// Hasilnya selalu diputuskan sendiri: 'accept' (ACC otomatis) atau 'reject' (tolak otomatis +
+// alasan). Yang wajib cocok hanya nominal; data lain hanya menggagalkan kalau terbaca dan salah.
+// 'manual' hanya terjadi kalau gambarnya gagal dibaca karena gangguan teknis.
+// Admin selalu bisa mengubah keputusan: ACC yang ditolak, atau hapus / blokir yang sudah di-ACC.
 // CATATAN: OCR hanya membaca tulisan. Screenshot yang diedit rapi tetap bisa lolos, jadi
 // laporan ke admin selalu menyertakan fotonya untuk dicek sekilas.
 const PAYMENT_PROOF_IDS_KEY = 'gold:payment_proof_ids'   // Hash: sidik bukti (ID transaksi / hash gambar) -> orderId
@@ -22091,15 +22285,32 @@ function analyzeProofText(text, order, merchantName, now) {
   const ids = [...new Set(text.replace(/[ \t]/g, '').match(/[0-9]{15,}/g) || [])].slice(0, 5)
   checks.push('ID transaksi: ' + (ids.length ? ids[0].substring(0, 10) + '...' : 'tidak terbaca'))
 
-  let verdict = 'manual', reason = ''
-  if (readable && amountWrong && (successOk || dates.length > 0)) {
-    verdict = 'reject'; reason = 'Nominal di bukti (' + otherExplicit.slice(0, 2).map(rp).join(', ') + ') tidak sama dengan ' + rp(order.amount)
-  } else if (readable && dateWrong && amounts.all.length > 0) {
-    verdict = 'reject'; reason = 'Tanggal di bukti (' + dates.slice(0, 2).map(tampil).join(', ') + ') bukan tanggal pembayaran order ini'
-  } else if (readable && failed && amounts.all.length > 0) {
-    verdict = 'reject'; reason = 'Status transaksi di bukti bukan berhasil'
-  } else if (amountOk && successOk && dateOk && (merchantOk || !mName)) {
+  // ATURAN KEPUTUSAN
+  // Yang wajib hanya NOMINAL, karena nominal tiap nomor berbeda (harga + 3 angka terakhir nomor)
+  // dan hampir selalu tertulis di bukti apa pun bentuknya (screenshot, foto layar HP, struk).
+  // Status, nama penerima, tanggal, dan ID transaksi tidak wajib ada; tetapi kalau TERBACA dan
+  // isinya bertentangan, bukti ditolak.
+  // Halaman QRIS website ini sendiri juga memuat nominalnya: itu bukan bukti pembayaran.
+  const ownPage = /(scan qris|bayar tepat|upload bukti|nomor belum terdaftar|treasury price monitor|simpan gambar qris)/.test(lower)
+  // Layar aplikasi SEBELUM membayar (konfirmasi / minta PIN) juga memuat nominal dan nama penerima
+  const beforePay = !successOk && /(konfirmasi pembayaran|masukkan pin|bayar sekarang|lanjutkan pembayaran|geser untuk bayar|slide to pay|confirm payment|enter pin)/.test(lower)
+  let verdict = 'reject', reason = ''
+  if (ownPage) {
+    reason = 'Itu halaman QRIS, bukan bukti pembayaran. Upload bukti dari aplikasi pembayaran setelah membayar'
+  } else if (failed && amounts.all.length > 0) {
+    reason = 'Status transaksi di bukti bukan berhasil'
+  } else if (beforePay) {
+    reason = 'Itu layar sebelum membayar, bukan bukti pembayaran. Upload bukti setelah transaksi berhasil'
+  } else if (dateWrong && amounts.all.length > 0) {
+    reason = 'Tanggal di bukti (' + dates.slice(0, 2).map(tampil).join(', ') + ') bukan tanggal pembayaran order ini'
+  } else if (amountOk) {
     verdict = 'accept'
+  } else if (amountWrong) {
+    reason = 'Nominal di bukti (' + otherExplicit.slice(0, 2).map(rp).join(', ') + ') tidak sama dengan ' + rp(order.amount)
+  } else if (!readable || amounts.all.length === 0) {
+    reason = 'Foto bukan bukti pembayaran atau tidak terbaca. Upload bukti pembayaran yang jelas, nominal ' + rp(order.amount) + ' harus terlihat'
+  } else {
+    reason = 'Nominal ' + rp(order.amount) + ' tidak terbaca di bukti. Upload bukti pembayaran yang jelas dan utuh'
   }
   return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
 }
@@ -22173,10 +22384,10 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   if (verdict === 'reject') {
     await rejectPaymentOrder(order, reason, 'otomatis')
     return notifyAdminsWa('*DITOLAK OTOMATIS*\n\n' + kepala + '\nAlasan: ' + reason + hasil + '\n\nOrangnya melihat alasan ini dan bisa upload bukti baru. Kalau penolakan ini keliru, tekan ACC.', photo,
-      { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }]] })
+      { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }], [{ text: 'Lihat order', callback_data: 'o:v:' + order.id + ':x' }]] })
   }
   await savePaymentOrder(order)
-  return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nCek otomatis tidak cukup yakin. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
+  return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nGambar gagal dibaca karena gangguan teknis, jadi tidak diputuskan otomatis. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
 }
 
 // Publik: unggah screenshot bukti bayar untuk sebuah order
@@ -22763,6 +22974,9 @@ async function start() {
       }
 
       if (reason === DisconnectReason.loggedOut) {
+        // WA sedang mati, jadi peringatan ini hanya bisa lewat Telegram
+        notifyAdminsTelegram('*BOT WHATSAPP TER-LOGOUT*\n\nWhatsApp mencabut tautan perangkat bot, jadi bot harus ditautkan ulang. Selama belum ditautkan: notifikasi harga ke grup, perintah horeg, dan laporan ke WA admin berhenti. Website dan laporan Telegram tetap jalan.\n\nTekan tombol di bawah untuk menautkan ulang.', null,
+          { kb: [[{ text: 'Tautkan dengan kode (tanpa QR)', callback_data: 'wa:pair' }], [{ text: 'Kirim QR ke sini', callback_data: 'wa:qr' }]] }).catch(() => {})
         await clearAuthAndRestart('LOGGED OUT')
         return
       }
@@ -22826,6 +23040,10 @@ async function start() {
       consecutive428 = 0
       isStarting = false // Koneksi berhasil, buka gate untuk reconnect berikutnya jika perlu
       pushLog('WA | Connected')
+      try {
+        const _botNo = String(sock?.user?.id || '').split(':')[0].split('@')[0]
+        if (/^[0-9]{9,15}$/.test(_botNo)) _ioredis.set('gold:wa_last_number', _botNo).catch(() => {})
+      } catch (e) {}
       pushLog(`WA | Nomor bot: ${sock?.user?.id || '-'} | LID: ${sock?.user?.lid || '-'} | grup monitor: ${monitoredGroupId || '-'} | admin: ${ADMIN_PHONES.join(',') || '-'}`)
       pushLog('WA | Warming up 15s...')
 
