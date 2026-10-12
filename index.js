@@ -8376,25 +8376,6 @@ app.get('/login', async (req, res) => {
       if (inputs[0]) inputs[0].focus();
     }
 
-    // Daftar via WhatsApp
-    function daftarWhatsApp() {
-      const phoneInput = document.getElementById('phoneInput');
-      let phone = phoneInput.value.replace(/\\D/g, '');
-
-      if (phone.startsWith('62')) phone = phone.substring(2);
-      if (phone.startsWith('0')) phone = phone.substring(1);
-
-      if (!phone || phone.length < 9) {
-        showMessage('Masukkan nomor WhatsApp Anda terlebih dahulu', 'error');
-        phoneInput.focus();
-        return;
-      }
-
-      const message = encodeURIComponent('Halo, saya ingin daftar grup harga Treasury.\\n\\nNomor WA saya: +62' + phone);
-      const waUrl = 'https://wa.me/62895701692525?text=' + message;
-      window.open(waUrl, '_blank');
-    }
-
     // Step 1: Check if user exists
     async function checkUser() {
       const phoneInput = document.getElementById('phoneInput');
@@ -8531,9 +8512,19 @@ app.get('/login', async (req, res) => {
     // Hasil: 'pay' (form QRIS tampil), 'redirect' (arahkan ke WA admin), 'none' (hanya pesan)
     async function startPaymentFlow(phone) {
       var cfg = null;
-      try { cfg = await (await fetch('/api/payment/config')).json(); } catch (e) {}
-      if (!cfg || !cfg.enabled) {
-        if (cfg && cfg.waFallback === false) {
+      // Dicoba sampai 3 kali. Kalau pengaturan tetap tidak terbaca (server sedang restart /
+      // koneksi putus), JANGAN diarahkan ke WA admin: dulu kegagalan seperti ini membuat orang
+      // terlempar ke chat admin walaupun QRIS aktif.
+      for (var attempt = 0; attempt < 3 && !cfg; attempt++) {
+        try { cfg = await (await fetch('/api/payment/config', { cache: 'no-store' })).json(); } catch (e) { cfg = null; }
+        if (!cfg) await new Promise(function(r) { setTimeout(r, 1500); });
+      }
+      if (!cfg || typeof cfg.enabled === 'undefined') {
+        showMessage('Gagal memuat. Coba lagi sebentar lagi.', 'error');
+        return 'none';
+      }
+      if (!cfg.enabled) {
+        if (cfg.waFallback === false) {
           showMessage('Nomor tidak terdaftar.', 'error');
           return 'none';
         }
