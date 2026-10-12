@@ -9949,11 +9949,6 @@ ${authScript}
             <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, jelas salah = tolak otomatis, ragu = menunggu ACC manual. Laporan tetap dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
-            <input type="checkbox" id="payGroupAutoAdd" style="width:18px;height:18px;cursor:pointer;">
-            <span>Bot menambahkan anggota ke grup WA <span style="color:#ef4444;font-size:0.85em;">(BERISIKO: pada percobaan pertama WhatsApp langsung mengeluarkan bot dan harus scan QR ulang. Biarkan mati kecuali Anda siap dengan risikonya.)</span></span>
-          </label>
-
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
             <div class="form-group" style="margin:0;">
               <label>Harga (Rp)</label>
@@ -11322,7 +11317,6 @@ ${authScript}
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
           document.getElementById('payAutoVerify').checked = s.autoVerify !== false;
-          document.getElementById('payGroupAutoAdd').checked = s.groupAutoAdd === true;
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -11376,7 +11370,6 @@ ${authScript}
           enabled: document.getElementById('payEnabled').checked,
           waFallback: document.getElementById('payWaFallback').checked,
           autoVerify: document.getElementById('payAutoVerify').checked,
-          groupAutoAdd: document.getElementById('payGroupAutoAdd').checked,
           price: document.getElementById('payPrice').value,
           days: document.getElementById('payDays').value,
           qrisStatic: document.getElementById('payQris').value,
@@ -20548,7 +20541,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupAutoAdd: false, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -20669,7 +20662,7 @@ async function completePaymentOrder(order, via) {
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
-  if (settings.groupAutoAdd !== true) scheduleNotInGroupReport()
+  scheduleNotInGroupReport()
   return order
 }
 
@@ -20987,10 +20980,7 @@ async function tgOrderDetail(id, fk) {
   if (status === 'paid') {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
-      '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' + (o.groupAdd && o.groupAdd.how ? ' (' + tgEsc(o.groupAdd.how) + ')' : '')
-        : o.groupAdd && o.groupAdd.status === 'privacy' ? 'belum masuk (bot ditolak privasi WhatsApp, masukkan manual)'
-        : o.groupAdd && o.groupAdd.status === 'failed' ? 'belum masuk (bot gagal menambahkan, masukkan manual)'
-        : 'belum masuk')
+      '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' + (o.groupAdd && o.groupAdd.how ? ' (' + tgEsc(o.groupAdd.how) + ')' : '') : 'belum masuk')
   }
   const kb = []
   const row1 = []
@@ -21168,7 +21158,7 @@ async function tgExpiringPage() {
   return {
     text: '<b>Habis dalam 7 hari</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada.') +
       (list.length > 40 ? '\n...dan ' + (list.length - 40) + ' lagi' : '') +
-      '\n\nUser yang masa aktifnya habis otomatis dikeluarkan. Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.',
+      '\n\nUser yang masa aktifnya habis otomatis kehilangan akses website (dari grup WA dikeluarkan manual). Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.',
     kb: [[{ text: 'Muat ulang', callback_data: 'm:exp' }], [{ text: 'Kelola nomor', callback_data: 'u:find' }, TG_HOME_ROW[0]]]
   }
 }
@@ -21212,7 +21202,6 @@ async function tgSettingsPage(note) {
       '\nHarga: <b>' + tgRp(s.price) + '</b>\nMasa aktif: <b>' + s.days + ' hari</b>' +
       '\nKalau QRIS mati, arahkan ke WA admin: <b>' + (s.waFallback !== false ? 'YA' : 'TIDAK') + '</b>' +
       '\nCek bukti otomatis: <b>' + (s.autoVerify !== false ? 'AKTIF' : 'MATI') + '</b>' +
-      '\nMasuk grup WA otomatis: <b>' + (s.groupAutoAdd === true ? 'AKTIF' : 'MATI') + '</b>' + (Date.now() < _groupAddPausedUntil ? ' (sedang dijeda)' : '') +
       '\nLog otomatis ke Telegram: <b>' + (tg.logPush !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\n\nString QRIS, nominal investasi, suara, dan pengaturan lain tetap lewat panel admin web.',
     kb: [
@@ -21220,7 +21209,6 @@ async function tgSettingsPage(note) {
       [{ text: 'Ubah harga', callback_data: 's:pr' }, { text: 'Ubah masa aktif', callback_data: 's:dy' }],
       [{ text: (s.waFallback !== false ? 'Jangan arahkan ke WA admin' : 'Arahkan ke WA admin'), callback_data: 's:wf' }],
       [{ text: (s.autoVerify !== false ? 'Matikan cek bukti otomatis' : 'Aktifkan cek bukti otomatis'), callback_data: 's:av' }],
-      [{ text: (s.groupAutoAdd === true ? 'Matikan bot menambahkan ke grup' : 'Aktifkan bot menambahkan ke grup (berisiko)'), callback_data: 's:ga' }],
       [{ text: (tg.logPush !== false ? 'Matikan log otomatis' : 'Aktifkan log otomatis'), callback_data: 's:lg' }],
       TG_HOME_ROW
     ]
@@ -21526,14 +21514,6 @@ async function handleTelegramCallback(tg, cq) {
     await show(await tgSettingsPage('Tersimpan.'))
     return toast('')
   }
-  if (data === 's:ga') {
-    const s = await getPaymentSettings()
-    const on = s.groupAutoAdd !== true
-    if (on) { _groupAddPausedUntil = 0; _groupAddFailStreak = 0 }
-    await tgSavePaymentSettings({ groupAutoAdd: on })
-    await show(await tgSettingsPage(on ? 'Bot akan menambahkan anggota ke grup. PERINGATAN: pada percobaan pertama, WhatsApp langsung mengeluarkan (logout) bot sesaat setelah bot menambahkan anggota, sehingga harus scan QR ulang.' : 'Bot tidak lagi menambahkan anggota. Masukkan anggota secara manual.'))
-    return toast('')
-  }
   if (data === 's:av') {
     const s = await getPaymentSettings()
     await tgSavePaymentSettings({ autoVerify: s.autoVerify === false })
@@ -21710,7 +21690,7 @@ async function sendDailyUserReport() {
     '\n\nMenunggu ACC: ' + orders.filter(TG_ORDER_FILTERS.w.test).length +
     '\nBelum upload bukti: ' + orders.filter(TG_ORDER_FILTERS.n.test).length +
     '\nSudah ACC, belum masuk grup: ' + orders.filter(TG_ORDER_FILTERS.g.test).length +
-    '\n\nUser yang habis otomatis dikeluarkan. Kalau login lagi, ia melihat QRIS untuk bayar.'
+    '\n\nUser yang habis otomatis kehilangan akses website; dari grup WA dikeluarkan manual. Kalau login lagi, ia melihat QRIS untuk bayar.'
   pushLog(`Laporan harian | user ${list.length}, habis dalam 3 hari ${soon.length}`)
   await notifyAdminsWa(text)
 }
@@ -21743,18 +21723,10 @@ async function notifyAdminsWa(text, photo, opts) {
   }
 }
 
-// ---------- Masuk grup WA otomatis ----------
-// Kalau dinyalakan, setelah order lunas bot mencoba memasukkan nomornya ke grup yang dipantau.
-// Kalau WhatsApp menolak karena privasi orangnya, admin yang memasukkannya secara manual.
-// Bot TIDAK mengirim pesan pribadi ke siapa pun. Tidak ada batas jumlah per jam / per hari
-// (permintaan pemilik); yang tersisa hanya jeda antar penambahan (satu nomor tiap ~45 detik)
-// dan rem otomatis kalau WhatsApp mulai menolak berturut-turut.
-const GROUP_ADD_MAX_TRIES = 3
-const GROUP_ADD_MAX_AGE_MS = 30 * 24 * 3600 * 1000   // order lunas lebih lama dari ini tidak diproses
-let _groupAddPausedUntil = 0
-let _groupAddFailStreak = 0
-let _groupAddBusy = false
-
+// ---------- Penanda "sudah masuk grup" ----------
+// Bot tidak menambahkan atau mengeluarkan siapa pun dari grup WA secara otomatis (pernah membuat
+// bot di-logout WhatsApp). Bot hanya MENCATAT: kalau seorang user terlihat masuk grup, order
+// lunasnya ditandai sudah masuk. Memasukkan dan mengeluarkan anggota dilakukan admin sendiri.
 async function readPaymentOrder(id) {
   const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
   return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
@@ -21774,85 +21746,6 @@ async function markOrderInGroupByPhone(phone, how) {
   await savePaymentOrder(order)
   return true
 }
-
-async function groupAddCount(key, ttlSec, increment) {
-  try {
-    if (!increment) return parseInt(await _ioredis.get(key), 10) || 0
-    const n = await _ioredis.incr(key)
-    if (n === 1) await _ioredis.expire(key, ttlSec)
-    return n
-  } catch (e) { return 0 }
-}
-
-async function groupAddTick() {
-  if (_groupAddBusy || !sock || !isReady || !monitoredGroupId) return
-  if (Date.now() < _groupAddPausedUntil) return
-  const settings = await getPaymentSettings()
-  if (settings.groupAutoAdd !== true) return
-  _groupAddBusy = true
-  try {
-    const now = Date.now()
-    const cand = (await loadPaymentOrders())
-      .filter(o => o.status === 'paid' && !o.inGroup && now - (o.paidAt || 0) < GROUP_ADD_MAX_AGE_MS)
-      .filter(o => !o.groupAdd || (o.groupAdd.status === 'queued' && (o.groupAdd.next || 0) <= now))
-      .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))[0]
-    if (!cand) return
-    const wib = new Date(now + 7 * 3600 * 1000).toISOString()
-    const hourKey = 'gold:group_add:h:' + wib.substring(0, 13)
-    const dayKey = 'gold:group_add:d:' + wib.substring(0, 10)
-    const order = await readPaymentOrder(cand.id)
-    if (!order || order.status !== 'paid' || order.inGroup) return
-    // Nomornya masih user aktif? (bisa saja sudah dihapus / di-kick admin)
-    if (!(await isUserValid(order.phone)).valid) {
-      order.groupAdd = { ...(order.groupAdd || {}), status: 'skipped', at: now }
-      await savePaymentOrder(order)
-      return
-    }
-    // Hanya dihitung untuk catatan, tidak membatasi
-    await groupAddCount(hourKey, 2 * 3600, true)
-    await groupAddCount(dayKey, 2 * 24 * 3600, true)
-    const jid = order.phone + '@s.whatsapp.net'
-    let status = '', errMsg = ''
-    try {
-      const res = await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'add')
-      status = String((Array.isArray(res) && res[0] && res[0].status) || '')
-    } catch (e) {
-      errMsg = String(e && e.message ? e.message : e)
-    }
-    const tries = ((order.groupAdd && order.groupAdd.tries) || 0) + 1
-    if (status === '200' || status === '409') {
-      _groupAddFailStreak = 0
-      order.inGroup = true
-      order.inGroupAt = now
-      order.groupAdd = { status: 'added', how: status === '409' ? 'sudah di grup' : 'ditambahkan bot', tries, at: now }
-      await savePaymentOrder(order)
-      pushLog(`AUTO | Grup: +${order.phone} ${status === '409' ? 'ternyata sudah ada di grup' : 'berhasil dimasukkan ke grup WA'}`)
-    } else if (status === '403' || status === '408' || status === '401') {
-      // Privasi orangnya / baru saja keluar grup: tidak dipaksa, admin memasukkan manual
-      _groupAddFailStreak = 0
-      order.groupAdd = { status: 'privacy', code: status, tries, at: now }
-      await savePaymentOrder(order)
-      pushLog(`AUTO | Grup: +${order.phone} tidak bisa dimasukkan bot (privasi WhatsApp, kode ${status}) - masukkan manual`)
-    } else {
-      _groupAddFailStreak++
-      const giveUp = tries >= GROUP_ADD_MAX_TRIES
-      order.groupAdd = { status: giveUp ? 'failed' : 'queued', code: status || errMsg.substring(0, 60), tries, at: now, next: now + 15 * 60 * 1000 }
-      await savePaymentOrder(order)
-      pushLog(`AUTO | Grup: gagal memasukkan +${order.phone} (${status || errMsg.substring(0, 60) || 'tanpa keterangan'})${giveUp ? ' - berhenti mencoba, masukkan manual' : ' - dicoba lagi nanti'}`)
-      // Gagal beruntun = tanda bot sedang dibatasi WhatsApp: berhenti dulu supaya tidak makin parah
-      if (_groupAddFailStreak >= 3 || /rate|429|overlimit/i.test(status + errMsg)) {
-        _groupAddPausedUntil = now + 6 * 3600 * 1000
-        _groupAddFailStreak = 0
-        notifyAdminsWa('*MASUK GRUP OTOMATIS DIJEDA 6 JAM*\n\nBot gagal memasukkan anggota beberapa kali berturut-turut (terakhir: ' + (status || errMsg.substring(0, 80) || '-') + '). Ini bisa berarti bot bukan admin grup, atau WhatsApp sedang membatasi nomor bot.\n\nSementara itu masukkan anggota secara manual. Fitur ini bisa dimatikan di Pengaturan.').catch(() => {})
-      }
-    }
-  } catch (e) {
-    pushLog('AUTO | Grup: error antrian - ' + (e && e.message ? e.message : e))
-  } finally {
-    _groupAddBusy = false
-  }
-}
-setInterval(() => { groupAddTick().catch(() => {}) }, 45000)
 
 // Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
 // Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
@@ -22097,7 +21990,7 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
-    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === true ? '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.' : '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.'), photo,
+    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.', photo,
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
   }
   if (verdict === 'reject') {
@@ -22287,7 +22180,7 @@ app.get('/api/admin/payment-settings', async (req, res) => {
 })
 
 app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
-  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, groupAutoAdd, regenerateSecret } = req.body
+  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, regenerateSecret } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
@@ -22311,7 +22204,6 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       days: d,
       waFallback: waFallback !== false,
       autoVerify: autoVerify === undefined ? current.autoVerify !== false : !!autoVerify,
-      groupAutoAdd: groupAutoAdd === undefined ? current.groupAutoAdd === true : !!groupAutoAdd,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
@@ -22424,28 +22316,10 @@ async function checkAndKickExpiredUsers() {
 
         // Check if expired
         if (user.expired && user.expired < now) {
-          pushLog(`Auto-kick | User +${phone} expired, processing...`)
-          const report = { phone, name: user.name || '', expired: user.expired, kicked: false }
-          expiredNow.push(report)
-
-          // Try to kick from group if connected
-          if (sock && isReady && monitoredGroupId) {
-            try {
-              const jid = phone + '@s.whatsapp.net'
-              await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'remove')
-              pushLog(`Auto-kick | Kicked +${phone} from group`)
-              report.kicked = true
-
-              // Send expiry notification
-              try {
-                await sock.sendMessage(jid, {
-                  text: `⏰ *LANGGANAN EXPIRED*\n\nHalo ${user.name || 'User'},\n\nLangganan Anda telah berakhir pada ${new Date(user.expired).toLocaleDateString('id-ID')}.\n\nAnda telah dikeluarkan dari grup.\n\nUntuk perpanjang, hubungi admin:\nhttps://wa.me/6289654454210`
-                })
-              } catch (msgErr) {}
-            } catch (kickErr) {
-              pushLog(`Auto-kick | Failed to kick +${phone}: ${kickErr.message}`)
-            }
-          }
+          // Bot tidak mengeluarkan orangnya dari grup WA dan tidak mengirim pesan apa pun kepadanya
+          // (mencegah nomor bot bermasalah). Aksesnya ke website yang dicabut; admin mengeluarkan
+          // dari grup secara manual berdasarkan laporan di bawah.
+          expiredNow.push({ phone, name: user.name || '', expired: user.expired })
 
           // Delete from database
           await redis.hdel(REDIS_KEYS.USERS, phone)
@@ -22459,7 +22333,7 @@ async function checkAndKickExpiredUsers() {
             }
           }
 
-          pushLog(`Auto-kick | User +${phone} removed from database`)
+          pushLog(`Auto-kick | User +${phone} masa aktif habis - akses website dicabut (keluarkan dari grup WA secara manual)`)
         }
       } catch (e) {
       }
@@ -22467,11 +22341,10 @@ async function checkAndKickExpiredUsers() {
 
     if (expiredNow.length > 0) {
       const lines = expiredNow.slice(0, 40).map(u => '• +' + u.phone + (u.name ? ' (' + u.name + ')' : '') +
-        ' - habis ' + new Date(u.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) +
-        (u.kicked ? ', sudah dikeluarkan dari grup WA' : ', BELUM dikeluarkan dari grup WA'))
+        ' - habis ' + new Date(u.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }))
       notifyAdminsWa('*MASA AKTIF HABIS* (' + expiredNow.length + ')\n\n' + lines.join('\n') +
         (expiredNow.length > 40 ? '\n...dan ' + (expiredNow.length - 40) + ' lagi' : '') +
-        '\n\nNomor di atas sudah dihapus dari Daftar User dan tidak bisa mengakses web lagi. Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.').catch(() => {})
+        '\n\nNomor di atas sudah dihapus dari Daftar User dan tidak bisa mengakses web lagi. Bot TIDAK mengeluarkannya dari grup WA: keluarkan secara manual. Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.').catch(() => {})
     }
   } catch (e) {
   }
