@@ -20769,6 +20769,60 @@ let _tgPollToken = ''
 let _tgLastChat = null   // chat terakhir yang mengirim pesan ke bot (dipakai "Deteksi chat")
 const _tgSleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Menu bot: satu pesan dengan tombol. Menekan tombol MENGUBAH isi pesan yang sama,
+// jadi chat tidak penuh pesan baru.
+const TG_MENU_TEXT = '<b>Menu Admin Gold Monitor</b>\nPilih salah satu:'
+const TG_MENU_MARKUP = {
+  inline_keyboard: [
+    [{ text: '🧾 Menunggu ACC', callback_data: 'menu:pending' }, { text: '👥 Belum masuk grup', callback_data: 'menu:group' }],
+    [{ text: '🔑 Reset PIN', callback_data: 'menu:pin' }, { text: '📊 Ringkasan', callback_data: 'menu:stats' }]
+  ]
+}
+const TG_BACK_ROW = [{ text: '⬅️ Menu', callback_data: 'menu:home' }]
+
+// Isi tiap halaman menu: { text, rows } (rows = baris tombol di atas tombol "Menu")
+async function buildTelegramMenuPage(page) {
+  const rp = n => 'Rp' + Number(n).toLocaleString('id-ID')
+  if (page === 'pin') {
+    _tgAwaitResetUntil = Date.now() + 5 * 60 * 1000
+    return { text: '🔑 <b>Reset PIN</b>\n\nKirim nomor HP-nya sekarang (format bebas: 0851..., +62851..., 62851...).\nPIN akan langsung direset ke 000000.', rows: [] }
+  }
+  const orders = await loadPaymentOrders()
+  if (page === 'pending') {
+    const list = orders.filter(o => o.status === 'pending' && o.proof && o.proof.status).sort((a, b) => a.createdAt - b.createdAt)
+    const noProof = orders.filter(o => o.status === 'pending' && !(o.proof && o.proof.status)).length
+    const lines = list.slice(0, 30).map((o, i) => (i + 1) + '. <code>+' + o.phone + '</code> ' + rp(o.amount))
+    return {
+      text: '🧾 <b>Menunggu ACC</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada bukti yang menunggu ACC.') +
+        (list.length > 30 ? '\n...dan ' + (list.length - 30) + ' lagi' : '') +
+        '\n\nBelum upload bukti: ' + noProof + ' order.' + (lines.length ? '\nACC / Tolak lewat tombol di pesan bukti masing-masing.' : ''),
+      rows: [[{ text: '🔄 Muat ulang', callback_data: 'menu:pending' }]]
+    }
+  }
+  if (page === 'group') {
+    const list = orders.filter(o => o.status === 'paid' && !o.inGroup).sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))
+    const shown = list.slice(0, 20)
+    const lines = shown.map((o, i) => (i + 1) + '. <code>+' + o.phone + '</code>')
+    return {
+      text: '👥 <b>Sudah ACC, belum masuk grup WA</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') + '\n\nKetuk nomor untuk menyalin. Setelah dimasukkan ke grup, tekan tombol nomornya di bawah untuk menandai.' : 'Semua sudah masuk grup.') +
+        (list.length > shown.length ? '\n...dan ' + (list.length - shown.length) + ' lagi' : ''),
+      rows: shown.map(o => [{ text: '✓ Masuk: +' + o.phone, callback_data: 'grp:' + o.id }])
+    }
+  }
+  if (page === 'stats') {
+    const c = st => orders.filter(o => o.status === st).length
+    const paid = orders.filter(o => o.status === 'paid')
+    return {
+      text: '📊 <b>Ringkasan order</b>\n\nTotal: ' + orders.length + '\nLunas: ' + paid.length + '\nMenunggu: ' + c('pending') +
+        ' (sudah upload bukti: ' + orders.filter(o => o.status === 'pending' && o.proof && o.proof.status).length + ')\nKedaluwarsa: ' + c('expired') + '\nDitolak: ' + c('rejected') +
+        '\n\nSudah masuk grup WA: ' + paid.filter(o => o.inGroup).length + '\nBelum masuk grup WA: ' + paid.filter(o => !o.inGroup).length +
+        '\nUang masuk (lunas): ' + rp(paid.reduce((t, o) => t + (Number(o.amount) || 0), 0)),
+      rows: [[{ text: '🔄 Muat ulang', callback_data: 'menu:stats' }]]
+    }
+  }
+  return null
+}
+
 async function handleTelegramCallback(tg, cq) {
   const answer = (text) => telegramApi(tg.token, 'answerCallbackQuery', { callback_query_id: cq.id, text: String(text).substring(0, 190), show_alert: true }).catch(() => {})
   const chatId = cq.message && cq.message.chat ? String(cq.message.chat.id) : ''
@@ -20777,6 +20831,34 @@ async function handleTelegramCallback(tg, cq) {
     chat_id: chatId, message_id: cq.message.message_id,
     reply_markup: { inline_keyboard: [[{ text: label, callback_data: 'done' }]] }
   }).catch(() => {})
+  // --- menu bertombol ---
+  const cqData = String(cq.data || '')
+  const quiet = () => telegramApi(tg.token, 'answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {})
+  const showPage = (text, keyboard) => telegramApi(tg.token, 'editMessageText', {
+    chat_id: chatId, message_id: cq.message.message_id, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard }
+  }).catch(() => {})   // "message is not modified" saat muat ulang tanpa perubahan: abaikan
+  const grpMatch = /^grp:([0-9a-f]{16})$/.exec(cqData)
+  if (grpMatch) {
+    const rawG = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, grpMatch[1])
+    if (rawG) {
+      const og = typeof rawG === 'string' ? JSON.parse(rawG) : rawG
+      if (og.status === 'paid' && !og.inGroup) {
+        og.inGroup = true
+        og.inGroupAt = Date.now()
+        await savePaymentOrder(og)
+      }
+    }
+    const pg = await buildTelegramMenuPage('group')
+    await showPage(pg.text, [...pg.rows, TG_BACK_ROW])
+    return quiet()
+  }
+  if (cqData.startsWith('menu:')) {
+    const page = cqData.substring(5)
+    if (page === 'home') { _tgAwaitResetUntil = 0; await showPage(TG_MENU_TEXT, TG_MENU_MARKUP.inline_keyboard); return quiet() }
+    const pg = await buildTelegramMenuPage(page)
+    if (pg) await showPage(pg.text, [...pg.rows, TG_BACK_ROW])
+    return quiet()
+  }
   const pinMatch = /^pin:reset:(62[0-9]{8,13})$/.exec(String(cq.data || ''))
   if (pinMatch) {
     const phone = pinMatch[1]
@@ -20815,8 +20897,13 @@ let _tgAwaitResetUntil = 0   // setelah /reset-pin tanpa nomor: pesan berikutnya
 async function handleTelegramMessage(tg, msg) {
   if (!tg.chatId || String(msg.chat.id) !== String(tg.chatId)) return
   const text = String(msg.text || '')
-  if (!text || text.startsWith('/start')) return
-  const say = (t) => telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: t, parse_mode: 'HTML' }).catch(() => {})
+  if (!text) return
+  if (/^[/](start|menu)([^A-Za-z0-9_]|$)/i.test(text)) {
+    _tgAwaitResetUntil = 0
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: TG_MENU_TEXT, parse_mode: 'HTML', reply_markup: TG_MENU_MARKUP }).catch(() => {})
+    return
+  }
+  const say = (t) => telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: t, parse_mode: 'HTML', reply_markup: { inline_keyboard: [TG_BACK_ROW] } }).catch(() => {})
   // Perintah /reset-pin (juga /resetpin, /reset_pin, /reset): langsung reset, tanpa tombol konfirmasi
   const isResetCmd = /^[/]reset([-_]?pin)?(@[A-Za-z0-9_]+)?([^A-Za-z0-9_]|$)/i.test(text)
   const awaiting = !isResetCmd && !text.startsWith('/') && Date.now() < _tgAwaitResetUntil
@@ -20850,7 +20937,7 @@ async function handleTelegramMessage(tg, msg) {
     .map(x => normalizePhone(x))
   const phones = [...new Set(found)].slice(0, 5)
   if (phones.length === 0) {
-    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: 'Untuk reset PIN, kirim: /reset-pin 0851xxxxxxx (format nomor bebas: 0851..., +62851..., 62851...).' }).catch(() => {})
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: TG_MENU_TEXT, parse_mode: 'HTML', reply_markup: TG_MENU_MARKUP }).catch(() => {})
     return
   }
   for (const phone of phones) {
@@ -20880,7 +20967,7 @@ async function telegramPollLoop() {
       if (!tg.token) { await _tgSleep(5000); continue }
       if (tg.token !== _tgPollToken) {
         _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null
-        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'resetpin', description: 'Reset PIN user ke 000000 (isi nomor HP)' }] }).catch(() => {})
+        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'menu', description: 'Buka menu admin' }, { command: 'resetpin', description: 'Reset PIN user ke 000000 (isi nomor HP)' }] }).catch(() => {})
       }
       const res = await fetch(`https://api.telegram.org/bot${tg.token}/getUpdates`, {
         method: 'POST',
