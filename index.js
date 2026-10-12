@@ -20913,9 +20913,47 @@ async function telegramApi(token, method, body, isForm) {
 }
 
 // Kirim teks (dan foto, kalau ada) ke Telegram admin. Mengembalikan true kalau terkirim.
+// Emoji HANYA untuk Telegram (pesan ke WA admin dan website tetap polos). Ditambahkan di sini,
+// satu tempat, berdasarkan judul dan label baris, supaya teks aslinya tidak perlu diubah.
+const TG_TITLE_EMOJI = [
+  [/^DI-ACC OTOMATIS/, '✅'], [/^DITOLAK OTOMATIS/, '❌'], [/^BUKTI PERLU DICEK MANUAL/, '⚠️'],
+  [/^BUKTI BAYAR MENUNGGU ACC/, '💳'], [/^PERMINTAAN GABUNG GRUP/, '👥'], [/^MEMBUKA LINK GRUP/, '🔗'],
+  [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'],
+  [/^Habis dalam 3 hari/, '⏳']
+]
+const TG_LINE_EMOJI = [
+  [/^Nomor di website:/, '🌐'], [/^Nomor WA pengirim:/, '📱'], [/^Nomor:/, '📱'], [/^Nominal order:/, '💰'],
+  [/^Aktif sampai:/, '📆'], [/^Alasan:/, '📝'], [/^Status akun:/, '👤'], [/^Minta gabung grup:/, '👥'],
+  [/^Chat ke admin:/, '💬'], [/^Jam:/, '🕐'], [/^Hasil cek otomatis:/, '🔎'], [/^User terdaftar:/, '👤'],
+  [/^Menunggu ACC:/, '🧾'], [/^Belum upload bukti:/, '⚪'], [/^Sudah ACC, belum masuk grup:/, '👥'],
+  [/^Bot terhubung/, '✅'], [/^Tes notifikasi/, '🔔'], [/^Bukti BARU setelah ditolak/, '🔁']
+]
+function tgDecorate(text) {
+  return String(text).split('\n').map(line => {
+    // Judul: baris yang seluruhnya *tebal*
+    let m = /^\*([^*]+)\*(.*)$/.exec(line)
+    if (m) {
+      const t = TG_TITLE_EMOJI.find(([re]) => re.test(m[1]))
+      if (t) return t[1] + ' ' + line
+    }
+    // Baris hasil pemeriksaan: "- Nominal: cocok (...)"
+    m = /^- (.*)$/.exec(line)
+    if (m) {
+      const v = m[1]
+      const icon = /TIDAK cocok|GAGAL|BERBEDA/.test(v) ? '❌' : /: (cocok|berhasil)/.test(v) ? '✅' : /tidak terbaca|tidak dicek/.test(v) ? '⚪' : /^[0-9]{10}/.test(v.replace(/^ID transaksi: /, '')) ? '🆔' : '▫️'
+      return icon + ' ' + v
+    }
+    if (/^Kesimpulan:/.test(line)) return (/aman disetujui/.test(line) ? '✅' : '⚠️') + ' ' + line
+    if (/^• /.test(line)) return line
+    const l = TG_LINE_EMOJI.find(([re]) => re.test(line))
+    return l ? l[1] + ' ' + line : line
+  }).join('\n')
+}
+
 async function notifyAdminsTelegram(text, photo, opts) {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId) return false
+  text = tgDecorate(text)
   const plain = String(text).replace(/\*/g, '')
   // Format HTML Telegram: *tebal* jadi <b>, dan nomor HP dibungkus <code> supaya sekali ketuk
   // di Telegram nomornya langsung tersalin.
@@ -21365,15 +21403,18 @@ async function tgFlushLogs() {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId || tg.logPush === false) return
   const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }).replace('.', ':')
+  const ikon = b => /^ACC /.test(b) ? '✅' : /^Tolak /.test(b) ? '❌' : /^Cek bukti .*: LOLOS/.test(b) ? '🔎✅' : /^Cek bukti /.test(b) ? '🔎❌'
+    : /^Grup: /.test(b) ? '👥' : /^Expired: /.test(b) ? '⛔' : /^Reset PIN/.test(b) ? '🔑' : /^\[Error\]/.test(b) ? '❗' : /^\[WA\]/.test(b) ? '📱' : /^\[Bayar\]/.test(b) ? '💳' : '▫️'
   const line = x => {
     let body = tgPrettyLog(x.s).replace(/^\[(Otomatis|Manual)\] /, '')
+    body = ikon(body) + ' ' + body
     if (body.length > 300) body = body.substring(0, 297) + '...'
     return '<code>' + jam(x.t) + '</code> ' + tgEsc(body).replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
   }
   const groups = [
-    ['LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
-    ['LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
-    ['LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
+    ['🤖 LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
+    ['👤 LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
+    ['📋 LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
   ]
   // Tiap bagian dikirim sebagai pesan sendiri; yang panjang dipecah supaya tidak terpotong
   for (const [judul, list] of groups) {
