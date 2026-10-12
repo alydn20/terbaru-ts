@@ -16285,6 +16285,10 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
+      <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
+        <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
+        Hubungi Admin
+      </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
         <i data-lucide="log-out" style="width:14px;height:14px;"></i>
@@ -18966,6 +18970,14 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
+    // Hubungi admin lewat WhatsApp, pesan sudah terisi nomor HP yang sedang login
+    var _myPhone = '';
+    function contactAdmin() {
+      var nomor = _myPhone && /^[0-9]+$/.test(_myPhone) ? ' (+' + _myPhone + ')' : '';
+      var pesan = 'Hallo saya' + nomor + ' butuh bantuan';
+      window.open('https://wa.me/6285156260393?text=' + encodeURIComponent(pesan), '_blank');
+    }
+
     // Logout function
     async function logout() {
       const confirmed = await showConfirm('Yakin ingin keluar?', 'Logout');
@@ -19102,6 +19114,7 @@ app.get('/monitoring', async (req, res) => {
             return;
           }
           _sessionOk();
+          _myPhone = String(data.phone || '');
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
@@ -20713,15 +20726,24 @@ async function notifyAdminsTelegram(text, photo) {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId) return false
   const plain = String(text).replace(/\*/g, '')
+  // Format HTML Telegram: *tebal* jadi <b>, dan nomor HP dibungkus <code> supaya sekali ketuk
+  // di Telegram nomornya langsung tersalin.
+  const html = String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+    .replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
   try {
     if (photo && photo.buffer) {
       const form = new FormData()
       form.append('chat_id', tg.chatId)
-      form.append('caption', plain.substring(0, 1000))
+      if (html.length <= 1000) { form.append('caption', html); form.append('parse_mode', 'HTML') }
+      else form.append('caption', plain.substring(0, 1000))
       form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
       await telegramApi(tg.token, 'sendPhoto', form, true)
     } else {
-      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: plain.substring(0, 4000) })
+      await telegramApi(tg.token, 'sendMessage', html.length <= 4000
+        ? { chat_id: tg.chatId, text: html, parse_mode: 'HTML' }
+        : { chat_id: tg.chatId, text: plain.substring(0, 4000) })
     }
     return true
   } catch (e) {
