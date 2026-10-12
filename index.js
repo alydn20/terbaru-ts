@@ -3505,6 +3505,7 @@ setInterval(() => {
 // ==================== STARTUP INFO ====================
 
 const app = express()
+app.disable('x-powered-by')
 app.set('trust proxy', 1) // trust Koyeb/Cloudflare proxy so req.ip reflects real client IP
 app.use(express.json({ limit: '10mb' }))
 
@@ -3876,7 +3877,7 @@ app.post('/api/admin-login', rateLimit(10, 60000), async (req, res) => {
 })
 
 // API untuk verify token
-app.post('/api/verify-admin', (req, res) => {
+app.post('/api/verify-admin', rateLimit(20, 60000), (req, res) => {
   const { token } = req.body
   try {
     const decoded = Buffer.from(token, 'base64').toString()
@@ -4120,7 +4121,9 @@ app.post('/api/wa-pairing-request', express.json(), async (req, res) => {
 })
 
 app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
-  // Auth check akan di-inject di halaman
+  // KEAMANAN: QR / status WA hanya untuk admin yang login. Tanpa ini, orang lain bisa memindai
+  // QR dan menautkan WhatsApp bot ke perangkatnya.
+  if (!isAdminCookieValid(_req)) return res.redirect('/admin-login?redirect=' + encodeURIComponent('/qr'))
   const authScript = getAuthCheckScript('/qr')
 
   if (isReady) {
@@ -4307,6 +4310,8 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
 
 // Reset QR - Hapus session dan restart koneksi WA
 app.get('/qr-reset', async (req, res) => {
+  // KEAMANAN: dulu siapa pun yang membuka /qr-reset?confirm=yes bisa me-logout bot WhatsApp.
+  if (!isAdminCookieValid(req)) return res.redirect('/admin-login?redirect=' + encodeURIComponent('/qr-reset'))
   const { confirm } = req.query
   const authScript = getAuthCheckScript('/qr-reset')
 
@@ -4756,10 +4761,12 @@ function broadcastOnlineUsers() {
 
 // SSE endpoint untuk admin (online users monitoring)
 app.get('/admin-sse', (req, res) => {
+  // KEAMANAN: aliran ini memuat semua log (nomor HP, kode pairing WA, data pembayaran) dan daftar
+  // user online. Dulu terbuka untuk siapa saja; sekarang wajib cookie login admin.
+  if (!isAdminCookieValid(req)) return res.status(403).json({ error: 'Unauthorized' })
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
-  res.setHeader('Access-Control-Allow-Origin', '*')
   res.flushHeaders()
 
   // Send initial online users data (count = unique users, not total connections)
@@ -5687,7 +5694,9 @@ async function isUserValid(phone) {
 }
 
 // API: Request OTP for registration
-app.post('/api/request-otp', express.json(), async (req, res) => {
+app.post('/api/request-otp', rateLimit(3, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan. Pendaftaran hanya lewat QRIS di halaman login.
+  return res.status(410).json({ success: false, error: 'Pendaftaran lewat OTP sudah tidak tersedia. Daftar lewat halaman login.' })
   const { phone } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
 
@@ -5726,7 +5735,9 @@ app.post('/api/request-otp', express.json(), async (req, res) => {
 })
 
 // API: Verify OTP and register user
-app.post('/api/verify-otp', express.json(), async (req, res) => {
+app.post('/api/verify-otp', rateLimit(10, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan (dulu mendaftarkan user Lifetime gratis setelah OTP cocok).
+  return res.status(410).json({ success: false, error: 'Pendaftaran lewat OTP sudah tidak tersedia. Daftar lewat halaman login.' })
   const { phone, otp, name } = req.body
   if (!phone || !otp) return res.json({ success: false, error: 'Nomor dan OTP wajib diisi' })
 
@@ -5829,6 +5840,7 @@ app.post('/api/check-user', rateLimit(10, 60000), express.json(), async (req, re
 })
 
 // API: Login with PIN (step 2 of login)
+const _pinFails = new Map()   // nomor -> { count, first, lockedUntil }
 app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => {
   const { phone, pin } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
@@ -5871,10 +5883,21 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     pinChanged = false
   }
 
+  // KEAMANAN: 8 kali salah PIN untuk satu nomor -> nomor itu dikunci 15 menit, dari alamat IP mana pun
+  const _pf = _pinFails.get(normalizedPhone)
+  if (_pf && _pf.lockedUntil > Date.now()) {
+    return res.json({ success: false, error: 'Terlalu banyak percobaan. Coba lagi dalam ' + Math.ceil((_pf.lockedUntil - Date.now()) / 60000) + ' menit.' })
+  }
   // Verify PIN
   if (!verifyPin(pin, storedPin)) {
+    const f = _pf && Date.now() - _pf.first < 15 * 60000 ? _pf : { count: 0, first: Date.now(), lockedUntil: 0 }
+    f.count++
+    if (f.count >= 8) { f.lockedUntil = Date.now() + 15 * 60000; f.count = 0; pushLog(`Auth | +${normalizedPhone} dikunci 15 menit (8x salah PIN)`) }
+    _pinFails.set(normalizedPhone, f)
+    if (_pinFails.size > 5000) for (const [k, v] of _pinFails) if (Date.now() - v.first > 3600000) _pinFails.delete(k)
     return res.json({ success: false, error: 'PIN salah. Silakan coba lagi.' })
   }
+  _pinFails.delete(normalizedPhone)
 
   const _clientIp = getClientIp(req)
   const _clientUa = parseBrowser(req.headers['user-agent'])
@@ -6115,7 +6138,10 @@ function generateLoginToken() {
 }
 
 // API: Request login link via WhatsApp
-app.post('/api/user/request-login', express.json(), async (req, res) => {
+app.post('/api/user/request-login', rateLimit(3, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan. Tidak dipakai halaman mana pun, dan bisa dipakai orang luar untuk
+  // memaksa bot mengirim pesan WA ke user berulang-ulang.
+  return res.status(410).json({ success: false, error: 'Login lewat link sudah tidak tersedia. Login dengan PIN.' })
   const { phone } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
 
@@ -7485,6 +7511,9 @@ app.post('/api/admin/wa-groups/sync', express.json(), async (req, res) => {
 
 // Register endpoint - user submit pendaftaran
 app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
+  // KEAMANAN: dimatikan. Pendaftaran hanya lewat QRIS; formulir lama tidak dipakai lagi dan
+  // bisa dipakai menyepam notifikasi ke admin.
+  return res.status(410).json({ success: false, message: 'Pendaftaran lewat formulir sudah tidak tersedia. Daftar lewat halaman login.' })
   try {
     const { phone, name } = req.body
 
@@ -7512,7 +7541,7 @@ app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
     // Add to pending (stored in Redis)
     await redis.hset(REDIS_KEYS.PENDING_REGISTRATIONS, {
       [normalizedPhone]: JSON.stringify({
-        name: name,
+        name: cleanPublicName(name),
         phone: normalizedPhone,
         timestamp: Date.now()
       })
@@ -7588,13 +7617,13 @@ app.get('/api/pending-registrations', async (req, res) => {
 })
 
 // Check if user exists in database
-app.get('/api/check-user/:phone', async (req, res) => {
+app.get('/api/check-user/:phone', rateLimit(20, 60000), async (req, res) => {
   try {
-    const phone = req.params.phone
+    const phone = String(req.params.phone || '').replace(/[^0-9]/g, '').substring(0, 15)
     const userData = await redis.hget(REDIS_KEYS.USERS, phone)
     if (userData) {
-      const user = typeof userData === 'string' ? JSON.parse(userData) : userData
-      res.json({ exists: true, user })
+      // KEAMANAN: hanya ya/tidak. Nama, masa aktif, dan data lain tidak dikirim ke publik.
+      res.json({ exists: true })
     } else {
       res.json({ exists: false })
     }
@@ -8370,25 +8399,6 @@ app.get('/login', async (req, res) => {
       if (inputs[0]) inputs[0].focus();
     }
 
-    // Daftar via WhatsApp
-    function daftarWhatsApp() {
-      const phoneInput = document.getElementById('phoneInput');
-      let phone = phoneInput.value.replace(/\\D/g, '');
-
-      if (phone.startsWith('62')) phone = phone.substring(2);
-      if (phone.startsWith('0')) phone = phone.substring(1);
-
-      if (!phone || phone.length < 9) {
-        showMessage('Masukkan nomor WhatsApp Anda terlebih dahulu', 'error');
-        phoneInput.focus();
-        return;
-      }
-
-      const message = encodeURIComponent('Halo, saya ingin daftar grup harga Treasury.\\n\\nNomor WA saya: +62' + phone);
-      const waUrl = 'https://wa.me/62895701692525?text=' + message;
-      window.open(waUrl, '_blank');
-    }
-
     // Step 1: Check if user exists
     async function checkUser() {
       const phoneInput = document.getElementById('phoneInput');
@@ -8525,9 +8535,19 @@ app.get('/login', async (req, res) => {
     // Hasil: 'pay' (form QRIS tampil), 'redirect' (arahkan ke WA admin), 'none' (hanya pesan)
     async function startPaymentFlow(phone) {
       var cfg = null;
-      try { cfg = await (await fetch('/api/payment/config')).json(); } catch (e) {}
-      if (!cfg || !cfg.enabled) {
-        if (cfg && cfg.waFallback === false) {
+      // Dicoba sampai 3 kali. Kalau pengaturan tetap tidak terbaca (server sedang restart /
+      // koneksi putus), JANGAN diarahkan ke WA admin: dulu kegagalan seperti ini membuat orang
+      // terlempar ke chat admin walaupun QRIS aktif.
+      for (var attempt = 0; attempt < 3 && !cfg; attempt++) {
+        try { cfg = await (await fetch('/api/payment/config', { cache: 'no-store' })).json(); } catch (e) { cfg = null; }
+        if (!cfg) await new Promise(function(r) { setTimeout(r, 1500); });
+      }
+      if (!cfg || typeof cfg.enabled === 'undefined') {
+        showMessage('Gagal memuat. Coba lagi sebentar lagi.', 'error');
+        return 'none';
+      }
+      if (!cfg.enabled) {
+        if (cfg.waFallback === false) {
           showMessage('Nomor tidak terdaftar.', 'error');
           return 'none';
         }
@@ -10807,8 +10827,8 @@ ${authScript}
 
         html += '<tr>' +
           '<td>' + (index + 1) + '</td>' +
-          '<td>' + displayName + '</td>' +
-          '<td class="phone">' + displayPhone + '</td>' +
+          '<td>' + _escHtml(displayName) + '</td>' +
+          '<td class="phone">' + (isAnonymous ? displayPhone : '+' + _escHtml(user.phone)) + '</td>' +
           '<td>' + timeStr + '</td>' +
           '</tr>';
       });
@@ -12451,7 +12471,7 @@ ${authScript}
             const time = new Date(r.timestamp).toLocaleString('id-ID');
             return '<tr style="background:rgba(247,147,26,0.08);">' +
               '<td>' + time + '</td>' +
-              '<td><strong>' + r.name + '</strong></td>' +
+              '<td><strong>' + _escHtml(r.name || '-') + '</strong></td>' +
               '<td class="phone">+' + r.phone + '</td>' +
               '<td>' +
                 '<div class="action-btns">' +
@@ -12609,7 +12629,7 @@ ${authScript}
 
             return '<tr data-group="' + (u.groupStatus || '') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
               '<td class="phone">+' + u.phone + '</td>' +
-              '<td>' + (u.name || '-') + '</td>' +
+              '<td>' + _escHtml(u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
                 (u.groupStatus === 'belum' ? ' <span title="Sudah lunas, belum ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(245,158,11,0.15);color:#f59e0b;white-space:nowrap;">Belum masuk grup</span>'
                   : u.groupStatus === 'masuk' ? ' <span title="Sudah ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(34,197,94,0.12);color:#22c55e;white-space:nowrap;">Di grup</span>' : '') +
@@ -20965,7 +20985,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       order = {
         id: crypto.randomBytes(8).toString('hex'),
         phone,
-        name: String(req.body?.name || '').trim().substring(0, 40),
+        name: cleanPublicName(req.body?.name),
         price: s.price,
         days: s.days,
         amount,
@@ -21001,12 +21021,42 @@ app.get('/api/payment/status', rateLimit(90, 60000), async (req, res) => {
   res.json({ success: true, status, activeUntil: o.activeUntil || null, proofStatus: (o.proof && o.proof.status) || null, proofReused: !!(o.proof && o.proof.reused), rejectReason: status === 'rejected' ? (o.rejectReason || '') : '' })
 })
 
+// Nama yang diketik orang luar: buang karakter yang bisa menjadi HTML / skrip
+function cleanPublicName(v) {
+  return String(v || '').replace(/[<>"'`&\\\/=(){}\[\];]/g, '').replace(/\s+/g, ' ').trim().substring(0, 40)
+}
+
 // ---------- Bukti pembayaran (screenshot) ----------
 // User mengunggah screenshot bukti bayar; admin melihatnya di panel lalu meng-ACC manual.
 // Tidak ada pembacaan otomatis (OCR) — sengaja, supaya server tetap ringan.
 const PAY_PROOF_PREFIX = 'gold:payproof:'   // String base64 per order (kedaluwarsa sendiri)
 const PAY_PROOF_TTL_SEC = 7 * 24 * 3600
 const PAY_PROOF_MAX_UPLOADS = 5   // batas total per order (1x, lalu 1x lagi tiap kali ditolak)
+
+// Ukuran piksel dari header gambar (tanpa membuka gambarnya). null = tidak terbaca.
+function imageDimensions(buf, mime) {
+  try {
+    if (mime === 'image/png' && buf.length > 24) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) }
+    if (mime === 'image/webp' && buf.length > 30) {
+      const tag = buf.toString('ascii', 12, 16)
+      if (tag === 'VP8X') return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) }
+      if (tag === 'VP8 ') return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff }
+      if (tag === 'VP8L') { const b = buf.readUInt32LE(21); return { w: 1 + (b & 0x3fff), h: 1 + ((b >> 14) & 0x3fff) } }
+      return null
+    }
+    if (mime === 'image/jpeg') {
+      let i = 2
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xFF) { i++; continue }
+        const m = buf[i + 1]
+        if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) }
+        if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue }
+        i += 2 + buf.readUInt16BE(i + 2)
+      }
+    }
+  } catch (e) {}
+  return null
+}
 
 function detectImageMime(buf) {
   if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
@@ -22693,6 +22743,12 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     if (!Buffer.isBuffer(buf) || buf.length < 2000) return res.json({ success: false, error: 'Gambar tidak valid' })
     const mime = detectImageMime(buf)
     if (!mime) return res.json({ success: false, error: 'File harus berupa gambar (JPG/PNG/WEBP)' })
+    // KEAMANAN: gambar yang ukurannya tidak terbaca atau terlalu besar (maks 6000 px per sisi,
+    // 20 megapiksel) ditolak, supaya tidak bisa dipakai menghabiskan memori server saat dibaca.
+    const dim = imageDimensions(buf, mime)
+    if (!dim || !(dim.w > 0 && dim.h > 0) || dim.w > 6000 || dim.h > 6000 || dim.w * dim.h > 20000000) {
+      return res.json({ success: false, error: 'Gambar tidak valid atau terlalu besar' })
+    }
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -23059,7 +23115,7 @@ app.use((err, req, res, _next) => {
   res.status(err.status || 500).json({ error: 'Internal Server Error' })
 })
 
-app.listen(PORT, async () => {
+app.listen(PORT, process.env.HOST || '0.0.0.0', async () => {
   console.log(`[${new Date().toISOString()}] [STARTUP] Server listening on port ${PORT}`)
   try { pushLog(`🚀 Server start — listening on port ${PORT}`) } catch (_) {}
 
