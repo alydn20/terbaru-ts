@@ -21804,6 +21804,111 @@ async function markOrderInGroupByPhone(phone, how) {
   return true
 }
 
+// ---------- Cek permintaan gabung grup (hanya membaca dan melapor) ----------
+// User menekan "Chat Admin" di website, sehingga pesan "Halo admin, saya (+62...) mau gabung grup
+// harga" masuk ke nomor bot. Bot mencocokkan tiga hal lalu melapor ke admin:
+//   1. nomor yang tertulis di pesan (nomor yang login di website),
+//   2. nomor WA pengirim pesan itu,
+//   3. daftar permintaan bergabung di grup.
+// Bot TIDAK menyetujui, menolak, menambahkan, atau membalas siapa pun. Admin yang memutuskan.
+const _joinCheckSeen = new Map()   // pengirim -> waktu laporan terakhir (cegah laporan berulang)
+
+function phoneFromWaJid(jid) {
+  const m = /^([0-9]{9,15})(:[0-9]+)?@s[.]whatsapp[.]net$/.exec(String(jid || ''))
+  return m ? m[1] : ''
+}
+
+async function reportGroupJoinRequest(msg, text) {
+  const key = msg.key || {}
+  // Nomor pengirim: dari alamat chat, atau dari keterangan nomor yang disertakan WhatsApp
+  const senderPhone = phoneFromWaJid(key.remoteJid) || phoneFromWaJid(key.senderPn) || phoneFromWaJid(key.participantPn)
+  const seenKey = senderPhone || String(key.remoteJid || '')
+  const now = Date.now()
+  for (const [k, t] of _joinCheckSeen) if (now - t > 3600000) _joinCheckSeen.delete(k)
+  if (_joinCheckSeen.has(seenKey) && now - _joinCheckSeen.get(seenKey) < 10 * 60 * 1000) return
+  _joinCheckSeen.set(seenKey, now)
+
+  const webPhone = tgParsePhones(text, 1)[0] || ''
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
+  const masalah = []
+
+  // 1 + 2: nomor di pesan vs nomor pengirim
+  let barisPengirim
+  if (!senderPhone) {
+    barisPengirim = 'disembunyikan WhatsApp (cek manual di chat)'
+    masalah.push('nomor pengirim disembunyikan WhatsApp, cocokkan manual')
+  } else if (!webPhone) {
+    barisPengirim = '+' + senderPhone
+  } else if (senderPhone === webPhone) {
+    barisPengirim = '+' + senderPhone + ' - COCOK'
+  } else {
+    barisPengirim = '+' + senderPhone + ' - BERBEDA dengan nomor website'
+    masalah.push('nomor WA pengirim berbeda dengan nomor yang login di website')
+  }
+
+  // Status akun (pakai nomor website; kalau tidak tertulis, pakai nomor pengirim)
+  const akunPhone = webPhone || senderPhone
+  let barisAkun = 'tidak bisa dicek (nomor tidak diketahui)'
+  if (akunPhone) {
+    const check = await isUserValid(akunPhone)
+    if (check.valid) {
+      barisAkun = 'aktif' + (check.user && check.user.expired ? ' sampai ' + tgl(check.user.expired) : ' (Lifetime)')
+    } else if (check.reason === 'error') {
+      barisAkun = 'tidak bisa dicek (gangguan server)'
+      masalah.push('status akun tidak bisa dicek, coba lihat di menu User')
+    } else {
+      barisAkun = 'TIDAK terdaftar / masa aktif habis'
+      masalah.push('akun tidak terdaftar atau masa aktifnya habis')
+    }
+  } else {
+    masalah.push('nomor tidak diketahui')
+  }
+
+  // 3: daftar permintaan bergabung di grup (hanya dibaca)
+  let barisMinta = 'tidak dicek (grup belum diatur / bot terputus)'
+  if (sock && isReady && monitoredGroupId) {
+    try {
+      const list = await sock.groupRequestParticipantsList(monitoredGroupId)
+      const phones = new Set()
+      let hidden = 0
+      for (const r of list || []) {
+        const ph = phoneFromWaJid(r.jid) || phoneFromWaJid(r.phone_number)
+        if (ph) phones.add(ph); else hidden++
+      }
+      const ada = (senderPhone && phones.has(senderPhone)) || (webPhone && phones.has(webPhone))
+      if (ada) {
+        barisMinta = 'ADA di daftar permintaan' + (senderPhone && !phones.has(senderPhone) ? ' (atas nomor website, bukan nomor pengirim)' : '')
+      } else if (hidden > 0) {
+        barisMinta = 'tidak terlihat; ada ' + hidden + ' permintaan yang nomornya disembunyikan WhatsApp'
+        masalah.push('permintaan bergabungnya tidak bisa dipastikan (nomor disembunyikan WhatsApp)')
+      } else {
+        barisMinta = 'BELUM ada (total ' + (list || []).length + ' permintaan menunggu)'
+        masalah.push('nomornya belum meminta bergabung, atau grup tidak memakai "Setujui anggota baru"')
+      }
+    } catch (e) {
+      barisMinta = 'tidak bisa dibaca (' + String(e && e.message ? e.message : e).substring(0, 50) + ')'
+      masalah.push('daftar permintaan bergabung tidak bisa dibaca (bot harus admin grup)')
+    }
+  }
+
+  const kesimpulan = masalah.length === 0 ? 'aman disetujui' : 'PERIKSA DULU - ' + masalah.join('; ')
+  pushLog(`AUTO | Grup: cek permintaan gabung - website ${webPhone ? '+' + webPhone : '-'}, pengirim ${senderPhone ? '+' + senderPhone : 'tersembunyi'}, akun ${barisAkun}, minta gabung ${barisMinta} => ${kesimpulan}`)
+
+  // Tombol "tandai sudah masuk grup" kalau nomor itu punya order lunas yang belum ditandai
+  let kb = null
+  if (akunPhone) {
+    const o = (await loadPaymentOrders()).filter(x => x.phone === akunPhone && x.status === 'paid' && !x.inGroup).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+    if (o) kb = [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + o.id }]]
+  }
+  await notifyAdminsWa('*PERMINTAAN GABUNG GRUP*\n\n' +
+    'Nomor di website: ' + (webPhone ? '+' + webPhone : 'tidak tertulis di pesan') + '\n' +
+    'Nomor WA pengirim: ' + barisPengirim + '\n' +
+    'Status akun: ' + barisAkun + '\n' +
+    'Minta gabung grup: ' + barisMinta + '\n\n' +
+    'Kesimpulan: *' + kesimpulan + '*\n\n' +
+    'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
+}
+
 // User yang sedang login: link grup WA (dari pengaturan admin) + apakah ia perlu diajak bergabung.
 // Bot tidak melakukan apa pun di grup; user membuka link sendiri lalu mengabari admin lewat chat.
 app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
@@ -23399,6 +23504,11 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
+        // Pesan dari tombol "Chat Admin" di website: cocokkan nomornya dan laporkan ke admin
+        if (!isGroup && /mau gabung grup/.test(text)) {
+          reportGroupJoinRequest(msg, text).catch(e => pushLog('AUTO | Grup: cek permintaan gabung error - ' + (e && e.message ? e.message : e)))
+          continue
+        }
         if (/\b(cekoon|cekoonnonaktif|horeg)\b/.test(text)) {
           pushLog(`WA | Pesan command diterima dari ${sendTarget.substring(0, 20)}: "${text.substring(0, 30)}"`)
         }
