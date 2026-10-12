@@ -4067,6 +4067,36 @@ app.get('/api/pairing-status', async (req, res) => {
   return res.json({ status: 'idle' }) // belum ada request pairing code sama sekali
 })
 
+// Mulai login lewat kode pairing untuk nomor ini (dipakai panel admin dan bot Telegram).
+// Sesi lama dihapus dulu: kode pairing hanya bisa diminta selagi sesi belum pernah tertaut.
+async function startWaPairing(phone) {
+  pushLog(`WA | Admin meminta pairing code untuk +${phone}...`)
+
+  if (sock) {
+    sock.ev.removeAllListeners()
+    await sock.logout().catch(() => {})
+    sock = null
+  }
+
+  isReady = false
+  lastQr = null
+  pairingCode = null
+  pendingPairingPhone = phone
+  reconnectAttempts = 0
+  consecutive428 = 0
+  isStarting = false
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+
+  // Hapus auth lama (Redis + lokal) — pairing code butuh sesi yang belum registered
+  await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
+  const fs = await import('fs')
+  if (fs.existsSync('/tmp/wa_auth')) {
+    fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
+  }
+
+  scheduleReconnect(1000)
+}
+
 // API: Minta kode pairing untuk nomor HP tertentu (alternatif scan QR).
 // Sama seperti /qr-reset: sesi lama dihapus dulu karena requestPairingCode()
 // hanya bisa dipakai selagi sesi belum "registered" (belum pernah link).
@@ -4081,31 +4111,7 @@ app.post('/api/wa-pairing-request', express.json(), async (req, res) => {
   const phone = normalizePhone(rawPhone)
 
   try {
-    pushLog(`WA | Admin meminta pairing code untuk +${phone}...`)
-
-    if (sock) {
-      sock.ev.removeAllListeners()
-      await sock.logout().catch(() => {})
-      sock = null
-    }
-
-    isReady = false
-    lastQr = null
-    pairingCode = null
-    pendingPairingPhone = phone
-    reconnectAttempts = 0
-    consecutive428 = 0
-    isStarting = false
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-
-    // Hapus auth lama (Redis + lokal) — pairing code butuh sesi yang belum registered
-    await redis.del(REDIS_KEYS.WA_AUTH).catch(() => {})
-    const fs = await import('fs')
-    if (fs.existsSync('/tmp/wa_auth')) {
-      fs.rmSync('/tmp/wa_auth', { recursive: true, force: true })
-    }
-
-    scheduleReconnect(1000)
+    await startWaPairing(phone)
     res.json({ success: true })
   } catch (e) {
     pushLog('WA | Pairing request error: ' + e.message)
@@ -20919,7 +20925,7 @@ const TG_TITLE_EMOJI = [
   [/^DI-ACC OTOMATIS/, '✅'], [/^DITOLAK OTOMATIS/, '❌'], [/^BUKTI PERLU DICEK MANUAL/, '⚠️'],
   [/^BUKTI BAYAR MENUNGGU ACC/, '💳'], [/^PERMINTAAN GABUNG GRUP/, '👥'], [/^MEMBUKA LINK GRUP/, '🔗'],
   [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'],
-  [/^Habis dalam 3 hari/, '⏳']
+  [/^Habis dalam 3 hari/, '⏳'], [/^BOT WHATSAPP TER-LOGOUT/, '🚨']
 ]
 const TG_LINE_EMOJI = [
   [/^Nomor di website:/, '🌐'], [/^Nomor WA pengirim:/, '📱'], [/^Nomor:/, '📱'], [/^Nominal order:/, '💰'],
@@ -21298,6 +21304,7 @@ function tgOnlinePage() {
 function tgWaPage() {
   const phone = sock && sock.user && sock.user.id ? sock.user.id.split(':')[0].split('@')[0] : null
   const kb = [[{ text: 'Muat ulang', callback_data: 'm:wa' }]]
+  if (!isReady) kb.push([{ text: 'Tautkan dengan kode (tanpa QR)', callback_data: 'wa:pair' }])
   if (!isReady && lastQr) kb.push([{ text: 'Kirim QR ke sini', callback_data: 'wa:qr' }])
   kb.push(TG_HOME_ROW)
   return {
@@ -21308,6 +21315,27 @@ function tgWaPage() {
       '\n\nPengaturan grup dan perbaikan sesi tetap lewat panel admin web.',
     kb
   }
+}
+
+// Minta kode pairing lalu kirim ke Telegram. Admin mengetiknya di HP nomor bot.
+async function tgSendPairingCode(tg, phone) {
+  const say = (text, kb) => telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: kb || [TG_HOME_ROW] } }).catch(() => {})
+  try {
+    await startWaPairing(phone)
+  } catch (e) {
+    return say('Gagal memulai penautan: ' + tgEsc(e && e.message ? e.message : e))
+  }
+  // Kode muncul beberapa detik setelah koneksi ke WhatsApp siap
+  for (let i = 0; i < 20 && !pairingCode && !isReady; i++) await _tgSleep(1500)
+  if (isReady) return say('WhatsApp sudah tersambung.')
+  if (!pairingCode) {
+    return say('Kode belum keluar. WhatsApp mungkin sedang menolak permintaan dari nomor ini; tunggu beberapa menit lalu coba lagi, atau pakai QR.',
+      [[{ text: 'Coba lagi', callback_data: 'wa:pg:' + phone }, { text: 'Kirim QR ke sini', callback_data: 'wa:qr' }], TG_HOME_ROW])
+  }
+  const kode = String(pairingCode)
+  const rapi = kode.length === 8 ? kode.substring(0, 4) + '-' + kode.substring(4) : kode
+  return say('<b>Kode penautan untuk +' + phone + '</b>\n\n<code>' + tgEsc(rapi) + '</code>\n\nDi HP nomor bot:\n1. WhatsApp > Perangkat tertaut > Tautkan perangkat\n2. Pilih "Tautkan dengan nomor telepon"\n3. Ketik kode di atas\n\nKode berlaku sebentar saja. Kalau sudah kedaluwarsa, minta lagi.',
+    [[{ text: 'Minta kode baru', callback_data: 'wa:pg:' + phone }, { text: 'Cek status', callback_data: 'm:wa' }], TG_HOME_ROW])
 }
 
 async function tgSavePaymentSettings(changes) {
@@ -21664,6 +21692,25 @@ async function handleTelegramCallback(tg, cq) {
   }
 
   // --- WhatsApp ---
+  // Tautkan ulang dengan kode: pilih nomor bot terakhir, atau ketik nomor lain
+  if (data === 'wa:pair') {
+    if (isReady) return toast('WhatsApp sudah tersambung. Tidak perlu ditautkan ulang.', true)
+    const last = await _ioredis.get('gold:wa_last_number').catch(() => null)
+    const kb = []
+    if (last && /^[0-9]{9,15}$/.test(last)) kb.push([{ text: 'Pakai +' + last, callback_data: 'wa:pg:' + last }])
+    kb.push(TG_HOME_ROW)
+    tgSetAwait('pair')
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, parse_mode: 'HTML', reply_markup: { inline_keyboard: kb },
+      text: '<b>Tautkan WhatsApp dengan kode</b>\n\n' + (kb.length > 1 ? 'Tekan tombol nomor di bawah, atau kirim' : 'Kirim') + ' nomor HP bot (format bebas: 0851..., +62851...).' })
+    return toast('')
+  }
+  if ((m = /^wa:pg:([0-9]{9,15})$/.exec(data))) {
+    if (isReady) return toast('WhatsApp sudah tersambung.', true)
+    tgSetAwait('')
+    await toast('Meminta kode ke WhatsApp...')
+    await tgSendPairingCode(tg, m[1])
+    return
+  }
   if (data === 'wa:qr') {
     if (isReady || !lastQr) { await show(tgWaPage()); return toast(isReady ? 'WhatsApp sudah tersambung.' : 'QR belum tersedia. Coba Muat ulang sebentar lagi.', true) }
     const mod = await import('qrcode')
@@ -21701,6 +21748,15 @@ async function handleTelegramMessage(tg, msg) {
     const out = []
     for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
+  }
+
+  if (awaiting === 'pair' && !text.startsWith('/')) {
+    const phone = tgParsePhones(text, 1)[0]
+    if (!phone) return say('Nomornya tidak terbaca. Kirim nomor HP bot, contoh: 085156260393')
+    tgSetAwait('')
+    if (isReady) return say('WhatsApp sudah tersambung. Tidak perlu ditautkan ulang.')
+    await say('Meminta kode ke WhatsApp untuk +' + phone + '...')
+    return tgSendPairingCode(tg, phone)
   }
 
   if (awaiting === 'rej' && !text.startsWith('/')) {
@@ -22918,6 +22974,9 @@ async function start() {
       }
 
       if (reason === DisconnectReason.loggedOut) {
+        // WA sedang mati, jadi peringatan ini hanya bisa lewat Telegram
+        notifyAdminsTelegram('*BOT WHATSAPP TER-LOGOUT*\n\nWhatsApp mencabut tautan perangkat bot, jadi bot harus ditautkan ulang. Selama belum ditautkan: notifikasi harga ke grup, perintah horeg, dan laporan ke WA admin berhenti. Website dan laporan Telegram tetap jalan.\n\nTekan tombol di bawah untuk menautkan ulang.', null,
+          { kb: [[{ text: 'Tautkan dengan kode (tanpa QR)', callback_data: 'wa:pair' }], [{ text: 'Kirim QR ke sini', callback_data: 'wa:qr' }]] }).catch(() => {})
         await clearAuthAndRestart('LOGGED OUT')
         return
       }
@@ -22981,6 +23040,10 @@ async function start() {
       consecutive428 = 0
       isStarting = false // Koneksi berhasil, buka gate untuk reconnect berikutnya jika perlu
       pushLog('WA | Connected')
+      try {
+        const _botNo = String(sock?.user?.id || '').split(':')[0].split('@')[0]
+        if (/^[0-9]{9,15}$/.test(_botNo)) _ioredis.set('gold:wa_last_number', _botNo).catch(() => {})
+      } catch (e) {}
       pushLog(`WA | Nomor bot: ${sock?.user?.id || '-'} | LID: ${sock?.user?.lid || '-'} | grup monitor: ${monitoredGroupId || '-'} | admin: ${ADMIN_PHONES.join(',') || '-'}`)
       pushLog('WA | Warming up 15s...')
 
