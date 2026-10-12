@@ -9970,6 +9970,11 @@ ${authScript}
             </div>
           </div>
 
+          <div class="form-group">
+            <label>Link grup WA <span style="color:#6b7280;font-weight:400;">(muncul sebagai menu "Gabung Grup WA" untuk user yang sudah login; kosongkan untuk menyembunyikan)</span></label>
+            <input type="text" id="payGroupLink" placeholder="https://chat.whatsapp.com/..." style="width:100%;font-family:monospace;font-size:0.8em;">
+          </div>
+
           <button class="btn btn-primary" style="width:100%;" onclick="savePaymentSettings(false)">Simpan Pengaturan QRIS</button>
 
           <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);">
@@ -11317,6 +11322,7 @@ ${authScript}
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
           document.getElementById('payAutoVerify').checked = s.autoVerify !== false;
+          document.getElementById('payGroupLink').value = s.groupLink || '';
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -11370,6 +11376,7 @@ ${authScript}
           enabled: document.getElementById('payEnabled').checked,
           waFallback: document.getElementById('payWaFallback').checked,
           autoVerify: document.getElementById('payAutoVerify').checked,
+          groupLink: document.getElementById('payGroupLink').value,
           price: document.getElementById('payPrice').value,
           days: document.getElementById('payDays').value,
           qrisStatic: document.getElementById('payQris').value,
@@ -16374,6 +16381,10 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
+      <button class="nav-menu-item" id="joinGroupBtn" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
+        <i data-lucide="users" style="width:14px;height:14px;"></i>
+        Gabung Grup WA
+      </button>
       <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
         <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
         Hubungi Admin
@@ -19059,6 +19070,51 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
+    // Gabung grup WA, dua langkah: (1) buka link grup dan minta bergabung, (2) kabari admin lewat
+    // chat WhatsApp dengan pesan yang sudah terisi nomor yang sedang login.
+    async function joinWaGroup(silent) {
+      var d = null;
+      try {
+        d = await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
+      } catch (e) {}
+      if (!d || !d.success) {
+        if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
+        return;
+      }
+      if (silent) {
+        // Sekali sehari saja mengajak user yang sudah lunas tapi belum masuk grup
+        if (!d.suggest) return;
+        var today = new Date().toISOString().substring(0, 10);
+        try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
+      }
+      var old = document.getElementById('joinGroupModal');
+      if (old) old.remove();
+      var nomor = /^[0-9]+$/.test(String(d.phone || '')) ? '+' + d.phone : '';
+      var pesan = 'Halo admin, saya' + (nomor ? ' (' + nomor + ')' : '') + ' mau gabung grup harga';
+      var wrap = document.createElement('div');
+      wrap.id = 'joinGroupModal';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;';
+      var box = document.createElement('div');
+      box.style.cssText = 'width:100%;max-width:380px;background:#111418;border:1px solid rgba(247,147,26,0.35);border-radius:14px;padding:20px;color:#e7e9ea;font-size:14px;line-height:1.5;';
+      var mk = function(tag, text, css) { var el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
+      var btnCss = 'display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;border-radius:10px;padding:12px;margin:8px 0 14px;';
+      box.appendChild(mk('div', 'Gabung Grup WA', 'font-weight:800;font-size:17px;margin-bottom:12px;'));
+      box.appendChild(mk('div', 'Langkah 1. Buka grup, lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
+      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#22c55e;color:#fff;');
+      a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
+      box.appendChild(a1);
+      box.appendChild(mk('div', 'Langkah 2. Setelah itu kabari admin supaya disetujui. Pesannya sudah terisi, tinggal kirim.', 'font-weight:600;'));
+      var a2 = mk('a', 'Chat Admin', btnCss + 'background:#f7931a;color:#000;');
+      a2.href = 'https://wa.me/6285156260393?text=' + encodeURIComponent(pesan); a2.target = '_blank'; a2.rel = 'noopener';
+      box.appendChild(a2);
+      var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
+      tutup.onclick = function() { wrap.remove(); };
+      box.appendChild(tutup);
+      wrap.appendChild(box);
+      wrap.onclick = function(ev) { if (ev.target === wrap) wrap.remove(); };
+      document.body.appendChild(wrap);
+    }
+
     // Hubungi admin lewat WhatsApp, pesan sudah terisi nomor HP yang sedang login
     var _myPhone = '';
     function contactAdmin() {
@@ -19204,6 +19260,7 @@ app.get('/monitoring', async (req, res) => {
           }
           _sessionOk();
           _myPhone = String(data.phone || '');
+          setTimeout(function() { joinWaGroup(true); }, 6000);
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
@@ -20541,7 +20598,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupLink: '', notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -21747,6 +21804,126 @@ async function markOrderInGroupByPhone(phone, how) {
   return true
 }
 
+// ---------- Cek permintaan gabung grup (hanya membaca dan melapor) ----------
+// User menekan "Chat Admin" di website, sehingga pesan "Halo admin, saya (+62...) mau gabung grup
+// harga" masuk ke nomor bot. Bot mencocokkan tiga hal lalu melapor ke admin:
+//   1. nomor yang tertulis di pesan (nomor yang login di website),
+//   2. nomor WA pengirim pesan itu,
+//   3. daftar permintaan bergabung di grup.
+// Bot TIDAK menyetujui, menolak, menambahkan, atau membalas siapa pun. Admin yang memutuskan.
+const _joinCheckSeen = new Map()   // pengirim -> waktu laporan terakhir (cegah laporan berulang)
+
+function phoneFromWaJid(jid) {
+  const m = /^([0-9]{9,15})(:[0-9]+)?@s[.]whatsapp[.]net$/.exec(String(jid || ''))
+  return m ? m[1] : ''
+}
+
+async function reportGroupJoinRequest(msg, text) {
+  const key = msg.key || {}
+  // Nomor pengirim: dari alamat chat, atau dari keterangan nomor yang disertakan WhatsApp
+  const senderPhone = phoneFromWaJid(key.remoteJid) || phoneFromWaJid(key.senderPn) || phoneFromWaJid(key.participantPn)
+  const seenKey = senderPhone || String(key.remoteJid || '')
+  const now = Date.now()
+  for (const [k, t] of _joinCheckSeen) if (now - t > 3600000) _joinCheckSeen.delete(k)
+  if (_joinCheckSeen.has(seenKey) && now - _joinCheckSeen.get(seenKey) < 10 * 60 * 1000) return
+  _joinCheckSeen.set(seenKey, now)
+
+  const webPhone = tgParsePhones(text, 1)[0] || ''
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
+  const masalah = []
+
+  // 1 + 2: nomor di pesan vs nomor pengirim
+  let barisPengirim
+  if (!senderPhone) {
+    barisPengirim = 'disembunyikan WhatsApp (cek manual di chat)'
+    masalah.push('nomor pengirim disembunyikan WhatsApp, cocokkan manual')
+  } else if (!webPhone) {
+    barisPengirim = '+' + senderPhone
+  } else if (senderPhone === webPhone) {
+    barisPengirim = '+' + senderPhone + ' - COCOK'
+  } else {
+    barisPengirim = '+' + senderPhone + ' - BERBEDA dengan nomor website'
+    masalah.push('nomor WA pengirim berbeda dengan nomor yang login di website')
+  }
+
+  // Status akun (pakai nomor website; kalau tidak tertulis, pakai nomor pengirim)
+  const akunPhone = webPhone || senderPhone
+  let barisAkun = 'tidak bisa dicek (nomor tidak diketahui)'
+  if (akunPhone) {
+    const check = await isUserValid(akunPhone)
+    if (check.valid) {
+      barisAkun = 'aktif' + (check.user && check.user.expired ? ' sampai ' + tgl(check.user.expired) : ' (Lifetime)')
+    } else if (check.reason === 'error') {
+      barisAkun = 'tidak bisa dicek (gangguan server)'
+      masalah.push('status akun tidak bisa dicek, coba lihat di menu User')
+    } else {
+      barisAkun = 'TIDAK terdaftar / masa aktif habis'
+      masalah.push('akun tidak terdaftar atau masa aktifnya habis')
+    }
+  } else {
+    masalah.push('nomor tidak diketahui')
+  }
+
+  // 3: daftar permintaan bergabung di grup (hanya dibaca)
+  let barisMinta = 'tidak dicek (grup belum diatur / bot terputus)'
+  if (sock && isReady && monitoredGroupId) {
+    try {
+      const list = await sock.groupRequestParticipantsList(monitoredGroupId)
+      const phones = new Set()
+      let hidden = 0
+      for (const r of list || []) {
+        const ph = phoneFromWaJid(r.jid) || phoneFromWaJid(r.phone_number)
+        if (ph) phones.add(ph); else hidden++
+      }
+      const ada = (senderPhone && phones.has(senderPhone)) || (webPhone && phones.has(webPhone))
+      if (ada) {
+        barisMinta = 'ADA di daftar permintaan' + (senderPhone && !phones.has(senderPhone) ? ' (atas nomor website, bukan nomor pengirim)' : '')
+      } else if (hidden > 0) {
+        barisMinta = 'tidak terlihat; ada ' + hidden + ' permintaan yang nomornya disembunyikan WhatsApp'
+        masalah.push('permintaan bergabungnya tidak bisa dipastikan (nomor disembunyikan WhatsApp)')
+      } else {
+        barisMinta = 'BELUM ada (total ' + (list || []).length + ' permintaan menunggu)'
+        masalah.push('nomornya belum meminta bergabung, atau grup tidak memakai "Setujui anggota baru"')
+      }
+    } catch (e) {
+      barisMinta = 'tidak bisa dibaca (' + String(e && e.message ? e.message : e).substring(0, 50) + ')'
+      masalah.push('daftar permintaan bergabung tidak bisa dibaca (bot harus admin grup)')
+    }
+  }
+
+  const kesimpulan = masalah.length === 0 ? 'aman disetujui' : 'PERIKSA DULU - ' + masalah.join('; ')
+  pushLog(`AUTO | Grup: cek permintaan gabung - website ${webPhone ? '+' + webPhone : '-'}, pengirim ${senderPhone ? '+' + senderPhone : 'tersembunyi'}, akun ${barisAkun}, minta gabung ${barisMinta} => ${kesimpulan}`)
+
+  // Tombol "tandai sudah masuk grup" kalau nomor itu punya order lunas yang belum ditandai
+  let kb = null
+  if (akunPhone) {
+    const o = (await loadPaymentOrders()).filter(x => x.phone === akunPhone && x.status === 'paid' && !x.inGroup).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+    if (o) kb = [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + o.id }]]
+  }
+  await notifyAdminsWa('*PERMINTAAN GABUNG GRUP*\n\n' +
+    'Nomor di website: ' + (webPhone ? '+' + webPhone : 'tidak tertulis di pesan') + '\n' +
+    'Nomor WA pengirim: ' + barisPengirim + '\n' +
+    'Status akun: ' + barisAkun + '\n' +
+    'Minta gabung grup: ' + barisMinta + '\n\n' +
+    'Kesimpulan: *' + kesimpulan + '*\n\n' +
+    'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
+}
+
+// User yang sedang login: link grup WA (dari pengaturan admin) + apakah ia perlu diajak bergabung.
+// Bot tidak melakukan apa pun di grup; user membuka link sendiri lalu mengabari admin lewat chat.
+app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
+  try {
+    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
+    if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
+    const s = await getPaymentSettings()
+    if (!s.groupLink) return res.json({ success: false, error: 'Link grup belum diatur. Hubungi admin.' })
+    const pending = (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
+    res.json({ success: true, link: s.groupLink, phone, suggest: pending })
+  } catch (e) {
+    res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
+  }
+})
+
 // Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
 // Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
 async function sendNotInGroupReport() {
@@ -22180,7 +22357,7 @@ app.get('/api/admin/payment-settings', async (req, res) => {
 })
 
 app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
-  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, regenerateSecret } = req.body
+  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, groupLink, regenerateSecret } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
@@ -22191,6 +22368,8 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
     const d = parseInt(days, 10)
     if (isNaN(p) || p < 1000 || p > 10000000) return res.json({ success: false, error: 'Harga harus antara Rp1.000 dan Rp10.000.000' })
     if (isNaN(d) || d < 1 || d > 3650) return res.json({ success: false, error: 'Masa aktif harus 1-3650 hari' })
+    const gLink = groupLink === undefined ? (current.groupLink || '') : String(groupLink || '').trim()
+    if (gLink && !/^https:[/][/]chat[.]whatsapp[.]com[/][A-Za-z0-9]{10,40}([?].*)?$/.test(gLink)) return res.json({ success: false, error: 'Link grup harus berbentuk https://chat.whatsapp.com/...' })
     if (qris) {
       const err = validateQrisStatic(qris)
       if (err) return res.json({ success: false, error: err })
@@ -22204,6 +22383,7 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       days: d,
       waFallback: waFallback !== false,
       autoVerify: autoVerify === undefined ? current.autoVerify !== false : !!autoVerify,
+      groupLink: gLink,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
@@ -23324,6 +23504,11 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
+        // Pesan dari tombol "Chat Admin" di website: cocokkan nomornya dan laporkan ke admin
+        if (!isGroup && /mau gabung grup/.test(text)) {
+          reportGroupJoinRequest(msg, text).catch(e => pushLog('AUTO | Grup: cek permintaan gabung error - ' + (e && e.message ? e.message : e)))
+          continue
+        }
         if (/\b(cekoon|cekoonnonaktif|horeg)\b/.test(text)) {
           pushLog(`WA | Pesan command diterima dari ${sendTarget.substring(0, 20)}: "${text.substring(0, 30)}"`)
         }
