@@ -20810,10 +20810,39 @@ async function handleTelegramCallback(tg, cq) {
 
 // Admin menempel nomor HP (format bebas: 08.. / +62.. / 62..) di chat bot: bot membalas data
 // user itu dengan tombol Reset PIN. Reset baru terjadi setelah tombolnya ditekan.
+let _tgAwaitResetUntil = 0   // setelah /reset-pin tanpa nomor: pesan berikutnya dianggap nomornya
+
 async function handleTelegramMessage(tg, msg) {
   if (!tg.chatId || String(msg.chat.id) !== String(tg.chatId)) return
   const text = String(msg.text || '')
   if (!text || text.startsWith('/start')) return
+  const say = (t) => telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: t, parse_mode: 'HTML' }).catch(() => {})
+  // Perintah /reset-pin (juga /resetpin, /reset_pin, /reset): langsung reset, tanpa tombol konfirmasi
+  const isResetCmd = /^[/]reset([-_]?pin)?(@[A-Za-z0-9_]+)?([^A-Za-z0-9_]|$)/i.test(text)
+  const awaiting = !isResetCmd && !text.startsWith('/') && Date.now() < _tgAwaitResetUntil
+  if (isResetCmd || awaiting) {
+    const nums = (text.replace(/^[/]\S*/, '').match(/[+]?[0-9][0-9 .()-]{7,20}[0-9]/g) || [])
+      .map(x => x.replace(/[^0-9]/g, ''))
+      .filter(x => x.length >= 9 && x.length <= 15)
+      .map(x => normalizePhone(x))
+    const targets = [...new Set(nums)].slice(0, 5)
+    if (targets.length === 0) {
+      _tgAwaitResetUntil = Date.now() + 5 * 60 * 1000
+      await say('Kirim nomor HP yang mau direset PIN-nya (format bebas: 0851..., +62851..., 62851...).')
+      return
+    }
+    _tgAwaitResetUntil = 0
+    for (const phone of targets) {
+      if (!(await redis.hget(REDIS_KEYS.USERS, phone))) {
+        await say('<code>+' + phone + '</code>\nUser tidak ditemukan di Daftar User. PIN tidak diubah.')
+        continue
+      }
+      await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin('000000'), pinChanged: false }) })
+      pushLog(`Admin | Reset PIN for user +${phone} (Telegram /reset-pin)`)
+      await say('🔑 PIN <code>+' + phone + '</code> sudah direset ke <b>000000</b>.')
+    }
+    return
+  }
   // Ambil deretan angka yang mirip nomor HP (boleh ada spasi / strip / tanda +), maksimal 5 nomor
   const found = (text.match(/[+]?[0-9][0-9 .()-]{7,20}[0-9]/g) || [])
     .map(x => x.replace(/[^0-9]/g, ''))
@@ -20821,7 +20850,7 @@ async function handleTelegramMessage(tg, msg) {
     .map(x => normalizePhone(x))
   const phones = [...new Set(found)].slice(0, 5)
   if (phones.length === 0) {
-    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: 'Kirim nomor HP user (format bebas: 0851..., +62851..., 62851...) untuk reset PIN-nya.' }).catch(() => {})
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: 'Untuk reset PIN, kirim: /reset-pin 0851xxxxxxx (format nomor bebas: 0851..., +62851..., 62851...).' }).catch(() => {})
     return
   }
   for (const phone of phones) {
@@ -20849,7 +20878,10 @@ async function telegramPollLoop() {
     try {
       tg = await getTelegramSettings()
       if (!tg.token) { await _tgSleep(5000); continue }
-      if (tg.token !== _tgPollToken) { _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null }
+      if (tg.token !== _tgPollToken) {
+        _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null
+        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'resetpin', description: 'Reset PIN user ke 000000 (isi nomor HP)' }] }).catch(() => {})
+      }
       const res = await fetch(`https://api.telegram.org/bot${tg.token}/getUpdates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
