@@ -9949,6 +9949,11 @@ ${authScript}
             <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, jelas salah = tolak otomatis, ragu = menunggu ACC manual. Laporan tetap dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="payGroupAutoAdd" style="width:18px;height:18px;cursor:pointer;">
+            <span>Masuk grup WA otomatis <span style="color:#6b7280;font-size:0.85em;">(setelah lunas, bot memasukkan nomornya ke grup; paling banyak 10 per jam dan 40 per hari. Kalau ditolak privasi WhatsApp, orangnya bergabung lewat tombol di website dan disetujui otomatis. Bot harus admin grup.)</span></span>
+          </label>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
             <div class="form-group" style="margin:0;">
               <label>Harga (Rp)</label>
@@ -11317,6 +11322,7 @@ ${authScript}
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
           document.getElementById('payAutoVerify').checked = s.autoVerify !== false;
+          document.getElementById('payGroupAutoAdd').checked = s.groupAutoAdd !== false;
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -11370,6 +11376,7 @@ ${authScript}
           enabled: document.getElementById('payEnabled').checked,
           waFallback: document.getElementById('payWaFallback').checked,
           autoVerify: document.getElementById('payAutoVerify').checked,
+          groupAutoAdd: document.getElementById('payGroupAutoAdd').checked,
           price: document.getElementById('payPrice').value,
           days: document.getElementById('payDays').value,
           qrisStatic: document.getElementById('payQris').value,
@@ -16374,6 +16381,10 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
+      <button class="nav-menu-item" id="joinGroupBtn" onclick="joinWaGroup();closeNavMenu()" title="Gabung ke grup WhatsApp">
+        <i data-lucide="users" style="width:14px;height:14px;"></i>
+        Gabung Grup WA
+      </button>
       <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
         <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
         Hubungi Admin
@@ -19059,6 +19070,27 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
+    // Gabung grup WA: link diambil dari server (hanya untuk user yang sedang login)
+    async function joinWaGroup(silent) {
+      var d = null;
+      try {
+        d = await (await fetch('/api/group-invite?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
+      } catch (e) {}
+      if (!d || !d.success) {
+        if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
+        return;
+      }
+      if (silent) {
+        // Sekali sehari saja mengajak user yang sudah lunas tapi belum masuk grup
+        if (!d.suggest) return;
+        var today = new Date().toISOString().substring(0, 10);
+        try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
+        var ok = await showConfirm('Akun Anda sudah aktif. Gabung ke grup WhatsApp sekarang?', 'Gabung Grup WA');
+        if (!ok) return;
+      }
+      window.open(d.link, '_blank');
+    }
+
     // Hubungi admin lewat WhatsApp, pesan sudah terisi nomor HP yang sedang login
     var _myPhone = '';
     function contactAdmin() {
@@ -19204,6 +19236,7 @@ app.get('/monitoring', async (req, res) => {
           }
           _sessionOk();
           _myPhone = String(data.phone || '');
+          setTimeout(function() { joinWaGroup(true); }, 6000);
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
@@ -20541,7 +20574,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupAutoAdd: true, notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -20656,11 +20689,13 @@ async function completePaymentOrder(order, via) {
   order.activeUntil = user.expired || null
   await savePaymentOrder(order)
   const until = user.expired ? new Date(user.expired).toLocaleDateString('id-ID') : 'Lifetime'
-  pushLog(`PAY | Lunas Rp${order.amount.toLocaleString('id-ID')} dari +${order.phone} (${via}) - aktif sampai ${until}`)
+  // AUTO = diputuskan sistem sendiri, Admin = diputuskan admin (manual). Dipisah di Logs dan Telegram.
+  const otomatis = /^otomatis|^notifikasi otomatis/.test(String(via))
+  pushLog(`${otomatis ? 'AUTO | ACC otomatis' : 'Admin | ACC manual'} +${order.phone} Rp${order.amount.toLocaleString('id-ID')} (${via}) - aktif sampai ${until}`)
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
-  scheduleNotInGroupReport()
+  if (settings.groupAutoAdd === false) scheduleNotInGroupReport()
   return order
 }
 
@@ -20673,7 +20708,7 @@ async function rejectPaymentOrder(order, reason, via) {
   // Penolakan tetap tampil ke orangnya minimal 24 jam sejak ditolak
   order.expiresAt = Math.max(order.expiresAt || 0, order.rejectedAt + PAYMENT_ORDER_TTL_MS)
   await savePaymentOrder(order)
-  pushLog(`Admin | Order QRIS +${order.phone} ditolak${via ? ' (' + via + ')' : ''}: ${order.rejectReason || 'tanpa alasan'}`)
+  pushLog(`${via === 'otomatis' ? 'AUTO | Tolak otomatis' : 'Admin | Tolak manual' + (via ? ' (' + via + ')' : '')} +${order.phone} Rp${order.amount.toLocaleString('id-ID')}: ${order.rejectReason || 'tanpa alasan'}`)
   return order
 }
 
@@ -20978,7 +21013,10 @@ async function tgOrderDetail(id, fk) {
   if (status === 'paid') {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
-      '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' : 'belum masuk')
+      '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' + (o.groupAdd && o.groupAdd.how ? ' (' + tgEsc(o.groupAdd.how) + ')' : '')
+        : o.groupAdd && o.groupAdd.status === 'privacy' ? 'belum masuk (bot ditolak privasi WhatsApp, menunggu ia bergabung lewat website)'
+        : o.groupAdd && o.groupAdd.status === 'failed' ? 'belum masuk (bot gagal menambahkan, masukkan manual)'
+        : 'belum masuk')
   }
   const kb = []
   const row1 = []
@@ -21021,7 +21059,9 @@ async function tgOrderAction(tg, act, id, reason) {
     if (order.status !== 'paid') return 'Hanya order lunas yang bisa ditandai.'
     order.inGroup = !order.inGroup
     order.inGroupAt = order.inGroup ? Date.now() : null
+    if (order.inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'ditandai admin' }
     await savePaymentOrder(order)
+    pushLog(`Admin | Grup: +${order.phone} ${order.inGroup ? 'ditandai sudah masuk grup' : 'tanda masuk grup dibatalkan'} (Telegram)`)
     return order.inGroup ? 'Ditandai sudah masuk grup.' : 'Tanda masuk grup dibatalkan.'
   }
   if (act === 'dy') {
@@ -21198,6 +21238,7 @@ async function tgSettingsPage(note) {
       '\nHarga: <b>' + tgRp(s.price) + '</b>\nMasa aktif: <b>' + s.days + ' hari</b>' +
       '\nKalau QRIS mati, arahkan ke WA admin: <b>' + (s.waFallback !== false ? 'YA' : 'TIDAK') + '</b>' +
       '\nCek bukti otomatis: <b>' + (s.autoVerify !== false ? 'AKTIF' : 'MATI') + '</b>' +
+      '\nMasuk grup WA otomatis: <b>' + (s.groupAutoAdd !== false ? 'AKTIF' : 'MATI') + '</b>' + (Date.now() < _groupAddPausedUntil ? ' (sedang dijeda)' : '') +
       '\nLog otomatis ke Telegram: <b>' + (tg.logPush !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\n\nString QRIS, nominal investasi, suara, dan pengaturan lain tetap lewat panel admin web.',
     kb: [
@@ -21205,6 +21246,7 @@ async function tgSettingsPage(note) {
       [{ text: 'Ubah harga', callback_data: 's:pr' }, { text: 'Ubah masa aktif', callback_data: 's:dy' }],
       [{ text: (s.waFallback !== false ? 'Jangan arahkan ke WA admin' : 'Arahkan ke WA admin'), callback_data: 's:wf' }],
       [{ text: (s.autoVerify !== false ? 'Matikan cek bukti otomatis' : 'Aktifkan cek bukti otomatis'), callback_data: 's:av' }],
+      [{ text: (s.groupAutoAdd !== false ? 'Matikan masuk grup otomatis' : 'Aktifkan masuk grup otomatis'), callback_data: 's:ga' }],
       [{ text: (tg.logPush !== false ? 'Matikan log otomatis' : 'Aktifkan log otomatis'), callback_data: 's:lg' }],
       TG_HOME_ROW
     ]
@@ -21214,21 +21256,22 @@ async function tgSettingsPage(note) {
 // ----- Logs yang rapi -----
 const TG_LOG_CATS = {
   a: { label: 'Semua', test: () => true },
-  p: { label: 'Bayar', test: s => /^PAY \|/.test(s) },
-  m: { label: 'Admin', test: s => /^Admin \|/.test(s) },
-  k: { label: 'Expired', test: s => /^Auto-kick \|/.test(s) },
+  o: { label: 'Otomatis', test: s => /^(AUTO|Auto-kick|Laporan harian) \|/.test(s) },
+  m: { label: 'Manual', test: s => /^Admin \|/.test(s) },
+  p: { label: 'Bayar', test: s => /^PAY \|/.test(s) || /^(AUTO|Admin) \| (ACC|Tolak|Cek bukti)/.test(s) },
+  g: { label: 'Grup WA', test: s => /^(AUTO|Admin) \| Grup:/.test(s) || /^Auto-kick \|/.test(s) },
   w: { label: 'WA', test: s => /^WA \|/.test(s) },
-  e: { label: 'Error', test: s => /\u274C|error|gagal|failed/i.test(s) }
+  e: { label: 'Error', test: s => /❌|error|gagal|failed/i.test(s) }
 }
 
 // "PAY | teks" -> ikon + teks tanpa awalan
 function tgPrettyLog(body) {
   const m = /^([A-Za-z-]+) \| (.*)$/s.exec(body)
-  const tags = { PAY: 'Bayar', Admin: 'Admin', 'Auto-kick': 'Expired', WA: 'WA', TG: 'Telegram' }
+  const tags = { AUTO: 'Otomatis', Admin: 'Manual', PAY: 'Bayar', 'Auto-kick': 'Otomatis', WA: 'WA', TG: 'Telegram' }
   const isErr = /\u274C|error|gagal|failed/i.test(body)
   // Tanpa emoji: kategori ditulis sebagai label teks, emoji di isi log dibuang
   const clean = t => t.replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\uFE0F]\s?/gu, '').trim()
-  if (m && tags[m[1]]) return '[' + (isErr && m[1] !== 'PAY' ? 'Error' : tags[m[1]]) + '] ' + clean(m[2])
+  if (m && tags[m[1]]) return '[' + (isErr && (m[1] === 'WA' || m[1] === 'TG') ? 'Error' : tags[m[1]]) + '] ' + (m[1] === 'Auto-kick' ? 'Expired: ' : '') + clean(m[2])
   return (isErr ? '[Error] ' : '') + clean(body)
 }
 
@@ -21252,7 +21295,7 @@ function tgLogsPage(cat) {
   const btn = k => ({ text: (k === c ? '• ' : '') + TG_LOG_CATS[k].label, callback_data: 'l:' + k })
   return {
     text: '<b>Logs: ' + TG_LOG_CATS[c].label + '</b> (15 terbaru, jam WIB)\n\n' + (rows.length ? rows.reverse().join('\n') : 'Belum ada catatan.'),
-    kb: [[btn('a'), btn('p'), btn('m')], [btn('k'), btn('w'), btn('e')], [{ text: 'Muat ulang', callback_data: 'l:' + c }, TG_HOME_ROW[0]]]
+    kb: [[btn('a'), btn('o'), btn('m')], [btn('p'), btn('g')], [btn('w'), btn('e')], [{ text: 'Muat ulang', callback_data: 'l:' + c }, TG_HOME_ROW[0]]]
   }
 }
 
@@ -21260,14 +21303,14 @@ function tgLogsPage(cat) {
 let _tgLogBuf = []
 function tgLogHook(s) {
   const text = String(s)
-  const important = /^(PAY|Admin|Auto-kick) \|/.test(text) || /^\u274C/.test(text) ||
+  const important = /^(AUTO|Admin|PAY|Auto-kick|Laporan harian) \|/.test(text) || /^❌/.test(text) ||
     (/^WA \|/.test(text) && /(connected|terhubung|tersambung|terputus|disconnect|logout|logged out|Kicked|repair|QR)/i.test(text))
   if (!important) return
-  // Yang sudah punya pesan sendiri, atau baru saja dilakukan admin di Telegram, tidak diulang
-  if (/\((Telegram|otomatis)/.test(text) || /^PAY \| (Bukti bayar diunggah|Bukti .* perlu dicek manual|Sudah di-ACC tapi belum|Semua yang sudah di-ACC)/.test(text)) return
-  if (_tgLogBuf.length < 60) _tgLogBuf.push({ t: Date.now(), s: text.replace(/\s+/g, ' ') })
+  if (_tgLogBuf.length < 120) _tgLogBuf.push({ t: Date.now(), s: text.replace(/\s+/g, ' ') })
 }
 
+// Dikirim sebagai satu pesan tiap 2 menit, dibagi tiga bagian supaya jelas siapa yang melakukan:
+// Otomatis (sistem), Manual (admin), Lainnya.
 async function tgFlushLogs() {
   if (_tgLogBuf.length === 0) return
   const items = _tgLogBuf
@@ -21275,13 +21318,33 @@ async function tgFlushLogs() {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId || tg.logPush === false) return
   const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }).replace('.', ':')
-  const lines = items.slice(0, 25).map(x => {
-    let body = tgPrettyLog(x.s)
-    if (body.length > 160) body = body.substring(0, 157) + '...'
+  const line = x => {
+    let body = tgPrettyLog(x.s).replace(/^\[(Otomatis|Manual)\] /, '')
+    if (body.length > 300) body = body.substring(0, 297) + '...'
     return '<code>' + jam(x.t) + '</code> ' + tgEsc(body).replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
-  })
-  const text = '<b>Log</b>\n\n' + lines.join('\n') + (items.length > 25 ? '\n...dan ' + (items.length - 25) + ' catatan lain (lihat menu Logs)' : '')
-  await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, parse_mode: 'HTML', disable_notification: true }).catch(() => {})
+  }
+  const groups = [
+    ['LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
+    ['LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
+    ['LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
+  ]
+  // Tiap bagian dikirim sebagai pesan sendiri; yang panjang dipecah supaya tidak terpotong
+  for (const [judul, list] of groups) {
+    if (list.length === 0) continue
+    let chunk = []
+    let size = 0
+    const send = async () => {
+      if (chunk.length === 0) return
+      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: '<b>' + judul + '</b>\n\n' + chunk.join('\n'), parse_mode: 'HTML', disable_notification: true }).catch(() => {})
+      chunk = []; size = 0
+    }
+    for (const x of list) {
+      const l = line(x)
+      if (size + l.length > 3500) await send()
+      chunk.push(l); size += l.length + 1
+    }
+    await send()
+  }
 }
 setInterval(() => { tgFlushLogs().catch(() => {}) }, 120000)
 
@@ -21350,7 +21413,12 @@ async function handleTelegramCallback(tg, cq) {
     if (!raw) { await setButton('Order sudah dihapus'); return toast('Order tidak ditemukan.', true) }
     const o = tgParse(raw)
     if (o.status !== 'paid') return toast('Order ini belum lunas.', true)
-    if (!o.inGroup) { o.inGroup = true; o.inGroupAt = Date.now(); await savePaymentOrder(o) }
+    if (!o.inGroup) {
+      o.inGroup = true; o.inGroupAt = Date.now()
+      o.groupAdd = { ...(o.groupAdd || {}), status: 'added', how: 'ditandai admin' }
+      await savePaymentOrder(o)
+      pushLog(`Admin | Grup: +${o.phone} ditandai sudah masuk grup (Telegram)`)
+    }
     await setButton('Sudah masuk grup')
     return toast('Ditandai sudah masuk grup.')
   }
@@ -21482,6 +21550,14 @@ async function handleTelegramCallback(tg, cq) {
     const s = await getPaymentSettings()
     await tgSavePaymentSettings({ waFallback: s.waFallback === false })
     await show(await tgSettingsPage('Tersimpan.'))
+    return toast('')
+  }
+  if (data === 's:ga') {
+    const s = await getPaymentSettings()
+    const on = s.groupAutoAdd === false
+    if (on) { _groupAddPausedUntil = 0; _groupAddFailStreak = 0 }
+    await tgSavePaymentSettings({ groupAutoAdd: on })
+    await show(await tgSettingsPage(on ? 'Masuk grup otomatis diaktifkan.' : 'Masuk grup otomatis dimatikan: masukkan anggota secara manual.'))
     return toast('')
   }
   if (data === 's:av') {
@@ -21692,6 +21768,182 @@ async function notifyAdminsWa(text, photo, opts) {
     })
   }
 }
+
+// ---------- Masuk grup WA otomatis ----------
+// Setelah order lunas, bot mencoba memasukkan nomornya ke grup yang dipantau. Kalau WhatsApp
+// menolak karena privasi orangnya, ia bisa bergabung sendiri lewat tombol "Gabung Grup WA" di
+// website, dan permintaannya disetujui otomatis (kalau grup memakai "Setujui anggota baru").
+// Bot TIDAK mengirim pesan pribadi ke siapa pun. Penambahan dibatasi supaya nomor bot aman.
+const GROUP_ADD_PER_HOUR = 10
+const GROUP_ADD_PER_DAY = 40
+const GROUP_ADD_MAX_TRIES = 3
+const GROUP_ADD_MAX_AGE_MS = 30 * 24 * 3600 * 1000   // order lunas lebih lama dari ini tidak diproses
+let _groupAddPausedUntil = 0
+let _groupAddFailStreak = 0
+let _groupAddBusy = false
+
+async function readPaymentOrder(id) {
+  const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
+  return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+}
+
+// Tandai order lunas terbaru milik nomor ini sebagai sudah masuk grup
+async function markOrderInGroupByPhone(phone, how) {
+  const found = (await loadPaymentOrders())
+    .filter(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
+    .sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+  if (!found) return false
+  const order = await readPaymentOrder(found.id)
+  if (!order || order.inGroup) return false
+  order.inGroup = true
+  order.inGroupAt = Date.now()
+  order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how }
+  await savePaymentOrder(order)
+  return true
+}
+
+async function groupAddCount(key, ttlSec, increment) {
+  try {
+    if (!increment) return parseInt(await _ioredis.get(key), 10) || 0
+    const n = await _ioredis.incr(key)
+    if (n === 1) await _ioredis.expire(key, ttlSec)
+    return n
+  } catch (e) { return 0 }
+}
+
+async function groupAddTick() {
+  if (_groupAddBusy || !sock || !isReady || !monitoredGroupId) return
+  if (Date.now() < _groupAddPausedUntil) return
+  const settings = await getPaymentSettings()
+  if (settings.groupAutoAdd === false) return
+  if (Math.random() < 0.4) return   // jeda acak antar penambahan
+  _groupAddBusy = true
+  try {
+    const now = Date.now()
+    const cand = (await loadPaymentOrders())
+      .filter(o => o.status === 'paid' && !o.inGroup && now - (o.paidAt || 0) < GROUP_ADD_MAX_AGE_MS)
+      .filter(o => !o.groupAdd || (o.groupAdd.status === 'queued' && (o.groupAdd.next || 0) <= now))
+      .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))[0]
+    if (!cand) return
+    const wib = new Date(now + 7 * 3600 * 1000).toISOString()
+    const hourKey = 'gold:group_add:h:' + wib.substring(0, 13)
+    const dayKey = 'gold:group_add:d:' + wib.substring(0, 10)
+    if ((await groupAddCount(hourKey)) >= GROUP_ADD_PER_HOUR || (await groupAddCount(dayKey)) >= GROUP_ADD_PER_DAY) return
+    const order = await readPaymentOrder(cand.id)
+    if (!order || order.status !== 'paid' || order.inGroup) return
+    // Nomornya masih user aktif? (bisa saja sudah dihapus / di-kick admin)
+    if (!(await isUserValid(order.phone)).valid) {
+      order.groupAdd = { ...(order.groupAdd || {}), status: 'skipped', at: now }
+      await savePaymentOrder(order)
+      return
+    }
+    await groupAddCount(hourKey, 2 * 3600, true)
+    await groupAddCount(dayKey, 2 * 24 * 3600, true)
+    const jid = order.phone + '@s.whatsapp.net'
+    let status = '', errMsg = ''
+    try {
+      const res = await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'add')
+      status = String((Array.isArray(res) && res[0] && res[0].status) || '')
+    } catch (e) {
+      errMsg = String(e && e.message ? e.message : e)
+    }
+    const tries = ((order.groupAdd && order.groupAdd.tries) || 0) + 1
+    if (status === '200' || status === '409') {
+      _groupAddFailStreak = 0
+      order.inGroup = true
+      order.inGroupAt = now
+      order.groupAdd = { status: 'added', how: status === '409' ? 'sudah di grup' : 'ditambahkan bot', tries, at: now }
+      await savePaymentOrder(order)
+      pushLog(`AUTO | Grup: +${order.phone} ${status === '409' ? 'ternyata sudah ada di grup' : 'berhasil dimasukkan ke grup WA'}`)
+    } else if (status === '403' || status === '408' || status === '401') {
+      // Privasi orangnya / baru saja keluar grup: tidak dipaksa, ia bergabung sendiri lewat website
+      _groupAddFailStreak = 0
+      order.groupAdd = { status: 'privacy', code: status, tries, at: now }
+      await savePaymentOrder(order)
+      pushLog(`AUTO | Grup: +${order.phone} tidak bisa dimasukkan bot (privasi WhatsApp, kode ${status}) - menunggu ia bergabung lewat tombol di website`)
+    } else {
+      _groupAddFailStreak++
+      const giveUp = tries >= GROUP_ADD_MAX_TRIES
+      order.groupAdd = { status: giveUp ? 'failed' : 'queued', code: status || errMsg.substring(0, 60), tries, at: now, next: now + 15 * 60 * 1000 }
+      await savePaymentOrder(order)
+      pushLog(`AUTO | Grup: gagal memasukkan +${order.phone} (${status || errMsg.substring(0, 60) || 'tanpa keterangan'})${giveUp ? ' - berhenti mencoba, masukkan manual' : ' - dicoba lagi nanti'}`)
+      // Gagal beruntun = tanda bot sedang dibatasi WhatsApp: berhenti dulu supaya tidak makin parah
+      if (_groupAddFailStreak >= 3 || /rate|429|overlimit/i.test(status + errMsg)) {
+        _groupAddPausedUntil = now + 6 * 3600 * 1000
+        _groupAddFailStreak = 0
+        notifyAdminsWa('*MASUK GRUP OTOMATIS DIJEDA 6 JAM*\n\nBot gagal memasukkan anggota beberapa kali berturut-turut (terakhir: ' + (status || errMsg.substring(0, 80) || '-') + '). Ini bisa berarti bot bukan admin grup, atau WhatsApp sedang membatasi nomor bot.\n\nSementara itu masukkan anggota secara manual. Fitur ini bisa dimatikan di Pengaturan.').catch(() => {})
+      }
+    }
+  } catch (e) {
+    pushLog('AUTO | Grup: error antrian - ' + (e && e.message ? e.message : e))
+  } finally {
+    _groupAddBusy = false
+  }
+}
+setInterval(() => { groupAddTick().catch(() => {}) }, 45000)
+
+// Permintaan bergabung (grup dengan "Setujui anggota baru"): user aktif disetujui, lainnya ditolak
+const _joinUnresolved = new Set()
+async function groupJoinRequestsTick() {
+  if (!sock || !isReady || !monitoredGroupId) return
+  const settings = await getPaymentSettings()
+  if (settings.groupAutoAdd === false) return
+  let list
+  try { list = await sock.groupRequestParticipantsList(monitoredGroupId) } catch (e) { return }
+  for (const r of (list || []).slice(0, 10)) {
+    const jid = String(r.jid || '')
+    let phone = ''
+    if (/@s[.]whatsapp[.]net$/.test(jid)) phone = jid.split('@')[0].split(':')[0]
+    else if (r.phone_number) phone = String(r.phone_number).split('@')[0].split(':')[0]
+    if (!/^[0-9]{9,15}$/.test(phone)) {
+      // WhatsApp menyembunyikan nomornya: tidak bisa dicek, biarkan admin yang memutuskan
+      if (jid && !_joinUnresolved.has(jid)) {
+        _joinUnresolved.add(jid)
+        pushLog('AUTO | Grup: ada permintaan bergabung yang nomornya disembunyikan WhatsApp - setujui / tolak manual di WhatsApp')
+      }
+      continue
+    }
+    const check = await isUserValid(phone)
+    if (!check.valid && check.reason === 'error') continue
+    try {
+      await sock.groupRequestParticipantsUpdate(monitoredGroupId, [jid], check.valid ? 'approve' : 'reject')
+      if (check.valid) {
+        await markOrderInGroupByPhone(phone, 'bergabung lewat link')
+        pushLog(`AUTO | Grup: permintaan bergabung +${phone} disetujui otomatis`)
+      } else {
+        pushLog(`AUTO | Grup: permintaan bergabung +${phone} ditolak (bukan user aktif)`)
+      }
+    } catch (e) {
+      pushLog(`AUTO | Grup: gagal memproses permintaan bergabung +${phone}: ${e && e.message ? e.message : e}`)
+    }
+  }
+}
+setInterval(() => { groupJoinRequestsTick().catch(() => {}) }, 60000)
+
+// Link undangan grup (disimpan 10 menit supaya tidak bertanya ke WhatsApp terus-menerus)
+let _groupInviteCache = { link: '', at: 0, group: '' }
+async function getGroupInviteLink() {
+  if (!sock || !isReady || !monitoredGroupId) return ''
+  if (_groupInviteCache.link && _groupInviteCache.group === monitoredGroupId && Date.now() - _groupInviteCache.at < 10 * 60 * 1000) return _groupInviteCache.link
+  const code = await sock.groupInviteCode(monitoredGroupId)
+  if (!code) return ''
+  _groupInviteCache = { link: 'https://chat.whatsapp.com/' + code, at: Date.now(), group: monitoredGroupId }
+  return _groupInviteCache.link
+}
+
+// User yang sedang login: link grup + apakah ia perlu diajak bergabung
+app.get('/api/group-invite', rateLimit(20, 60000), async (req, res) => {
+  try {
+    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
+    if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
+    const link = await getGroupInviteLink()
+    if (!link) return res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti atau hubungi admin.' })
+    const pending = (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
+    res.json({ success: true, link, suggest: pending })
+  } catch (e) {
+    res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti atau hubungi admin.' })
+  }
+})
 
 // Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
 // Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
@@ -21928,13 +22180,15 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   let reason = result ? result.reason : ''
   if (dupReason) { verdict = 'reject'; reason = dupReason }
   order.proof = { ...order.proof, status: 'uploaded', auto: { verdict, reason, checks: result ? result.checks : [], at: Date.now() } }
+  const putusan = { accept: 'LOLOS', reject: 'DITOLAK', manual: 'PERLU CEK MANUAL' }[verdict]
+  pushLog(`AUTO | Cek bukti +${order.phone} ${rp(order.amount)}: ${putusan}${reason ? ' (' + reason + ')' : ''} | ${result ? result.checks.join(' | ') : 'gambar tidak terbaca'}`)
 
   if (verdict === 'accept') {
     await redis.hset(PAYMENT_PROOF_IDS_KEY, { [imgKey]: order.id })
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
-    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.', photo,
+    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === false ? '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.' : '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.'), photo,
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
   }
   if (verdict === 'reject') {
@@ -21943,7 +22197,6 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
       { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }]] })
   }
   await savePaymentOrder(order)
-  pushLog(`PAY | Bukti +${order.phone} ${rp(order.amount)} perlu dicek manual`)
   return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nCek otomatis tidak cukup yakin. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
 }
 
@@ -22125,7 +22378,7 @@ app.get('/api/admin/payment-settings', async (req, res) => {
 })
 
 app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
-  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, regenerateSecret } = req.body
+  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, groupAutoAdd, regenerateSecret } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
@@ -22149,6 +22402,7 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       days: d,
       waFallback: waFallback !== false,
       autoVerify: autoVerify === undefined ? current.autoVerify !== false : !!autoVerify,
+      groupAutoAdd: groupAutoAdd === undefined ? current.groupAutoAdd !== false : !!groupAutoAdd,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
@@ -22214,7 +22468,9 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
       // Catatan admin saja: menandai user ini sudah dimasukkan ke grup WA (bisa dibatalkan)
       order.inGroup = !order.inGroup
       order.inGroupAt = order.inGroup ? Date.now() : null
+      if (order.inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'ditandai admin' }
       await savePaymentOrder(order)
+      pushLog(`Admin | Grup: +${order.phone} ${order.inGroup ? 'ditandai sudah masuk grup' : 'tanda masuk grup dibatalkan'} (panel admin)`)
       return res.json({ success: true, order })
     }
     if (order.status === 'paid') return res.json({ success: false, error: 'Order ini sudah lunas' })
@@ -22659,6 +22915,7 @@ async function start() {
 
         if (action === 'add') {
           // Member baru masuk grup
+          markOrderInGroupByPhone('62' + phone, 'terlihat masuk grup').catch(() => {})
           await autoRegisterGroupMember(phone)
         } else if (action === 'remove') {
           // Member keluar/dikeluarkan dari grup
