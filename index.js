@@ -20427,7 +20427,9 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
-    const qris = String(qrisStatic || '').replace(/\s+/g, '')
+    // Hanya buang ganti-baris/tab dan spasi di ujung. Spasi di TENGAH harus dipertahankan
+    // karena nama merchant/kota boleh mengandung spasi ("Warung J_KO", "Kab. Bogor").
+    const qris = String(qrisStatic || '').replace(/[\r\n\t]+/g, '').trim()
     const p = parseInt(price, 10)
     const d = parseInt(days, 10)
     if (isNaN(p) || p < 1000 || p > 10000000) return res.json({ success: false, error: 'Harga harus antara Rp1.000 dan Rp10.000.000' })
