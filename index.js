@@ -463,7 +463,8 @@ const REDIS_KEYS = {
   SESSION_META: 'gold:session_meta',       // Hash: sessionId -> JSON {ip, ua, time}
   API_TOKENS: 'gold:api_tokens',           // Hash: apiKey -> JSON { name, enabled, createdAt } untuk API eksternal
   PAYMENT_SETTINGS: 'gold:payment_settings', // JSON: pengaturan pendaftaran via QRIS
-  PAYMENT_ORDERS: 'gold:payment_orders'      // Hash: orderId -> JSON order pembayaran QRIS
+  PAYMENT_ORDERS: 'gold:payment_orders',     // Hash: orderId -> JSON order pembayaran QRIS
+  PAYMENT_NOTIFS: 'gold:payment_notifs'      // List: notifikasi uang masuk yang diterima webhook (50 terakhir)
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -9845,6 +9846,21 @@ ${authScript}
             <button class="btn btn-secondary btn-sm" type="button" style="margin-top:8px;" onclick="savePaymentSettings(true)">Ganti secret</button>
           </div>
 
+          <div style="margin:20px 0 8px;">
+            <label style="font-weight:600;">Uang masuk terdeteksi (dari penerus notifikasi)</label>
+            <p style="color:#6b7280;font-size:0.78em;margin-top:2px;">Bukti bahwa pembayaran benar-benar masuk. Kosong berarti penerus notifikasi belum dipasang atau belum ada pembayaran.</p>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="user-table">
+              <thead>
+                <tr><th>Waktu</th><th>Nominal terbaca</th><th>Hasil</th><th>Teks notifikasi</th></tr>
+              </thead>
+              <tbody id="payNotifsBody">
+                <tr><td colspan="4" style="text-align:center;color:#6b7280;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
           <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;">
             <label style="font-weight:600;">Order pembayaran (100 terbaru)</label>
             <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
@@ -11195,7 +11211,37 @@ ${authScript}
       }
     }
 
+    function _escHtml(t) {
+      const d = document.createElement('div');
+      d.textContent = String(t == null ? '' : t);
+      return d.innerHTML;
+    }
+
+    function loadPaymentNotifs() {
+      const tbody = document.getElementById('payNotifsBody');
+      if (!tbody) return;
+      adminFetch('/api/admin/payment-notifs')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          if (!data.notifs.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#6b7280;">Belum ada notifikasi uang masuk</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.notifs.slice(0, 30).map(n => {
+            const waktu = new Date(n.time).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const nominal = (n.amounts || []).map(a => 'Rp' + Number(a).toLocaleString('id-ID')).join(', ') || 'tidak terbaca';
+            const hasil = n.matchedPhone
+              ? '<span style="color:#22c55e;font-weight:600;">Cocok: +' + _escHtml(n.matchedPhone) + '</span>'
+              : '<span style="color:#f59e0b;font-weight:600;">Tidak ada order yang cocok</span>';
+            return '<tr><td>' + waktu + '</td><td>' + _escHtml(nominal) + '</td><td>' + hasil + '</td>' +
+              '<td style="font-size:0.8em;color:#9ca3af;max-width:260px;white-space:normal;">' + _escHtml(n.text) + '</td></tr>';
+          }).join('');
+        });
+    }
+
     function loadPaymentOrders() {
+      loadPaymentNotifs();
       const tbody = document.getElementById('payOrdersBody');
       if (!tbody) return;
       adminFetch('/api/admin/payment-orders')
@@ -11211,7 +11257,11 @@ ${authScript}
           tbody.innerHTML = data.orders.map(o => {
             const waktu = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
             let ket = o.status === 'paid' && o.via ? ' <small style="color:#6b7280;">(' + o.via + ')</small>' : '';
-            if (o.status === 'pending' && o.claimedAt) ket = ' <small style="color:#22c55e;font-weight:600;">mengaku sudah bayar</small>';
+            if (o.status === 'pending' && o.claimedAt) {
+              ket = ' <small style="color:#f59e0b;font-weight:600;">mengaku sudah bayar</small>' +
+                (data.webhookActive ? ' <small style="color:#ef4444;">(uang BELUM terdeteksi masuk)</small>' : ' <small style="color:#6b7280;">(cek mutasi manual)</small>');
+            }
+            if (o.status === 'paid' && o.via === 'notifikasi otomatis') ket = ' <small style="color:#22c55e;font-weight:600;">(uang masuk terverifikasi)</small>';
             const aksi = o.status === 'paid' ? '-' :
               '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' +
               (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
@@ -20421,6 +20471,14 @@ Cek mutasi, lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via 
   }
 })
 
+// Catat notifikasi uang masuk (cocok maupun tidak) sebagai bukti untuk admin
+async function recordPaymentNotif(entry) {
+  try {
+    await redis.rpush(REDIS_KEYS.PAYMENT_NOTIFS, JSON.stringify({ time: Date.now(), ...entry }))
+    await redis.ltrim(REDIS_KEYS.PAYMENT_NOTIFS, -50, -1)
+  } catch (e) {}
+}
+
 // Webhook: penerus notifikasi pembayaran (aplikasi di HP admin meneruskan teks notifikasi
 // "Pembayaran diterima Rp5.037" ke sini). Dilindungi secret; teks bebas, nominal dicari otomatis.
 app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () => true, limit: '20kb' }), async (req, res) => {
@@ -20436,10 +20494,15 @@ app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () =>
     const candidates = extractRupiahAmounts(text)
     const direct = parseInt(String(req.query.amount || '').replace(/[^0-9]/g, ''), 10)
     if (direct > 0) candidates.unshift(direct)
+    const snippet = text.replace(/\s+/g, ' ').trim().substring(0, 200)
     for (const amount of candidates) {
       const order = await confirmPaymentByAmount(amount, 'notifikasi otomatis')
-      if (order) return res.json({ success: true, matched: true, phone: order.phone, amount })
+      if (order) {
+        await recordPaymentNotif({ amounts: candidates, text: snippet, matchedPhone: order.phone, matchedAmount: amount })
+        return res.json({ success: true, matched: true, phone: order.phone, amount })
+      }
     }
+    await recordPaymentNotif({ amounts: candidates, text: snippet, matchedPhone: null, matchedAmount: null })
     pushLog(`PAY | Notifikasi masuk tapi tidak ada order yang cocok (nominal: ${candidates.join(', ') || 'tidak terbaca'})`)
     res.json({ success: true, matched: false, amounts: candidates })
   } catch (e) {
@@ -20492,7 +20555,19 @@ app.get('/api/admin/payment-orders', async (req, res) => {
   if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const orders = (await loadPaymentOrders()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100)
-    res.json({ success: true, orders })
+    res.json({ success: true, orders, webhookActive: !!(await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, -1, -1) || []).length })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: notifikasi uang masuk yang diterima webhook (terbaru dulu)
+app.get('/api/admin/payment-notifs', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const rows = await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, 0, -1) || []
+    const notifs = rows.map(r => { try { return typeof r === 'string' ? JSON.parse(r) : r } catch (e) { return null } }).filter(Boolean).reverse()
+    res.json({ success: true, notifs })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
