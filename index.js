@@ -16285,6 +16285,10 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
+      <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
+        <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
+        Hubungi Admin
+      </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
         <i data-lucide="log-out" style="width:14px;height:14px;"></i>
@@ -18966,6 +18970,14 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
+    // Hubungi admin lewat WhatsApp, pesan sudah terisi nomor HP yang sedang login
+    var _myPhone = '';
+    function contactAdmin() {
+      var nomor = _myPhone && /^[0-9]+$/.test(_myPhone) ? ' (+' + _myPhone + ')' : '';
+      var pesan = 'Hallo saya' + nomor + ' butuh bantuan';
+      window.open('https://wa.me/6285156260393?text=' + encodeURIComponent(pesan), '_blank');
+    }
+
     // Logout function
     async function logout() {
       const confirmed = await showConfirm('Yakin ingin keluar?', 'Logout');
@@ -19102,6 +19114,7 @@ app.get('/monitoring', async (req, res) => {
             return;
           }
           _sessionOk();
+          _myPhone = String(data.phone || '');
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
