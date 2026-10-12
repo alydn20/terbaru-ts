@@ -9925,6 +9925,7 @@ ${authScript}
               <option value="no">Belum masuk</option>
             </select>
             <button class="btn btn-secondary btn-sm" type="button" onclick="resetPaymentFilters()">Reset</button>
+            <button class="btn btn-secondary btn-sm" type="button" title="Kirim ke WA admin daftar nomor yang sudah di-ACC tapi belum masuk grup WA" onclick="sendNotInGroupReport()">Kirim daftar belum masuk grup ke WA</button>
           </div>
           <div class="pay-table-wrap">
             <table class="user-table pay-table">
@@ -11400,6 +11401,21 @@ ${authScript}
           }).join('');
         }
       }
+    }
+
+    // Kirim ke WA admin daftar nomor yang sudah di-ACC tapi belum ditandai masuk grup WA
+    function sendNotInGroupReport() {
+      adminFetch('/api/admin/payment-orders/remind-group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) { showAlert(data.error || 'Gagal mengirim', 'warning'); return; }
+        showAlert(data.count ? 'Daftar ' + data.count + ' nomor dikirim ke WA admin.' : 'Semua yang sudah di-ACC sudah masuk grup.', 'success');
+      })
+      .catch(e => showAlert('Gagal mengirim: ' + e.message, 'danger'));
     }
 
     // Buka gambar bukti di tab baru (diambil lewat adminFetch supaya ikut autentikasi admin)
@@ -20480,6 +20496,7 @@ async function completePaymentOrder(order, via) {
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
+  scheduleNotInGroupReport()
   return order
 }
 
@@ -20598,6 +20615,38 @@ async function notifyAdminsWa(text) {
   for (const admin of ADMIN_PHONES) {
     sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
   }
+}
+
+// Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
+// Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
+async function sendNotInGroupReport() {
+  const list = (await loadPaymentOrders())
+    .filter(o => o.status === 'paid' && !o.inGroup)
+    .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))
+  if (list.length === 0) {
+    pushLog('PAY | Semua yang sudah di-ACC sudah masuk grup WA')
+    return 0
+  }
+  pushLog(`PAY | Sudah di-ACC tapi belum masuk grup WA (${list.length}): ` + list.map(o => '+' + o.phone).join(', '))
+  if (!sock || !isReady) return -1
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' })
+  // Dipotong 50 nomor per pesan supaya pesannya tidak terlalu panjang
+  const shown = list.slice(0, 50)
+  const lines = shown.map((o, i) => `${i + 1}. +${o.phone}${o.paidAt ? ' (ACC ' + tgl(o.paidAt) + ')' : ''}`)
+  const more = list.length > shown.length ? `\n...dan ${list.length - shown.length} nomor lagi (lihat di panel).` : ''
+  await notifyAdminsWa(`👥 *SUDAH ACC, BELUM MASUK GRUP WA* (${list.length})\n\n${lines.join('\n')}${more}\n\nSetelah dimasukkan ke grup, tandai "Masuk" di Panel Admin → Pengaturan → Semua order pembayaran.`)
+  return list.length
+}
+
+// Setelah ada ACC, kirim daftarnya sekali saja 1 menit setelah ACC terakhir
+// (meng-ACC banyak order berturut-turut tidak membanjiri WA admin).
+let _notInGroupTimer = null
+function scheduleNotInGroupReport() {
+  if (_notInGroupTimer) clearTimeout(_notInGroupTimer)
+  _notInGroupTimer = setTimeout(() => {
+    _notInGroupTimer = null
+    sendNotInGroupReport().catch(e => pushLog('PAY | Gagal kirim daftar belum masuk grup: ' + e.message))
+  }, 60000)
 }
 
 // Publik: unggah screenshot bukti bayar untuk sebuah order
@@ -20739,6 +20788,18 @@ app.get('/api/admin/payment-notifs', async (req, res) => {
     const rows = await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, 0, -1) || []
     const notifs = rows.map(r => { try { return typeof r === 'string' ? JSON.parse(r) : r } catch (e) { return null } }).filter(Boolean).reverse()
     res.json({ success: true, notifs })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: kirim sekarang daftar "sudah ACC, belum masuk grup WA" ke WA admin
+app.post('/api/admin/payment-orders/remind-group', express.json(), async (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const count = await sendNotInGroupReport()
+    if (count === -1) return res.json({ success: false, error: 'WhatsApp bot sedang tidak tersambung. Daftarnya sudah dicatat di Logs.' })
+    res.json({ success: true, count })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
