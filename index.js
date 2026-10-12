@@ -9951,7 +9951,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payGroupAutoAdd" style="width:18px;height:18px;cursor:pointer;">
-            <span>Masuk grup WA otomatis <span style="color:#6b7280;font-size:0.85em;">(setelah lunas, bot memasukkan nomornya ke grup; paling banyak 10 per jam dan 40 per hari. Kalau ditolak privasi WhatsApp, orangnya bergabung lewat tombol di website dan disetujui otomatis. Bot harus admin grup.)</span></span>
+            <span>Bot menambahkan anggota ke grup WA <span style="color:#ef4444;font-size:0.85em;">(BERISIKO: pada percobaan pertama WhatsApp langsung mengeluarkan bot dan harus scan QR ulang. Biarkan mati kecuali Anda siap dengan risikonya.)</span> <span style="color:#6b7280;font-size:0.85em;">Tanpa ini, user tetap bisa bergabung sendiri lewat tombol Gabung Grup WA di website, dan permintaan bergabungnya disetujui otomatis.</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -11322,7 +11322,7 @@ ${authScript}
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
           document.getElementById('payAutoVerify').checked = s.autoVerify !== false;
-          document.getElementById('payGroupAutoAdd').checked = s.groupAutoAdd !== false;
+          document.getElementById('payGroupAutoAdd').checked = s.groupAutoAdd === true;
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -20574,7 +20574,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupAutoAdd: true, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupAutoAdd: false, notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -20695,7 +20695,7 @@ async function completePaymentOrder(order, via) {
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
-  if (settings.groupAutoAdd === false) scheduleNotInGroupReport()
+  if (settings.groupAutoAdd !== true) scheduleNotInGroupReport()
   return order
 }
 
@@ -21238,7 +21238,7 @@ async function tgSettingsPage(note) {
       '\nHarga: <b>' + tgRp(s.price) + '</b>\nMasa aktif: <b>' + s.days + ' hari</b>' +
       '\nKalau QRIS mati, arahkan ke WA admin: <b>' + (s.waFallback !== false ? 'YA' : 'TIDAK') + '</b>' +
       '\nCek bukti otomatis: <b>' + (s.autoVerify !== false ? 'AKTIF' : 'MATI') + '</b>' +
-      '\nMasuk grup WA otomatis: <b>' + (s.groupAutoAdd !== false ? 'AKTIF' : 'MATI') + '</b>' + (Date.now() < _groupAddPausedUntil ? ' (sedang dijeda)' : '') +
+      '\nMasuk grup WA otomatis: <b>' + (s.groupAutoAdd === true ? 'AKTIF' : 'MATI') + '</b>' + (Date.now() < _groupAddPausedUntil ? ' (sedang dijeda)' : '') +
       '\nLog otomatis ke Telegram: <b>' + (tg.logPush !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\n\nString QRIS, nominal investasi, suara, dan pengaturan lain tetap lewat panel admin web.',
     kb: [
@@ -21246,7 +21246,7 @@ async function tgSettingsPage(note) {
       [{ text: 'Ubah harga', callback_data: 's:pr' }, { text: 'Ubah masa aktif', callback_data: 's:dy' }],
       [{ text: (s.waFallback !== false ? 'Jangan arahkan ke WA admin' : 'Arahkan ke WA admin'), callback_data: 's:wf' }],
       [{ text: (s.autoVerify !== false ? 'Matikan cek bukti otomatis' : 'Aktifkan cek bukti otomatis'), callback_data: 's:av' }],
-      [{ text: (s.groupAutoAdd !== false ? 'Matikan masuk grup otomatis' : 'Aktifkan masuk grup otomatis'), callback_data: 's:ga' }],
+      [{ text: (s.groupAutoAdd === true ? 'Matikan bot menambahkan ke grup' : 'Aktifkan bot menambahkan ke grup (berisiko)'), callback_data: 's:ga' }],
       [{ text: (tg.logPush !== false ? 'Matikan log otomatis' : 'Aktifkan log otomatis'), callback_data: 's:lg' }],
       TG_HOME_ROW
     ]
@@ -21554,10 +21554,10 @@ async function handleTelegramCallback(tg, cq) {
   }
   if (data === 's:ga') {
     const s = await getPaymentSettings()
-    const on = s.groupAutoAdd === false
+    const on = s.groupAutoAdd !== true
     if (on) { _groupAddPausedUntil = 0; _groupAddFailStreak = 0 }
     await tgSavePaymentSettings({ groupAutoAdd: on })
-    await show(await tgSettingsPage(on ? 'Masuk grup otomatis diaktifkan.' : 'Masuk grup otomatis dimatikan: masukkan anggota secara manual.'))
+    await show(await tgSettingsPage(on ? 'Bot akan menambahkan anggota ke grup. PERINGATAN: pada percobaan pertama, WhatsApp langsung mengeluarkan (logout) bot sesaat setelah bot menambahkan anggota, sehingga harus scan QR ulang.' : 'Bot tidak lagi menambahkan anggota. User bergabung lewat tombol Gabung Grup WA di website.'))
     return toast('')
   }
   if (data === 's:av') {
@@ -21773,9 +21773,9 @@ async function notifyAdminsWa(text, photo, opts) {
 // Setelah order lunas, bot mencoba memasukkan nomornya ke grup yang dipantau. Kalau WhatsApp
 // menolak karena privasi orangnya, ia bisa bergabung sendiri lewat tombol "Gabung Grup WA" di
 // website, dan permintaannya disetujui otomatis (kalau grup memakai "Setujui anggota baru").
-// Bot TIDAK mengirim pesan pribadi ke siapa pun. Penambahan dibatasi supaya nomor bot aman.
-const GROUP_ADD_PER_HOUR = 10
-const GROUP_ADD_PER_DAY = 40
+// Bot TIDAK mengirim pesan pribadi ke siapa pun. Tidak ada batas jumlah per jam / per hari
+// (permintaan pemilik); yang tersisa hanya jeda antar penambahan (satu nomor tiap ~45 detik)
+// dan rem otomatis kalau WhatsApp mulai menolak berturut-turut.
 const GROUP_ADD_MAX_TRIES = 3
 const GROUP_ADD_MAX_AGE_MS = 30 * 24 * 3600 * 1000   // order lunas lebih lama dari ini tidak diproses
 let _groupAddPausedUntil = 0
@@ -21815,8 +21815,7 @@ async function groupAddTick() {
   if (_groupAddBusy || !sock || !isReady || !monitoredGroupId) return
   if (Date.now() < _groupAddPausedUntil) return
   const settings = await getPaymentSettings()
-  if (settings.groupAutoAdd === false) return
-  if (Math.random() < 0.4) return   // jeda acak antar penambahan
+  if (settings.groupAutoAdd !== true) return
   _groupAddBusy = true
   try {
     const now = Date.now()
@@ -21828,7 +21827,6 @@ async function groupAddTick() {
     const wib = new Date(now + 7 * 3600 * 1000).toISOString()
     const hourKey = 'gold:group_add:h:' + wib.substring(0, 13)
     const dayKey = 'gold:group_add:d:' + wib.substring(0, 10)
-    if ((await groupAddCount(hourKey)) >= GROUP_ADD_PER_HOUR || (await groupAddCount(dayKey)) >= GROUP_ADD_PER_DAY) return
     const order = await readPaymentOrder(cand.id)
     if (!order || order.status !== 'paid' || order.inGroup) return
     // Nomornya masih user aktif? (bisa saja sudah dihapus / di-kick admin)
@@ -21837,6 +21835,7 @@ async function groupAddTick() {
       await savePaymentOrder(order)
       return
     }
+    // Hanya dihitung untuk catatan, tidak membatasi
     await groupAddCount(hourKey, 2 * 3600, true)
     await groupAddCount(dayKey, 2 * 24 * 3600, true)
     const jid = order.phone + '@s.whatsapp.net'
@@ -21886,8 +21885,6 @@ setInterval(() => { groupAddTick().catch(() => {}) }, 45000)
 const _joinUnresolved = new Set()
 async function groupJoinRequestsTick() {
   if (!sock || !isReady || !monitoredGroupId) return
-  const settings = await getPaymentSettings()
-  if (settings.groupAutoAdd === false) return
   let list
   try { list = await sock.groupRequestParticipantsList(monitoredGroupId) } catch (e) { return }
   for (const r of (list || []).slice(0, 10)) {
@@ -22188,7 +22185,7 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
-    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === false ? '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.' : '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.'), photo,
+    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === true ? '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.' : '\n\nIa bisa bergabung sendiri lewat tombol Gabung Grup WA di website. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.'), photo,
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
   }
   if (verdict === 'reject') {
@@ -22402,7 +22399,7 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       days: d,
       waFallback: waFallback !== false,
       autoVerify: autoVerify === undefined ? current.autoVerify !== false : !!autoVerify,
-      groupAutoAdd: groupAutoAdd === undefined ? current.groupAutoAdd !== false : !!groupAutoAdd,
+      groupAutoAdd: groupAutoAdd === undefined ? current.groupAutoAdd === true : !!groupAutoAdd,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
