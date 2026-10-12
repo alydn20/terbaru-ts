@@ -6209,7 +6209,8 @@ app.get('/api/admin/users', async (req, res) => {
       redis.hgetall(REDIS_KEYS.PAYMENT_ORDERS).catch(() => ({}))
     ])
     const pushSubSet = new Set(pushSubPhones)
-    // Status grup WA dari order lunas terbaru: 'belum' / 'masuk'. Tanpa order lunas = tidak diketahui.
+    const grpMembers = await getGroupMembers()
+    // Status grup WA: dari daftar anggota yang disinkron admin; kalau belum pernah, dari order lunas terbaru: 'belum' / 'masuk'. Tanpa order lunas = tidak diketahui.
     const groupByPhone = {}
     for (const raw of Object.values(payOrders || {})) {
       try {
@@ -6241,7 +6242,7 @@ app.get('/api/admin/users', async (req, res) => {
         hasPushSubscription: !!hasPushSub,
         isBlocked,
         pinChanged,
-        groupStatus: groupByPhone[phone] ? groupByPhone[phone].status : null
+        groupStatus: grpMembers.at ? (grpMembers.phones.has(phone) ? 'masuk' : 'belum') : (groupByPhone[phone] ? groupByPhone[phone].status : null)
       })
     }
 
@@ -9660,6 +9661,20 @@ ${authScript}
             </svg>
             Daftar User
           </h2>
+          <details id="grpSyncBox" style="margin-bottom:14px;border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px 12px;">
+            <summary style="cursor:pointer;font-weight:600;">Cocokkan dengan anggota grup WA <span id="grpSyncInfo" style="color:#6b7280;font-weight:400;font-size:0.85em;"></span></summary>
+            <p style="color:#6b7280;font-size:0.8em;margin:8px 0;">Di WhatsApp: buka grup, tekan nama grup, lalu salin daftar anggotanya (di WhatsApp Web: klik daftar anggota di bawah nama grup dan salin teksnya). Tempel di sini. Status "Di grup" / "Belum masuk grup" di tabel akan mengikuti daftar ini.</p>
+            <textarea id="grpSyncText" placeholder="+62 856-2007-091, +62 877-3290-0096, ..." style="width:100%;min-height:70px;font-family:monospace;font-size:0.78em;"></textarea>
+            <button class="btn btn-primary btn-sm" type="button" style="margin-top:8px;" onclick="syncGroupMembers()">Cocokkan sekarang</button>
+            <div id="grpSyncResult" style="margin-top:10px;font-size:0.85em;"></div>
+          </details>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Grup WA: semua</option>
+              <option value="masuk">Di grup</option>
+              <option value="belum">Belum masuk grup</option>
+            </select>
+          </div>
           <div class="user-table-wrapper">
             <table class="user-table">
               <thead>
@@ -12453,7 +12468,60 @@ ${authScript}
       });
     }
 
+    // ----- Cocokkan Daftar User dengan anggota grup WA -----
+    function applyUserGroupFilter() {
+      const sel = document.getElementById('userGroupFilter');
+      const v = sel ? sel.value : '';
+      document.querySelectorAll('#userList tr').forEach(tr => {
+        tr.style.display = (!v || tr.getAttribute('data-group') === v) ? '' : 'none';
+      });
+    }
+
+    function renderGroupCompare(d) {
+      const info = document.getElementById('grpSyncInfo');
+      const box = document.getElementById('grpSyncResult');
+      if (!info || !box) return;
+      if (!d || !d.syncedAt) { info.textContent = '(belum pernah dicocokkan)'; box.innerHTML = ''; return; }
+      const kapan = new Date(d.syncedAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      info.textContent = '(terakhir ' + kapan + ': ' + d.groupTotal + ' anggota, ' + d.groupOnly.length + ' tidak terdaftar, ' + d.webOnly.length + ' belum di grup)';
+      const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      const list = (rows, fn) => rows.length
+        ? '<div style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px;font-family:monospace;font-size:0.9em;line-height:1.7;">' + rows.map(fn).join('<br>') + '</div>'
+        : '<div style="color:#22c55e;">Tidak ada.</div>';
+      box.innerHTML =
+        '<div style="margin-bottom:8px;">Anggota grup: <b>' + d.groupTotal + '</b> &middot; User di web: <b>' + d.webTotal + '</b> &middot; Ada di keduanya: <b>' + d.both + '</b>' + (d.marked ? ' &middot; ' + d.marked + ' order ditandai masuk' : '') + '</div>' +
+        '<div style="font-weight:600;color:#ef4444;margin:8px 0 4px;">Di grup WA tapi TIDAK terdaftar di web (' + d.groupOnly.length + ') - keluarkan dari grup atau daftarkan</div>' +
+        list(d.groupOnly, r => '+' + _escHtml(r.phone) + (r.hasOrder ? ' <span style="color:#9ca3af;">(pernah membuat order)</span>' : '')) +
+        '<div style="font-weight:600;color:#f59e0b;margin:12px 0 4px;">Terdaftar di web tapi BELUM di grup WA (' + d.webOnly.length + ')</div>' +
+        list(d.webOnly, r => '+' + _escHtml(r.phone) + ' <span style="color:#9ca3af;">' + _escHtml(r.name || '') + ' &middot; ' + (r.expired ? (r.active ? 'aktif s/d ' + tgl(r.expired) : 'EXPIRED') : 'Lifetime') + '</span>');
+    }
+
+    function loadGroupCompare() {
+      adminFetch('/api/admin/group-members').then(r => r.json()).then(d => { if (d.success) renderGroupCompare(d); }).catch(() => {});
+    }
+
+    function syncGroupMembers() {
+      const text = document.getElementById('grpSyncText').value;
+      const box = document.getElementById('grpSyncResult');
+      box.textContent = 'Mencocokkan...';
+      adminFetch('/api/admin/group-members/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.success) { box.textContent = 'Gagal: ' + (d.error || ''); return; }
+        document.getElementById('grpSyncText').value = '';
+        renderGroupCompare(d);
+        loadUsers();
+        loadPaymentOrders();
+      })
+      .catch(e => { box.textContent = 'Gagal: ' + e.message; });
+    }
+
     function loadUsers() {
+      loadGroupCompare();
       adminFetch('/api/admin/users')
         .then(r => r.json())
         .then(data => {
@@ -12502,7 +12570,7 @@ ${authScript}
               ? '<button class="action-btn unblock" onclick="unblockUser(&apos;' + u.phone + '&apos;)">Unblock</button>'
               : '<button class="action-btn block" onclick="blockUser(&apos;' + u.phone + '&apos;)">Block</button>';
 
-            return '<tr' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
+            return '<tr data-group="' + (u.groupStatus || '') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
               '<td class="phone">+' + u.phone + '</td>' +
               '<td>' + (u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
@@ -12524,6 +12592,7 @@ ${authScript}
               '</td>' +
             '</tr>';
           }).join('');
+          applyUserGroupFilter();
         });
     }
 
@@ -21178,6 +21247,7 @@ async function tgOrderAction(tg, act, id, reason) {
     order.inGroupAt = order.inGroup ? Date.now() : null
     if (order.inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'ditandai admin' }
     await savePaymentOrder(order)
+    await setGroupMember(order.phone, order.inGroup).catch(() => {})
     pushLog(`Admin | Grup: +${order.phone} ${order.inGroup ? 'ditandai sudah masuk grup' : 'tanda masuk grup dibatalkan'} (Telegram)`)
     return order.inGroup ? 'Ditandai sudah masuk grup.' : 'Tanda masuk grup dibatalkan.'
   }
@@ -21230,6 +21300,7 @@ async function tgUserCard(phone, note) {
     return { text: head + 'Tidak terdaftar di Daftar User.' + (blockedRaw ? '\nStatus: diblokir' : ''), kb }
   }
   const u = tgParse(raw)
+  const grupList = await getGroupMembers()
   const grupOrder = (await loadPaymentOrders()).filter(o => o.phone === phone && o.status === 'paid').sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
   let pinChanged = false
   try { pinChanged = !!(pinRaw && tgParse(pinRaw).pinChanged) } catch (e) {}
@@ -21237,7 +21308,7 @@ async function tgUserCard(phone, note) {
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
     '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'masih bawaan (000000)') +
-    (grupOrder ? '\nGrup WA: ' + (grupOrder.inGroup ? 'sudah masuk' : 'BELUM masuk') : '') +
+    (grupList.at ? '\nGrup WA: ' + (grupList.phones.has(phone) ? 'sudah masuk' : 'BELUM masuk') : grupOrder ? '\nGrup WA: ' + (grupOrder.inGroup ? 'sudah masuk' : 'BELUM masuk') : '') +
     (blockedRaw ? '\nStatus: diblokir' : '')
   kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
   kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
@@ -21559,6 +21630,7 @@ async function handleTelegramCallback(tg, cq) {
       o.inGroup = true; o.inGroupAt = Date.now()
       o.groupAdd = { ...(o.groupAdd || {}), status: 'added', how: 'ditandai admin' }
       await savePaymentOrder(o)
+      await setGroupMember(o.phone, true).catch(() => {})
       pushLog(`Admin | Grup: +${o.phone} ditandai sudah masuk grup (Telegram)`)
     }
     await setButton('Sudah masuk grup')
@@ -21931,6 +22003,73 @@ async function notifyAdminsWa(text, photo, opts) {
   }
 }
 
+// ---------- Daftar anggota grup WA ----------
+// Bot tidak membaca anggota grup dari WhatsApp (nomor sering disembunyikan). Sumbernya adalah
+// daftar yang ditempel admin dari WhatsApp ("Lihat semua anggota" lalu salin), disimpan di Redis.
+// Dari daftar itu: status grup di Daftar User, siapa yang di grup tapi tidak terdaftar, dan
+// siapa yang terdaftar tapi belum di grup. Daftar ikut diperbarui saat order ditandai masuk.
+const GROUP_MEMBERS_KEY = 'gold:group_members'
+let groupMembersCache = null   // { at, phones: Set }
+
+async function getGroupMembers() {
+  if (!groupMembersCache) {
+    let saved = null
+    try {
+      const raw = await redis.get(GROUP_MEMBERS_KEY)
+      saved = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+    } catch (e) { return { at: 0, phones: new Set() } }
+    groupMembersCache = { at: (saved && saved.at) || 0, phones: new Set((saved && saved.phones) || []) }
+  }
+  return groupMembersCache
+}
+
+async function saveGroupMembers(phones, at) {
+  groupMembersCache = { at: at === undefined ? Date.now() : at, phones: new Set(phones) }
+  await redis.set(GROUP_MEMBERS_KEY, JSON.stringify({ at: groupMembersCache.at, phones: [...groupMembersCache.phones] }))
+}
+
+// Tambah / hapus satu nomor tanpa mengubah waktu sinkron terakhir
+async function setGroupMember(phone, inGroup) {
+  const g = await getGroupMembers()
+  if (g.phones.has(phone) === !!inGroup) return
+  if (inGroup) g.phones.add(phone); else g.phones.delete(phone)
+  await saveGroupMembers(g.phones, g.at)
+}
+
+// Nomor dari teks tempelan (mis. "+62 856-2007-091, +62 877-3290-0096, ... , Anda")
+function parseMemberList(text) {
+  const out = new Set()
+  for (const part of String(text || '').split(/[,;\n]/)) {
+    const digits = part.replace(/[^0-9]/g, '')
+    if (digits.length < 9 || digits.length > 15) continue
+    out.add(normalizePhone(digits))
+  }
+  return [...out]
+}
+
+// Bandingkan daftar anggota grup dengan Daftar User
+async function compareGroupWithUsers(phones) {
+  const grp = new Set(phones)
+  const [users, orders] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), loadPaymentOrders()])
+  const now = Date.now()
+  const web = new Map()
+  for (const [k, v] of Object.entries(users || {})) {
+    if (!/^62[0-9]{8,13}$/.test(k)) continue
+    try { web.set(k, typeof v === 'string' ? JSON.parse(v) : v) } catch (e) {}
+  }
+  const info = p => {
+    const u = web.get(p)
+    return { phone: p, name: u ? (u.name || '') : '', expired: u ? (u.expired || null) : null, active: !!u && (!u.expired || u.expired > now) }
+  }
+  return {
+    groupTotal: grp.size,
+    webTotal: web.size,
+    both: [...grp].filter(p => web.has(p)).length,
+    groupOnly: [...grp].filter(p => !web.has(p)).sort().map(p => ({ phone: p, hasOrder: orders.some(o => o.phone === p) })),
+    webOnly: [...web.keys()].filter(p => !grp.has(p)).sort().map(info)
+  }
+}
+
 // ---------- Penanda "sudah masuk grup" ----------
 // Bot tidak menambahkan atau mengeluarkan siapa pun dari grup WA secara otomatis (pernah membuat
 // bot di-logout WhatsApp). Bot hanya MENCATAT: kalau seorang user terlihat masuk grup, order
@@ -21952,6 +22091,7 @@ async function markOrderInGroupByPhone(phone, how) {
   order.inGroupAt = Date.now()
   order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how }
   await savePaymentOrder(order)
+  await setGroupMember(phone, true).catch(() => {})
   return true
 }
 
@@ -22061,6 +22201,45 @@ async function reportGroupJoinRequest(msg, text) {
     'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
 }
 
+// Admin: tempel daftar anggota grup -> simpan, tandai order, dan kembalikan perbandingannya
+app.post('/api/admin/group-members/sync', express.json({ limit: '1mb' }), async (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const phones = parseMemberList(req.body.text)
+    if (phones.length < 3) return res.json({ success: false, error: 'Daftar tidak terbaca. Tempel daftar nomor anggota grup dari WhatsApp.' })
+    await saveGroupMembers(phones)
+    // Order lunas milik anggota grup otomatis ditandai sudah masuk
+    const set = new Set(phones)
+    let marked = 0
+    for (const o of await loadPaymentOrders()) {
+      if (o.status !== 'paid' || o.inGroup || !set.has(o.phone)) continue
+      const order = await readPaymentOrder(o.id)
+      if (!order || order.inGroup) continue
+      order.inGroup = true
+      order.inGroupAt = Date.now()
+      order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'sinkron daftar grup' }
+      await savePaymentOrder(order)
+      marked++
+    }
+    const cmp = await compareGroupWithUsers(phones)
+    pushLog(`Admin | Grup: daftar anggota disinkron - ${cmp.groupTotal} anggota, ${cmp.groupOnly.length} tidak terdaftar di web, ${cmp.webOnly.length} user web belum di grup, ${marked} order ditandai masuk`)
+    res.json({ success: true, marked, syncedAt: Date.now(), ...cmp })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+app.get('/api/admin/group-members', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const g = await getGroupMembers()
+    if (!g.at) return res.json({ success: true, syncedAt: 0 })
+    res.json({ success: true, syncedAt: g.at, ...(await compareGroupWithUsers([...g.phones])) })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
 // User menekan tombol di kotak "Gabung Grup WA". SETIAP klik dicatat di log (bagian Otomatis):
 //  - "Chat Admin": dicatat saja (isi chatnya dilaporkan terpisah saat pesannya benar-benar masuk).
 //  - "Buka Grup WhatsApp": 90 detik kemudian admin mendapat laporan lengkap, baik orangnya sudah
@@ -22135,7 +22314,10 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
     if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
     const s = await getPaymentSettings()
     if (!s.groupLink) return res.json({ success: false, error: 'Link grup belum diatur. Hubungi admin.' })
-    const pending = (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
+    const grp = await getGroupMembers()
+    // Belum masuk grup = tidak ada di daftar anggota (kalau daftar pernah disinkron), atau punya
+    // order lunas yang belum ditandai masuk
+    const pending = !grp.phones.has(phone) && (grp.at > 0 || (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup))
     if (!pending) return res.json({ success: true, suggest: false })
     res.json({ success: true, link: s.groupLink, phone, suggest: true })
   } catch (e) {
@@ -22692,6 +22874,7 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
       order.inGroupAt = order.inGroup ? Date.now() : null
       if (order.inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'ditandai admin' }
       await savePaymentOrder(order)
+      await setGroupMember(order.phone, order.inGroup).catch(() => {})
       pushLog(`Admin | Grup: +${order.phone} ${order.inGroup ? 'ditandai sudah masuk grup' : 'tanda masuk grup dibatalkan'} (panel admin)`)
       return res.json({ success: true, order })
     }
@@ -23126,9 +23309,11 @@ async function start() {
         if (action === 'add') {
           // Member baru masuk grup
           markOrderInGroupByPhone('62' + phone, 'terlihat masuk grup').catch(() => {})
+          if (/^[0-9]{8,13}$/.test(phone)) setGroupMember('62' + phone, true).catch(() => {})
           await autoRegisterGroupMember(phone)
         } else if (action === 'remove') {
           // Member keluar/dikeluarkan dari grup
+          if (/^[0-9]{8,13}$/.test(phone)) setGroupMember('62' + phone, false).catch(() => {})
           await removeGroupMember(phone)
         }
       }
