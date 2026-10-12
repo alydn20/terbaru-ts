@@ -9946,7 +9946,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payAutoVerify" style="width:18px;height:18px;cursor:pointer;">
-            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, selain itu = tolak otomatis dengan alasannya dan orangnya bisa upload ulang. Anda tetap bisa ACC atau menolak sendiri. Laporan dikirim ke Telegram dan WA admin.)</span></span>
+            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Nominal cocok dan tidak ada yang bertentangan = ACC otomatis, selain itu = tolak otomatis dengan alasannya dan orangnya bisa upload ulang. Anda tetap bisa ACC atau menolak sendiri. Laporan dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -21962,7 +21962,8 @@ function scheduleNotInGroupReport() {
 // Teks di screenshot dibaca (Tesseract, berjalan di server sendiri) lalu diperiksa: nominal,
 // nama penerima, status transaksi, tanggal, dan apakah bukti/ID transaksinya pernah dipakai.
 // Hasilnya selalu diputuskan sendiri: 'accept' (ACC otomatis) atau 'reject' (tolak otomatis +
-// alasan). 'manual' hanya terjadi kalau gambarnya gagal dibaca karena gangguan teknis.
+// alasan). Yang wajib cocok hanya nominal; data lain hanya menggagalkan kalau terbaca dan salah.
+// 'manual' hanya terjadi kalau gambarnya gagal dibaca karena gangguan teknis.
 // Admin selalu bisa mengubah keputusan: ACC yang ditolak, atau hapus / blokir yang sudah di-ACC.
 // CATATAN: OCR hanya membaca tulisan. Screenshot yang diedit rapi tetap bisa lolos, jadi
 // laporan ke admin selalu menyertakan fotonya untuk dicek sekilas.
@@ -22092,27 +22093,32 @@ function analyzeProofText(text, order, merchantName, now) {
   const ids = [...new Set(text.replace(/[ \t]/g, '').match(/[0-9]{15,}/g) || [])].slice(0, 5)
   checks.push('ID transaksi: ' + (ids.length ? ids[0].substring(0, 10) + '...' : 'tidak terbaca'))
 
-  let verdict = 'manual', reason = ''
-  if (readable && amountWrong && (successOk || dates.length > 0)) {
-    verdict = 'reject'; reason = 'Nominal di bukti (' + otherExplicit.slice(0, 2).map(rp).join(', ') + ') tidak sama dengan ' + rp(order.amount)
-  } else if (readable && dateWrong && amounts.all.length > 0) {
-    verdict = 'reject'; reason = 'Tanggal di bukti (' + dates.slice(0, 2).map(tampil).join(', ') + ') bukan tanggal pembayaran order ini'
-  } else if (readable && failed && amounts.all.length > 0) {
-    verdict = 'reject'; reason = 'Status transaksi di bukti bukan berhasil'
-  } else if (amountOk && successOk && dateOk && (merchantOk || !mName)) {
+  // ATURAN KEPUTUSAN
+  // Yang wajib hanya NOMINAL, karena nominal tiap nomor berbeda (harga + 3 angka terakhir nomor)
+  // dan hampir selalu tertulis di bukti apa pun bentuknya (screenshot, foto layar HP, struk).
+  // Status, nama penerima, tanggal, dan ID transaksi tidak wajib ada; tetapi kalau TERBACA dan
+  // isinya bertentangan, bukti ditolak.
+  // Halaman QRIS website ini sendiri juga memuat nominalnya: itu bukan bukti pembayaran.
+  const ownPage = /(scan qris|bayar tepat|upload bukti|nomor belum terdaftar|treasury price monitor|simpan gambar qris)/.test(lower)
+  // Layar aplikasi SEBELUM membayar (konfirmasi / minta PIN) juga memuat nominal dan nama penerima
+  const beforePay = !successOk && /(konfirmasi pembayaran|masukkan pin|bayar sekarang|lanjutkan pembayaran|geser untuk bayar|slide to pay|confirm payment|enter pin)/.test(lower)
+  let verdict = 'reject', reason = ''
+  if (ownPage) {
+    reason = 'Itu halaman QRIS, bukan bukti pembayaran. Upload bukti dari aplikasi pembayaran setelah membayar'
+  } else if (failed && amounts.all.length > 0) {
+    reason = 'Status transaksi di bukti bukan berhasil'
+  } else if (beforePay) {
+    reason = 'Itu layar sebelum membayar, bukan bukti pembayaran. Upload bukti setelah transaksi berhasil'
+  } else if (dateWrong && amounts.all.length > 0) {
+    reason = 'Tanggal di bukti (' + dates.slice(0, 2).map(tampil).join(', ') + ') bukan tanggal pembayaran order ini'
+  } else if (amountOk) {
     verdict = 'accept'
+  } else if (amountWrong) {
+    reason = 'Nominal di bukti (' + otherExplicit.slice(0, 2).map(rp).join(', ') + ') tidak sama dengan ' + rp(order.amount)
+  } else if (!readable || amounts.all.length === 0) {
+    reason = 'Foto bukan bukti pembayaran atau tidak terbaca. Upload bukti pembayaran yang jelas, nominal ' + rp(order.amount) + ' harus terlihat'
   } else {
-    // Tidak ada keputusan "menunggu admin": yang tidak lengkap ditolak, dan orangnya diberi tahu
-    // apa yang kurang supaya bisa upload bukti yang benar. Admin tetap bisa membatalkan penolakan.
-    verdict = 'reject'
-    const kurang = []
-    if (!amountOk) kurang.push('nominal ' + rp(order.amount))
-    if (!successOk) kurang.push('status berhasil')
-    if (mName && !merchantOk) kurang.push('nama penerima ' + mName)
-    if (!dateOk) kurang.push('tanggal pembayaran')
-    reason = (!amountOk && !successOk && !dateOk && amounts.all.length === 0)
-      ? 'Foto bukan bukti pembayaran atau tidak terbaca. Upload screenshot bukti pembayaran yang jelas dan utuh'
-      : 'Bukti tidak lengkap, tidak terbaca: ' + kurang.join(', ') + '. Upload screenshot bukti pembayaran yang jelas dan utuh'
+    reason = 'Nominal ' + rp(order.amount) + ' tidak terbaca di bukti. Upload bukti pembayaran yang jelas dan utuh'
   }
   return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
 }
