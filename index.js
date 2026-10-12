@@ -20735,8 +20735,16 @@ async function notifyAdminsTelegram(text, photo) {
 async function notifyAdminsWa(text, photo) {
   notifyAdminsTelegram(text, photo).catch(() => {})
   if (!sock || !isReady) return
+  // Kalau ada foto (bukti bayar), kirim sebagai gambar dengan teksnya sebagai keterangan
+  const content = photo && photo.buffer
+    ? { image: photo.buffer, mimetype: photo.mime || 'image/jpeg', caption: text }
+    : { text }
   for (const admin of ADMIN_PHONES) {
-    sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
+    sock.sendMessage(admin + '@s.whatsapp.net', content).catch(e => {
+      // Gambar gagal terkirim: tetap kirim teksnya supaya admin tidak ketinggalan notifikasi
+      if (content.image) sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
+      pushLog('PAY | Gagal kirim WA ke admin: ' + (e && e.message ? e.message : e))
+    })
   }
 }
 
