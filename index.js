@@ -8122,7 +8122,7 @@ app.get('/login', async (req, res) => {
         <img id="payQr" alt="QRIS" style="width:200px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
         <div style="margin-top:4px;font-size:0.78em;"><a href="#" id="payQrSave" download="qris-pembayaran.png" style="color:#f7931a;">Simpan gambar QRIS</a> <span style="color:#9ca3af;">(kalau bayar dari HP ini)</span></div>
         <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;margin-top:6px;"></div>
-        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Jangan dibulatkan. 3 angka terakhir adalah tanda pengenal nomor Anda.</div>
+        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Bayar tepat sesuai nominal, jangan dibulatkan.</div>
         <style>
           @keyframes payPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); } 50% { box-shadow: 0 0 0 12px rgba(34,197,94,0); } }
           #payClaimBtn { animation: payPulse 1.6s infinite; }
@@ -8130,7 +8130,7 @@ app.get('/login', async (req, res) => {
         </style>
         <div id="payUploadBox" style="border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(34,197,94,0.12);">
           <div style="font-weight:800;font-size:1em;color:#22c55e;margin-bottom:4px;">Langkah 2. SUDAH BAYAR?</div>
-          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri. Pastikan fotonya benar: bukti tidak bisa diganti selama dicek admin.</div>
+          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Upload bukti pembayaran Anda.</div>
           <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
           <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">UPLOAD BUKTI PEMBAYARAN</button>
           <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
@@ -8140,7 +8140,7 @@ app.get('/login', async (req, res) => {
           <div style="font-size:0.88em;margin-bottom:8px;">Alasan: <b id="payRejectReason"></b></div>
           <div style="font-size:0.8em;color:#9ca3af;margin-bottom:6px;">Bukti yang Anda kirim:</div>
           <img id="payRejectImg" alt="Bukti yang ditolak" style="display:block;max-width:100%;max-height:260px;margin:0 auto 8px;border-radius:8px;">
-          <div style="font-size:0.85em;">Upload bukti yang benar lewat tombol hijau. Butuh bantuan? <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">Hubungi admin</a>.</div>
+          <div style="font-size:0.85em;">Upload bukti baru, atau <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">hubungi admin</a>.</div>
         </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
@@ -8508,7 +8508,7 @@ app.get('/login', async (req, res) => {
         var hint0 = document.getElementById('payUploadHint');
         if (hint0) hint0.style.display = '';
         cb.textContent = 'UPLOAD BUKTI PEMBAYARAN';
-        st.textContent = 'WAJIB. Tanpa upload bukti, pembayaran Anda tidak diproses admin.';
+        st.textContent = 'Wajib upload bukti.';
         st.style.color = '#fbbf24';
         return;
       }
@@ -8517,8 +8517,8 @@ app.get('/login', async (req, res) => {
       var hint = document.getElementById('payUploadHint');
       if (hint) hint.style.display = 'none';
       st.textContent = proofStatus === 'checking'
-        ? 'Bukti terkirim dan sedang diperiksa. Tunggu sebentar, halaman ini lanjut otomatis.'
-        : 'Bukti terkirim. Menunggu konfirmasi admin, halaman ini lanjut otomatis. Boleh ditutup: pembayaran ini tetap tersimpan.';
+        ? 'Bukti terkirim. Sedang diperiksa...'
+        : 'Bukti terkirim. Menunggu konfirmasi.';
       st.style.color = '#4ade80';
     }
 
@@ -8600,7 +8600,7 @@ app.get('/login', async (req, res) => {
       cb.style.display = 'block';
       cb.disabled = false;
       cb.textContent = 'UPLOAD BUKTI BARU';
-      st.textContent = 'Bukti sebelumnya ditolak. Upload bukti yang benar.';
+      st.textContent = 'Bukti ditolak. Upload bukti baru.';
       st.style.color = '#ef4444';
     }
     function contactAdminRejected() {
@@ -8664,12 +8664,49 @@ app.get('/login', async (req, res) => {
       return await new Promise(function(resolve) { c.toBlob(resolve, 'image/jpeg', 0.75); });
     }
 
+    // Kotak konfirmasi (tampilan sama dengan konfirmasi Logout di halaman monitoring)
+    function payConfirm(title, message, okText) {
+      return new Promise(function(resolve) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100000;';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:linear-gradient(180deg,rgba(25,32,42,0.98) 0%,rgba(18,24,32,0.98) 100%);border-radius:16px;padding:24px;width:90%;max-width:340px;text-align:center;border:1px solid rgba(255,255,255,0.1);box-shadow:0 25px 60px rgba(0,0,0,0.5);';
+        var icon = document.createElement('div');
+        icon.style.cssText = 'width:56px;height:56px;border-radius:50%;background:rgba(251,191,36,0.15);color:#fbbf24;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;font-weight:700;';
+        icon.textContent = '?';
+        var t = document.createElement('div');
+        t.style.cssText = 'color:#fff;font-size:1.1em;font-weight:600;margin-bottom:8px;';
+        t.textContent = title;
+        var m = document.createElement('div');
+        m.style.cssText = 'color:#9ca3af;font-size:0.9em;line-height:1.5;margin-bottom:20px;';
+        m.textContent = message;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+        var btnCss = 'padding:10px 24px;border-radius:10px;font-size:0.88em;font-weight:600;cursor:pointer;border:none;';
+        var no = document.createElement('button');
+        no.type = 'button';
+        no.style.cssText = btnCss + 'background:rgba(255,255,255,0.08);color:#e7e9ea;';
+        no.textContent = 'Batal';
+        var yes = document.createElement('button');
+        yes.type = 'button';
+        yes.style.cssText = btnCss + 'background:linear-gradient(135deg,#f7931a 0%,#e8850f 100%);color:#fff;';
+        yes.textContent = okText || 'Ya';
+        var done = function(v) { wrap.remove(); resolve(v); };
+        no.onclick = function() { done(false); };
+        yes.onclick = function() { done(true); };
+        row.appendChild(no); row.appendChild(yes);
+        box.appendChild(icon); box.appendChild(t); box.appendChild(m); box.appendChild(row);
+        wrap.appendChild(box);
+        document.body.appendChild(wrap);
+      });
+    }
+
     var _payUploading = false;
     async function uploadPaymentProof(input) {
       var file = input.files && input.files[0];
       input.value = '';
       if (!file || !_payOrder) return;
-      if (!window.confirm('Pastikan ini foto bukti pembayaran yang benar. Setelah terkirim, bukti tidak bisa diganti selama dicek admin. Kirim sekarang?')) return;
+      if (!(await payConfirm('Kirim bukti?', 'Pastikan fotonya benar.', 'Kirim'))) return;
       var cb = document.getElementById('payClaimBtn');
       var st = document.getElementById('payStatus');
       _payUploading = true;
@@ -19168,19 +19205,16 @@ app.get('/monitoring', async (req, res) => {
       try {
         d = await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
       } catch (e) {}
-      // Menu hanya ditampilkan untuk yang sudah lunas tetapi belum ditandai masuk grup
+      // Menu ditampilkan untuk semua user; ajakan otomatis hanya untuk yang belum masuk grup
       var menuBtn = document.getElementById('joinGroupBtn');
-      if (menuBtn) menuBtn.style.display = (d && d.success && d.suggest) ? '' : 'none';
+      if (menuBtn) menuBtn.style.display = (d && d.success) ? '' : 'none';
       if (!d || !d.success) {
         if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
         return;
       }
-      if (!d.suggest) {
-        if (!silent) await showConfirm('Anda sudah tercatat masuk grup.', 'Gabung Grup WA');
-        return;
-      }
       if (silent) {
-        // Sekali sehari saja mengajak user yang sudah lunas tapi belum masuk grup
+        // Ajakan otomatis: hanya untuk yang belum masuk grup, sekali sehari
+        if (!d.suggest) return;
         var today = new Date().toISOString().substring(0, 10);
         try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
       }
@@ -19216,7 +19250,7 @@ app.get('/monitoring', async (req, res) => {
       a2.onclick = function() {
         lapor('chat');
         unlocked = true;
-        a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
+        a1.href = '/go/grup/' + d.ticket; a1.target = '_blank'; a1.rel = 'noopener noreferrer';
         a1.style.background = '#22c55e'; a1.style.color = '#fff';
         hint.textContent = 'Kirim dulu pesannya di WhatsApp, lalu kembali ke sini dan tekan Buka Grup WhatsApp.';
       };
@@ -19227,9 +19261,17 @@ app.get('/monitoring', async (req, res) => {
           hint.style.color = '#ef4444';
           return;
         }
-        // Server mencatat dan melapor ke admin bahwa nomor ini membuka link grup
-        lapor('group');
+        // Tiket hanya berlaku sekali, jadi kotak ditutup setelah tombol ditekan.
+        // (Klik ini dicatat dan dilaporkan ke admin oleh server saat tiketnya dibuka.)
+        setTimeout(function() { wrap.remove(); }, 400);
       };
+      // Tekan lama / klik kanan pada tombol tidak menampilkan menu "salin tautan"
+      a1.oncontextmenu = function(ev) { ev.preventDefault(); };
+      a1.style.webkitTouchCallout = 'none';
+      a1.style.userSelect = 'none';
+      a2.oncontextmenu = function(ev) { ev.preventDefault(); };
+      a2.style.webkitTouchCallout = 'none';
+      a2.style.userSelect = 'none';
       box.appendChild(a1);
       box.appendChild(hint);
       var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
@@ -22245,28 +22287,62 @@ app.get('/api/admin/group-members', async (req, res) => {
 //  - "Buka Grup WhatsApp": 90 detik kemudian admin mendapat laporan lengkap, baik orangnya sudah
 //    chat admin maupun belum, beserta ada/tidaknya permintaan bergabung di grup.
 const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
+const _groupTickets = new Map()   // tiket sekali pakai -> { phone, until }
+
+// Tombol "Buka Grup WhatsApp" mengarah ke sini, bukan langsung ke link grup. Tiket hanya berlaku
+// sekali dan 10 menit, jadi alamat ini tidak berguna kalau disalin / disebar / dibuka dari riwayat.
+// Halaman ini langsung membuka aplikasi WhatsApp; link grupnya tidak ditampilkan di layar.
+// Catatan: ini mempersulit, bukan mustahil - orang yang paham teknis tetap bisa mengambil link dari
+// lalu lintas browsernya. Pengaman sebenarnya adalah "Setujui anggota baru" di grup.
+app.get('/go/grup/:ticket', rateLimit(20, 60000), async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  const page = (judul, isi, script) => `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="robots" content="noindex"><title>${judul}</title></head><body style="margin:0;background:#000;color:#e7e9ea;font-family:-apple-system,Segoe UI,Roboto,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center;padding:24px;"><div><div style="font-size:1.15em;font-weight:700;margin-bottom:10px;">${judul}</div><div style="color:#9ca3af;font-size:0.95em;line-height:1.5;">${isi}</div></div>${script || ''}</body></html>`
+  try {
+    const key = String(req.params.ticket || '')
+    const t = _groupTickets.get(key)
+    _groupTickets.delete(key)
+    const s = await getPaymentSettings()
+    if (!t || t.until < Date.now() || !s.groupLink || !(await isUserValid(t.phone)).valid) {
+      return res.status(410).send(page('Tautan sudah tidak berlaku', 'Tautan ini hanya bisa dipakai satu kali. Buka lagi dari menu Gabung Grup WA di website.'))
+    }
+    noteGroupButton(t.phone, 'group').catch(() => {})
+    const code = s.groupLink.split('/').pop().split('?')[0].replace(/[^A-Za-z0-9]/g, '')
+    // Aplikasi WhatsApp dibuka langsung (tanpa lewat halaman chat.whatsapp.com), dan halaman ini
+    // mengganti dirinya di riwayat. Kalau aplikasi tidak terpasang, baru jatuh ke tautan web.
+    const script = `<script>(function(){var c=${JSON.stringify(code)};try{history.replaceState(null,'','/go/grup');}catch(e){}location.replace('whatsapp://chat?code='+c);setTimeout(function(){if(!document.hidden)location.replace('https://chat.whatsapp.com/'+c);},2500);setTimeout(function(){try{window.close();}catch(e){}},6000);})();</script>`
+    res.send(page('Membuka WhatsApp...', 'Tekan Gabung / Minta bergabung di WhatsApp. Halaman ini boleh ditutup.', script))
+  } catch (e) {
+    res.status(500).send(page('Terjadi gangguan', 'Coba lagi dari menu Gabung Grup WA di website.'))
+  }
+})
+
+// Catat klik tombol (per tombol, sekali per 10 menit) dan jadwalkan laporan untuk tombol grup
+async function noteGroupButton(phone, action) {
+  if (!phone || phone === 'admin') return
+  const check = await isUserValid(phone)
+  if (!check.valid) return
+  const now = Date.now()
+  for (const [k, t] of _groupOpenSeen) if (now - t > 3600000) _groupOpenSeen.delete(k)
+  const seenKey = action + ':' + phone
+  if (_groupOpenSeen.has(seenKey) && now - _groupOpenSeen.get(seenKey) < 10 * 60 * 1000) return
+  _groupOpenSeen.set(seenKey, now)
+  if (action === 'chat') {
+    pushLog(`AUTO | Grup: +${phone} menekan tombol Chat Admin di website`)
+    return
+  }
+  pushLog(`AUTO | Grup: +${phone} menekan tombol Buka Grup WhatsApp di website`)
+  setTimeout(() => {
+    reportGroupLinkOpened(phone, check.user, now).catch(e => pushLog('AUTO | Grup: laporan buka link error - ' + (e && e.message ? e.message : e)))
+  }, 90000)
+}
+
+// Halaman melapor saat tombol Chat Admin ditekan (tombol grup dicatat server saat tiketnya dibuka)
 app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (req, res) => {
   res.json({ success: true })
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
-    if (!phone || phone === 'admin') return
-    const check = await isUserValid(phone)
-    if (!check.valid) return
-    const now = Date.now()
-    const action = req.body && req.body.action === 'chat' ? 'chat' : 'group'
-    for (const [k, t] of _groupOpenSeen) if (now - t > 3600000) _groupOpenSeen.delete(k)
-    // Klik berulang dalam 10 menit tidak dilaporkan lagi (per tombol)
-    const seenKey = action + ':' + phone
-    if (_groupOpenSeen.has(seenKey) && now - _groupOpenSeen.get(seenKey) < 10 * 60 * 1000) return
-    _groupOpenSeen.set(seenKey, now)
-    if (action === 'chat') {
-      pushLog(`AUTO | Grup: +${phone} menekan tombol Chat Admin di website`)
-      return
-    }
-    pushLog(`AUTO | Grup: +${phone} menekan tombol Buka Grup WhatsApp di website`)
-    setTimeout(() => {
-      reportGroupLinkOpened(phone, check.user, now).catch(e => pushLog('AUTO | Grup: laporan buka link error - ' + (e && e.message ? e.message : e)))
-    }, 90000)
+    await noteGroupButton(phone, req.body && req.body.action === 'chat' ? 'chat' : 'group')
   } catch (e) {}
 })
 
@@ -22318,8 +22394,13 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
     // Belum masuk grup = tidak ada di daftar anggota (kalau daftar pernah disinkron), atau punya
     // order lunas yang belum ditandai masuk
     const pending = !grp.phones.has(phone) && (grp.at > 0 || (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup))
-    if (!pending) return res.json({ success: true, suggest: false })
-    res.json({ success: true, link: s.groupLink, phone, suggest: true })
+    // Link grup tidak pernah dikirim ke halaman. Yang dikirim hanya tiket sekali pakai (10 menit)
+    // untuk alamat /go/grup/<tiket>; link aslinya baru dipakai di server saat tiket itu dibuka.
+    const ticket = crypto.randomBytes(12).toString('hex')
+    const now = Date.now()
+    for (const [k, v] of _groupTickets) if (v.until < now) _groupTickets.delete(k)
+    _groupTickets.set(ticket, { phone, until: now + 10 * 60 * 1000 })
+    res.json({ success: true, ticket, phone, suggest: pending })
   } catch (e) {
     res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
   }
