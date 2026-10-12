@@ -461,7 +461,9 @@ const REDIS_KEYS = {
   FRESH_TOKEN: 'gold:fresh_token',         // String: token "fresh" — bila berubah, semua client tampilkan tur + reset sound/getar
   KICKED_SESSIONS: 'gold:kicked_sessions', // Hash: sessionId -> timestamp (session ditendang karena login di perangkat lain)
   SESSION_META: 'gold:session_meta',       // Hash: sessionId -> JSON {ip, ua, time}
-  API_TOKENS: 'gold:api_tokens'            // Hash: apiKey -> JSON { name, enabled, createdAt } untuk API eksternal
+  API_TOKENS: 'gold:api_tokens',           // Hash: apiKey -> JSON { name, enabled, createdAt } untuk API eksternal
+  PAYMENT_SETTINGS: 'gold:payment_settings', // JSON: pengaturan pendaftaran via QRIS
+  PAYMENT_ORDERS: 'gold:payment_orders'      // Hash: orderId -> JSON order pembayaran QRIS
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -8088,6 +8090,19 @@ app.get('/login', async (req, res) => {
         </button>
       </div>
 
+      <!-- Pembayaran QRIS untuk nomor yang belum terdaftar -->
+      <div id="payForm" style="display:none;text-align:center;">
+        <div style="font-weight:700;font-size:1.05em;margin-bottom:4px;">Nomor belum terdaftar</div>
+        <div id="payDesc" style="color:#9ca3af;font-size:0.85em;margin-bottom:14px;"></div>
+        <img id="payQr" alt="QRIS" style="width:240px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
+        <div style="margin:12px 0 2px;color:#9ca3af;font-size:0.8em;">Bayar TEPAT sejumlah</div>
+        <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;"></div>
+        <div style="color:#9ca3af;font-size:0.75em;margin:4px 0 12px;">Nominal sudah termasuk 3 angka terakhir nomor Anda sebagai tanda pengenal. Jangan dibulatkan.</div>
+        <div id="payStatus" style="font-size:0.85em;margin-bottom:12px;"></div>
+        <button class="btn btn-primary" id="payClaimBtn" onclick="claimPayment()" style="margin-bottom:8px;">Saya sudah bayar</button>
+        <button class="btn btn-secondary" onclick="cancelPayment()">Batal</button>
+      </div>
+
       <!-- Step 2: PIN Input -->
       <div id="pinForm" style="display:none;">
         <div class="user-info" id="userInfo">
@@ -8408,10 +8423,14 @@ app.get('/login', async (req, res) => {
           setupPinInputs(pinInputs, () => submitLogin());
           pinInputs[0].focus();
         } else if (data.needRegister) {
-          // Nomor tidak terdaftar — langsung redirect ke WA admin
-          const message = encodeURIComponent('Halo, saya ingin daftar grup harga Treasury.\\n\\nNomor WA saya: +62' + phone);
-          window.location.href = 'https://wa.me/62895701692525?text=' + message;
-          return;
+          // Nomor tidak terdaftar — tampilkan pembayaran QRIS bila aktif; kalau tidak,
+          // ikuti pengaturan admin: arahkan ke WA admin atau cukup tampilkan pesan.
+          const payResult = await startPaymentFlow(phone);
+          if (payResult === 'redirect') {
+            const message = encodeURIComponent('Halo, saya ingin daftar grup harga Treasury.\\n\\nNomor WA saya: +62' + phone);
+            window.location.href = 'https://wa.me/62895701692525?text=' + message;
+            return;
+          }
         } else {
           showMessage(data.error || 'Gagal memeriksa nomor', 'error');
         }
@@ -8424,6 +8443,126 @@ app.get('/login', async (req, res) => {
       if (window.turnstile) { try { turnstile.reset(); } catch (e) {} }
       setLoading(btn, false);
       btn.textContent = 'Masuk ke Akun';
+    }
+
+    // ===== Pembayaran QRIS untuk nomor yang belum terdaftar =====
+    var _payTimer = null;
+    var _payOrder = null;
+    function _rupiah(n) { return 'Rp' + Number(n).toLocaleString('id-ID'); }
+
+    // Hasil: 'pay' (form QRIS tampil), 'redirect' (arahkan ke WA admin), 'none' (hanya pesan)
+    async function startPaymentFlow(phone) {
+      var cfg = null;
+      try { cfg = await (await fetch('/api/payment/config')).json(); } catch (e) {}
+      if (!cfg || !cfg.enabled) {
+        if (cfg && cfg.waFallback === false) {
+          showMessage('Nomor tidak terdaftar.', 'error');
+          return 'none';
+        }
+        return 'redirect';
+      }
+      try {
+        var res = await fetch('/api/payment/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phone })
+        });
+        var data = await res.json();
+        if (!data.success) {
+          showMessage(data.error || 'Gagal membuat pembayaran', 'error');
+          return 'none';
+        }
+        _payOrder = data.order;
+        document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
+        document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
+        var img = document.getElementById('payQr');
+        if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; }
+        else { img.style.display = 'none'; }
+        var st = document.getElementById('payStatus');
+        st.textContent = 'Setelah membayar, tekan "Saya sudah bayar".';
+        st.style.color = '';
+        var cb = document.getElementById('payClaimBtn');
+        cb.disabled = false;
+        cb.textContent = 'Saya sudah bayar';
+        hideMessage();
+        document.getElementById('phoneForm').style.display = 'none';
+        document.getElementById('payForm').style.display = 'block';
+        _pollPayment();
+        return 'pay';
+      } catch (e) {
+        showMessage('Terjadi kesalahan. Coba lagi.', 'error');
+        return 'none';
+      }
+    }
+
+    function _stopPayPolling() {
+      if (_payTimer) { clearInterval(_payTimer); _payTimer = null; }
+    }
+
+    function _pollPayment() {
+      _stopPayPolling();
+      _payTimer = setInterval(async function() {
+        if (!_payOrder) return;
+        var left = Math.max(0, Math.floor((_payOrder.expiresAt - Date.now()) / 1000));
+        if (document.hidden) return;
+        var st = document.getElementById('payStatus');
+        var status = '';
+        try {
+          var d = await (await fetch('/api/payment/status?id=' + _payOrder.id)).json();
+          if (d.success) status = d.status;
+        } catch (e) {}
+        if (status === 'paid') { _paymentDone(); return; }
+        if (status === 'expired' || status === 'rejected' || left === 0) {
+          _stopPayPolling();
+          st.textContent = status === 'rejected'
+            ? 'Pembayaran ditolak admin. Hubungi admin bila sudah membayar.'
+            : 'Order sudah tidak berlaku. Tekan Batal lalu coba lagi.';
+          st.style.color = '#ef4444';
+          return;
+        }
+      }, 5000);
+    }
+
+    function _paymentDone() {
+      _stopPayPolling();
+      _payOrder = null;
+      document.getElementById('payForm').style.display = 'none';
+      document.getElementById('phoneForm').style.display = 'block';
+      showMessage('Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
+      setTimeout(function() { checkUser(); }, 1500);
+    }
+
+    async function claimPayment() {
+      if (!_payOrder) return;
+      var cb = document.getElementById('payClaimBtn');
+      var st = document.getElementById('payStatus');
+      cb.disabled = true;
+      try {
+        var d = await (await fetch('/api/payment/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: _payOrder.id })
+        })).json();
+        if (d.success) {
+          cb.textContent = 'Menunggu konfirmasi admin...';
+          st.textContent = 'Admin sudah diberi tahu. Halaman ini lanjut otomatis setelah pembayaran dikonfirmasi. Boleh ditutup, lalu login lagi nanti.';
+          st.style.color = '';
+        } else {
+          cb.disabled = false;
+          st.textContent = d.error || 'Gagal mengirim. Coba lagi.';
+          st.style.color = '#ef4444';
+        }
+      } catch (e) {
+        cb.disabled = false;
+      }
+    }
+
+    function cancelPayment() {
+      _stopPayPolling();
+      _payOrder = null;
+      document.getElementById('payForm').style.display = 'none';
+      document.getElementById('phoneForm').style.display = 'block';
+      hideMessage();
     }
 
     // Back to phone input
@@ -9625,6 +9764,72 @@ ${authScript}
 
       <!-- Section: Pengaturan -->
       <div class="section-content" id="section-settings">
+        <!-- Pembayaran QRIS -->
+        <div class="card">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="21"/><line x1="18" y1="14" x2="21" y2="14"/><line x1="18" y1="18" x2="21" y2="21"/>
+            </svg>
+            Pendaftaran Otomatis via QRIS
+          </h2>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Nomor yang belum terdaftar membayar lewat QRIS di halaman login. Nominalnya = harga + 3 angka terakhir nomor HP (nomor berakhiran 0393 membayar Rp5.393). Setelah kamu ACC, akun langsung aktif dengan tanggal berakhir terisi otomatis, dan dihapus sendiri saat masa aktif habis.</p>
+          <div class="result-msg" id="paySettingsResult"></div>
+
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
+            <input type="checkbox" id="payEnabled" style="width:18px;height:18px;cursor:pointer;">
+            <span>Aktifkan pembayaran QRIS di halaman login</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="payWaFallback" style="width:18px;height:18px;cursor:pointer;">
+            <span>Kalau QRIS dimatikan: arahkan nomor tidak terdaftar ke WhatsApp admin <span style="color:#6b7280;font-size:0.85em;">(kalau tidak dicentang, hanya muncul pesan "Nomor tidak terdaftar")</span></span>
+          </label>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div class="form-group" style="margin:0;">
+              <label>Harga (Rp)</label>
+              <input type="number" id="payPrice" min="1000" step="500" placeholder="5000">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label>Masa aktif (hari)</label>
+              <input type="number" id="payDays" min="1" step="1" placeholder="30">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>String QRIS statis <span style="color:#6b7280;font-weight:400;">(teks hasil scan QRIS kamu, diawali 000201)</span></label>
+            <textarea id="payQris" rows="4" placeholder="00020101021126..." style="width:100%;font-family:monospace;font-size:0.8em;word-break:break-all;"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+              <input type="file" id="payQrisFile" accept="image/*" style="display:none;" onchange="decodeQrisImage(this)">
+              <button class="btn btn-secondary btn-sm" type="button" onclick="document.getElementById('payQrisFile').click()">Baca dari gambar QRIS</button>
+              <span style="color:#6b7280;font-size:0.78em;">Atau scan QRIS kamu dengan Google Lens / aplikasi scanner, salin teksnya, lalu tempel di atas.</span>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" style="width:100%;" onclick="savePaymentSettings(false)">Simpan Pengaturan QRIS</button>
+
+          <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(247,147,26,0.05);border:1px solid rgba(247,147,26,0.15);">
+            <label style="color:#f7931a;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">Opsional: ACC otomatis (penerus notifikasi)</label>
+            <p style="color:#6b7280;font-size:0.8em;margin-bottom:8px;">Tidak wajib. Kalau suatu saat mau tanpa ACC manual: pasang aplikasi penerus notifikasi di HP yang menerima notifikasi pembayaran, lalu arahkan ke alamat ini (metode POST, isi = teks notifikasi). Jangan bagikan alamat ini.</p>
+            <input type="text" id="payNotifyUrl" readonly onclick="this.select()" style="width:100%;font-family:monospace;font-size:0.78em;">
+            <button class="btn btn-secondary btn-sm" type="button" style="margin-top:8px;" onclick="savePaymentSettings(true)">Ganti secret</button>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;">
+            <label style="font-weight:600;">Order pembayaran (100 terbaru)</label>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="user-table">
+              <thead>
+                <tr><th>Waktu</th><th>Nomor</th><th>Nominal</th><th>Status</th><th>Aksi</th></tr>
+              </thead>
+              <tbody id="payOrdersBody">
+                <tr><td colspan="5" style="text-align:center;color:#6b7280;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Tur Pengenalan & Sound/Getar -->
         <div class="card">
           <h2>
@@ -10217,6 +10422,7 @@ ${authScript}
       loadPromoLimit();
       loadMarkupSettingsAdmin();
       loadThemeAdmin();
+      loadPaymentAdmin();
       loadApiTokensAdmin();
       loadBroadcastHistory();
       connectAdminSSE();
@@ -10888,6 +11094,130 @@ ${authScript}
     }
 
     // ==================== Markup Settings Functions ====================
+    // ==================== Pembayaran QRIS ====================
+    function loadPaymentAdmin() {
+      adminFetch('/api/admin/payment-settings')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          const s = data.settings;
+          document.getElementById('payEnabled').checked = !!s.enabled;
+          document.getElementById('payWaFallback').checked = s.waFallback !== false;
+          document.getElementById('payPrice').value = s.price;
+          document.getElementById('payDays').value = s.days;
+          document.getElementById('payQris').value = s.qrisStatic || '';
+          document.getElementById('payNotifyUrl').value = s.notifySecret
+            ? location.origin + '/api/payment/notify?secret=' + s.notifySecret
+            : '(simpan pengaturan dulu untuk membuat alamat)';
+        });
+      loadPaymentOrders();
+    }
+
+    function savePaymentSettings(regenerateSecret) {
+      const result = document.getElementById('paySettingsResult');
+      adminFetch('/api/admin/payment-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: document.getElementById('payEnabled').checked,
+          waFallback: document.getElementById('payWaFallback').checked,
+          price: document.getElementById('payPrice').value,
+          days: document.getElementById('payDays').value,
+          qrisStatic: document.getElementById('payQris').value,
+          regenerateSecret: !!regenerateSecret
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          result.className = 'result-msg success';
+          result.textContent = 'Pengaturan QRIS disimpan.';
+          loadPaymentAdmin();
+        } else {
+          result.className = 'result-msg error';
+          result.textContent = 'Gagal: ' + data.error;
+        }
+        setTimeout(() => result.className = 'result-msg', 6000);
+      })
+      .catch(e => {
+        result.className = 'result-msg error';
+        result.textContent = 'Error: ' + e.message;
+      });
+    }
+
+    async function decodeQrisImage(input) {
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (!('BarcodeDetector' in window)) {
+        showAlert('Browser ini tidak bisa membaca QR dari gambar. Scan QRIS dengan Google Lens, salin teksnya, lalu tempel di kolom.', 'warning');
+        return;
+      }
+      try {
+        const bitmap = await createImageBitmap(file);
+        const codes = await new BarcodeDetector({ formats: ['qr_code'] }).detect(bitmap);
+        if (!codes.length) { showAlert('QR tidak terbaca dari gambar itu. Coba gambar yang lebih jelas.', 'warning'); return; }
+        document.getElementById('payQris').value = codes[0].rawValue;
+        showAlert('QRIS terbaca. Klik "Simpan Pengaturan QRIS" untuk menyimpan.', 'success');
+      } catch (e) {
+        showAlert('Gagal membaca gambar: ' + e.message, 'danger');
+      }
+    }
+
+    function loadPaymentOrders() {
+      const tbody = document.getElementById('payOrdersBody');
+      if (!tbody) return;
+      adminFetch('/api/admin/payment-orders')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          if (!data.orders.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Belum ada order</td></tr>';
+            return;
+          }
+          const labels = { pending: 'Menunggu', paid: 'Lunas', expired: 'Kedaluwarsa', rejected: 'Ditolak' };
+          const colors = { pending: '#f59e0b', paid: '#22c55e', expired: '#6b7280', rejected: '#ef4444' };
+          tbody.innerHTML = data.orders.map(o => {
+            const waktu = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            let ket = o.status === 'paid' && o.via ? ' <small style="color:#6b7280;">(' + o.via + ')</small>' : '';
+            if (o.status === 'pending' && o.claimedAt) ket = ' <small style="color:#22c55e;font-weight:600;">mengaku sudah bayar</small>';
+            const aksi = o.status === 'paid' ? '-' :
+              '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' +
+              (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
+            return '<tr>' +
+              '<td>' + waktu + '</td>' +
+              '<td class="phone">+' + o.phone + '</td>' +
+              '<td>Rp' + Number(o.amount).toLocaleString('id-ID') + '</td>' +
+              '<td><span style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span>' + ket + '</td>' +
+              '<td>' + aksi + '</td>' +
+            '</tr>';
+          }).join('');
+        });
+    }
+
+    async function paymentOrderAction(id, action) {
+      const confirmed = await showConfirm(
+        action === 'confirm' ? 'Konfirmasi pembayaran ini? Akun akan langsung aktif.' : 'Tolak order ini?',
+        { title: action === 'confirm' ? 'Konfirmasi Pembayaran' : 'Tolak Order', type: action === 'confirm' ? 'info' : 'danger' }
+      );
+      if (!confirmed) return;
+      adminFetch('/api/admin/payment-orders/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id, action: action })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showAlert(action === 'confirm' ? 'Pembayaran dikonfirmasi, akun aktif.' : 'Order ditolak.', 'success');
+          loadPaymentOrders();
+          loadUsers();
+        } else {
+          showAlert('Gagal: ' + data.error, 'danger');
+        }
+      });
+    }
+
     function loadMarkupSettingsAdmin() {
       adminFetch('/api/markup-settings')
         .then(r => r.json())
@@ -19792,6 +20122,371 @@ app.get('/monitoring/api', async (req, res) => {
     logs: logs.slice(-10),
     version: APP_VERSION
   })
+})
+
+// ==================== PEMBAYARAN QRIS (pendaftaran & perpanjangan otomatis) ====================
+// Nomor yang belum terdaftar membayar lewat QRIS: QRIS statis milik admin diubah jadi QRIS
+// dinamis dengan nominal unik = harga + 3 angka terakhir nomor HP (nomor ...0393 -> Rp5.393)
+// supaya admin langsung tahu pembayaran itu milik siapa.
+// Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
+// dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
+// auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, notifySecret: '' }
+const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
+let paymentSettingsCache = null
+
+async function getPaymentSettings() {
+  if (paymentSettingsCache) return paymentSettingsCache
+  try {
+    const raw = await redis.get(REDIS_KEYS.PAYMENT_SETTINGS)
+    const saved = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+    paymentSettingsCache = { ...DEFAULT_PAYMENT_SETTINGS, ...saved }
+  } catch (e) {
+    return { ...DEFAULT_PAYMENT_SETTINGS }
+  }
+  return paymentSettingsCache
+}
+
+// CRC16-CCITT (0xFFFF, polinomial 0x1021) — checksum standar QRIS/EMV
+function qrisCrc16(str) {
+  let crc = 0xFFFF
+  for (let i = 0; i < str.length; i++) {
+    crc ^= str.charCodeAt(i) << 8
+    for (let j = 0; j < 8; j++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0')
+}
+
+// Pecah payload QRIS jadi daftar [tag, nilai]
+function parseQrisTlv(payload) {
+  const out = []
+  let i = 0
+  while (i < payload.length) {
+    const tag = payload.substring(i, i + 2)
+    const len = parseInt(payload.substring(i + 2, i + 4), 10)
+    if (!/^[0-9]{2}$/.test(tag) || isNaN(len) || i + 4 + len > payload.length) throw new Error('Format QRIS tidak valid')
+    out.push([tag, payload.substring(i + 4, i + 4 + len)])
+    i += 4 + len
+  }
+  return out
+}
+
+// Periksa string QRIS statis; kembalikan pesan error atau null bila valid
+function validateQrisStatic(payload) {
+  if (!payload || !payload.startsWith('000201')) return 'String QRIS harus diawali 000201'
+  let tlv
+  try { tlv = parseQrisTlv(payload) } catch (e) { return e.message }
+  const crcField = tlv.find(t => t[0] === '63')
+  if (!crcField) return 'String QRIS tidak punya checksum (tag 63)'
+  if (qrisCrc16(payload.substring(0, payload.length - 4)) !== crcField[1].toUpperCase()) return 'Checksum QRIS tidak cocok - string terpotong atau salah salin'
+  if (!tlv.some(t => t[0] === '58')) return 'String QRIS tidak lengkap (tag 58 tidak ada)'
+  return null
+}
+
+// QRIS statis -> QRIS dinamis dengan nominal tertentu
+function makeDynamicQris(staticPayload, amount) {
+  const tlv = parseQrisTlv(staticPayload)
+  const out = []
+  let amountPlaced = false
+  for (const [tag, val] of tlv) {
+    if (tag === '63' || tag === '54') continue
+    if (tag === '58' && !amountPlaced) { out.push(['54', String(amount)]); amountPlaced = true }
+    out.push([tag, tag === '01' ? '12' : val]) // 01: 11 = statis, 12 = dinamis
+    if (tag === '53') { out.push(['54', String(amount)]); amountPlaced = true }
+  }
+  if (!amountPlaced) out.push(['54', String(amount)])
+  const body = out.map(([t, v]) => t + String(v.length).padStart(2, '0') + v).join('') + '6304'
+  return body + qrisCrc16(body)
+}
+
+async function loadPaymentOrders() {
+  const all = await redis.hgetall(REDIS_KEYS.PAYMENT_ORDERS) || {}
+  const now = Date.now()
+  const orders = []
+  for (const [id, raw] of Object.entries(all)) {
+    try {
+      const o = typeof raw === 'string' ? JSON.parse(raw) : raw
+      // Buang riwayat lama (> 60 hari) supaya hash tidak membengkak
+      if (now - o.createdAt > 60 * 24 * 3600 * 1000) { redis.hdel(REDIS_KEYS.PAYMENT_ORDERS, id).catch(() => {}); continue }
+      if (o.status === 'pending' && o.expiresAt < now) o.status = 'expired'
+      orders.push(o)
+    } catch (e) {}
+  }
+  return orders
+}
+
+async function savePaymentOrder(order) {
+  await redis.hset(REDIS_KEYS.PAYMENT_ORDERS, { [order.id]: JSON.stringify(order) })
+}
+
+// Aktifkan / perpanjang user setelah pembayaran lunas
+async function activateUserFromPayment(phone, name, days) {
+  const now = Date.now()
+  const raw = await redis.hget(REDIS_KEYS.USERS, phone)
+  let user = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+  if (user && !user.expired) return user // lifetime: tidak diubah
+  const base = user && user.expired > now ? user.expired : now
+  user = {
+    ...(user || { name: name || 'Member ' + phone.substring(2), createdAt: now, source: 'qris' }),
+    expired: base + days * 24 * 3600 * 1000
+  }
+  await redis.hset(REDIS_KEYS.USERS, { [phone]: JSON.stringify(user) })
+  const pin = await redis.hget(REDIS_KEYS.USER_PINS, phone)
+  if (!pin) {
+    await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin(getDefaultPin(phone)), pinChanged: false }) })
+  }
+  return user
+}
+
+async function completePaymentOrder(order, via) {
+  const settings = await getPaymentSettings()
+  const days = order.days || settings.days
+  const user = await activateUserFromPayment(order.phone, order.name, days)
+  order.status = 'paid'
+  order.paidAt = Date.now()
+  order.via = via
+  order.activeUntil = user.expired || null
+  await savePaymentOrder(order)
+  const until = user.expired ? new Date(user.expired).toLocaleDateString('id-ID') : 'Lifetime'
+  pushLog(`PAY | ✅ Lunas Rp${order.amount.toLocaleString('id-ID')} dari +${order.phone} (${via}) - aktif sampai ${until}`)
+  // Kabari user lewat WA (kalau bot tersambung) — gagal kirim tidak membatalkan aktivasi
+  if (sock && isReady) {
+    sock.sendMessage(order.phone + '@s.whatsapp.net', {
+      text: `✅ *PEMBAYARAN DITERIMA*
+
+Terima kasih. Akun Anda aktif sampai *${until}*.
+
+Login dengan nomor ini.
+PIN awal: *${getDefaultPin(order.phone)}* (wajib diganti saat login pertama).`
+    }).catch(() => {})
+  }
+  return order
+}
+
+// Cocokkan nominal yang masuk dengan order yang masih menunggu
+async function confirmPaymentByAmount(amount, via) {
+  const orders = (await loadPaymentOrders()).filter(o => o.status === 'pending' && o.amount === amount)
+  if (orders.length === 0) return null
+  orders.sort((a, b) => a.createdAt - b.createdAt)
+  return completePaymentOrder(orders[0], via)
+}
+
+// Ambil semua kandidat nominal rupiah dari teks notifikasi ("Rp5.037", "Rp 5.037,00", "IDR 5,037")
+function extractRupiahAmounts(text) {
+  const found = new Set()
+  const re = /(?:Rp\.?|IDR)\s*([0-9][0-9.,]*)/gi
+  let m
+  while ((m = re.exec(text)) !== null) {
+    let s = m[1].replace(/[.,]+$/, '')
+    s = s.replace(/[.,][0-9]{2}$/, '') // buang desimal ,00 / .00
+    const n = parseInt(s.replace(/[^0-9]/g, ''), 10)
+    if (n > 0) found.add(n)
+  }
+  return [...found]
+}
+
+// Publik: konfigurasi untuk halaman login
+app.get('/api/payment/config', async (_req, res) => {
+  const s = await getPaymentSettings()
+  res.json({ enabled: !!(s.enabled && s.qrisStatic), price: s.price, days: s.days, waFallback: s.waFallback !== false })
+})
+
+// Publik: buat order pembayaran untuk nomor yang belum terdaftar
+app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req, res) => {
+  try {
+    const s = await getPaymentSettings()
+    if (!s.enabled || !s.qrisStatic) return res.json({ success: false, error: 'Pembayaran QRIS sedang tidak aktif' })
+    const rawPhone = String(req.body?.phone || '')
+    const phone = normalizePhone(rawPhone)
+    if (phone.length < 11 || phone.length > 15) return res.json({ success: false, error: 'Nomor WhatsApp tidak valid' })
+    if (await redis.hget(REDIS_KEYS.BLOCKED_USERS, phone)) return res.json({ success: false, error: 'Nomor ini diblokir. Hubungi admin.' })
+    const check = await isUserValid(phone)
+    if (check.valid) return res.json({ success: false, alreadyRegistered: true, error: 'Nomor sudah terdaftar. Silakan login.' })
+
+    const now = Date.now()
+    const orders = await loadPaymentOrders()
+    const active = orders.filter(o => o.status === 'pending')
+    // Pakai lagi order yang masih berlaku untuk nomor yang sama (hindari banyak nominal berbeda)
+    let order = active.find(o => o.phone === phone && o.price === s.price)
+    if (!order) {
+      // Nominal = harga + 3 angka terakhir nomor HP. Kalau nominal itu sedang dipakai order
+      // lain yang masih menunggu (nomor berbeda, akhiran sama), pakai kode acak yang kosong.
+      const used = new Set(active.map(o => o.amount))
+      let amount = s.price + parseInt(phone.slice(-3), 10)
+      if (used.has(amount)) {
+        const free = []
+        for (let c = 1; c <= 999; c++) if (!used.has(s.price + c)) free.push(s.price + c)
+        if (free.length === 0) return res.json({ success: false, error: 'Antrian pembayaran penuh. Coba lagi beberapa menit lagi.' })
+        amount = free[Math.floor(Math.random() * free.length)]
+      }
+      order = {
+        id: crypto.randomBytes(8).toString('hex'),
+        phone,
+        name: String(req.body?.name || '').trim().substring(0, 40),
+        price: s.price,
+        days: s.days,
+        amount,
+        status: 'pending',
+        createdAt: now,
+        expiresAt: now + PAYMENT_ORDER_TTL_MS
+      }
+      await savePaymentOrder(order)
+      pushLog(`PAY | Order baru +${phone} Rp${amount.toLocaleString('id-ID')}`)
+    }
+
+    const qris = makeDynamicQris(s.qrisStatic, order.amount)
+    let qrDataUrl = null
+    try {
+      const mod = await import('qrcode')
+      qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
+    } catch (e) {}
+    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, qris, qrDataUrl } })
+  } catch (e) {
+    pushLog('PAY | Gagal membuat order: ' + e.message)
+    res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
+  }
+})
+
+// Publik: status order (di-polling halaman login)
+app.get('/api/payment/status', rateLimit(90, 60000), async (req, res) => {
+  const id = String(req.query.id || '')
+  if (!/^[0-9a-f]{16}$/.test(id)) return res.json({ success: false, error: 'Order tidak valid' })
+  const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
+  if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
+  const o = typeof raw === 'string' ? JSON.parse(raw) : raw
+  const status = o.status === 'pending' && o.expiresAt < Date.now() ? 'expired' : o.status
+  res.json({ success: true, status, activeUntil: o.activeUntil || null })
+})
+
+// Publik: user menekan "Saya sudah bayar" -> tandai order dan kabari admin lewat WA (sekali)
+app.post('/api/payment/claim', rateLimit(6, 60000), express.json(), async (req, res) => {
+  try {
+    const id = String(req.body?.id || '')
+    if (!/^[0-9a-f]{16}$/.test(id)) return res.json({ success: false, error: 'Order tidak valid' })
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
+    if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
+    const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (order.status !== 'pending' || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
+    if (!order.claimedAt) {
+      order.claimedAt = Date.now()
+      await savePaymentOrder(order)
+      pushLog(`PAY | +${order.phone} mengaku sudah bayar Rp${order.amount.toLocaleString('id-ID')} - menunggu ACC admin`)
+      if (sock && isReady) {
+        for (const admin of ADMIN_PHONES) {
+          sock.sendMessage(admin + '@s.whatsapp.net', {
+            text: `💳 *PEMBAYARAN MENUNGGU ACC*
+
+Nomor: +${order.phone}
+Nominal: *Rp${order.amount.toLocaleString('id-ID')}*
+
+Cek mutasi, lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`
+          }).catch(() => {})
+        }
+      }
+    }
+    res.json({ success: true })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Webhook: penerus notifikasi pembayaran (aplikasi di HP admin meneruskan teks notifikasi
+// "Pembayaran diterima Rp5.037" ke sini). Dilindungi secret; teks bebas, nominal dicari otomatis.
+app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () => true, limit: '20kb' }), async (req, res) => {
+  try {
+    const s = await getPaymentSettings()
+    const secret = String(req.query.secret || req.headers['x-payment-secret'] || '')
+    if (!s.notifySecret || secret.length !== s.notifySecret.length ||
+        !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(s.notifySecret))) {
+      return res.status(403).json({ success: false, error: 'Secret salah' })
+    }
+    const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {})
+    const text = [body, String(req.query.text || ''), String(req.query.title || '')].join(' ')
+    const candidates = extractRupiahAmounts(text)
+    const direct = parseInt(String(req.query.amount || '').replace(/[^0-9]/g, ''), 10)
+    if (direct > 0) candidates.unshift(direct)
+    for (const amount of candidates) {
+      const order = await confirmPaymentByAmount(amount, 'notifikasi otomatis')
+      if (order) return res.json({ success: true, matched: true, phone: order.phone, amount })
+    }
+    pushLog(`PAY | Notifikasi masuk tapi tidak ada order yang cocok (nominal: ${candidates.join(', ') || 'tidak terbaca'})`)
+    res.json({ success: true, matched: false, amounts: candidates })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: pengaturan pembayaran
+app.get('/api/admin/payment-settings', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  res.json({ success: true, settings: await getPaymentSettings() })
+})
+
+app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
+  const { password, enabled, qrisStatic, price, days, waFallback, regenerateSecret } = req.body
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const current = await getPaymentSettings()
+    const qris = String(qrisStatic || '').replace(/\s+/g, '')
+    const p = parseInt(price, 10)
+    const d = parseInt(days, 10)
+    if (isNaN(p) || p < 1000 || p > 10000000) return res.json({ success: false, error: 'Harga harus antara Rp1.000 dan Rp10.000.000' })
+    if (isNaN(d) || d < 1 || d > 3650) return res.json({ success: false, error: 'Masa aktif harus 1-3650 hari' })
+    if (qris) {
+      const err = validateQrisStatic(qris)
+      if (err) return res.json({ success: false, error: err })
+    } else if (enabled) {
+      return res.json({ success: false, error: 'Isi string QRIS statis dulu sebelum mengaktifkan' })
+    }
+    paymentSettingsCache = {
+      enabled: !!enabled,
+      qrisStatic: qris,
+      price: p,
+      days: d,
+      waFallback: waFallback !== false,
+      notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
+    }
+    await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
+    pushLog(`Admin | Pengaturan QRIS disimpan (aktif: ${paymentSettingsCache.enabled}, Rp${p.toLocaleString('id-ID')} / ${d} hari)`)
+    res.json({ success: true, settings: paymentSettingsCache })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: daftar order (100 terbaru)
+app.get('/api/admin/payment-orders', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const orders = (await loadPaymentOrders()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100)
+    res.json({ success: true, orders })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: konfirmasi manual / tolak order
+app.post('/api/admin/payment-orders/action', express.json(), async (req, res) => {
+  const { password, id, action } = req.body
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, String(id || ''))
+    if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
+    const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (order.status === 'paid') return res.json({ success: false, error: 'Order ini sudah lunas' })
+    if (action === 'confirm') {
+      await completePaymentOrder(order, 'konfirmasi admin')
+    } else if (action === 'reject') {
+      order.status = 'rejected'
+      await savePaymentOrder(order)
+      pushLog(`Admin | Order QRIS +${order.phone} ditolak`)
+    } else {
+      return res.json({ success: false, error: 'Aksi tidak dikenal' })
+    }
+    res.json({ success: true, order })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
 })
 
 // ==================== CATCH-ALL ROUTE ====================
