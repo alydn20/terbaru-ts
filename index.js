@@ -9896,6 +9896,18 @@ ${authScript}
 
           <button class="btn btn-primary" style="width:100%;" onclick="savePaymentSettings(false)">Simpan Pengaturan QRIS</button>
 
+          <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);">
+            <label style="color:#38bdf8;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">Cadangan notifikasi ke Telegram</label>
+            <p style="color:#6b7280;font-size:0.8em;margin-bottom:8px;">Notifikasi admin (bukti bayar beserta fotonya, daftar belum masuk grup) dikirim juga ke Telegram, jadi tetap terbaca walau pesan WA muncul sebagai "Menunggu pesan ini". Caranya: 1) tempel token bot dari @BotFather, 2) buka bot-nya di Telegram lalu tekan Start, 3) tekan Deteksi chat.</p>
+            <div id="tgStatus" style="font-size:0.82em;margin-bottom:8px;color:#9ca3af;">Memuat...</div>
+            <input type="password" id="tgToken" autocomplete="off" placeholder="Token bot (kosongkan kalau tidak diganti)" style="width:100%;font-family:monospace;font-size:0.78em;margin-bottom:8px;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <button class="btn btn-primary btn-sm" type="button" onclick="telegramAction('detect')">Simpan &amp; Deteksi chat</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="telegramAction('test')">Tes kirim</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="telegramAction('clear')">Putuskan</button>
+            </div>
+          </div>
+
           <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(247,147,26,0.05);border:1px solid rgba(247,147,26,0.15);">
             <label style="color:#f7931a;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">Opsional: ACC otomatis (penerus notifikasi)</label>
             <p style="color:#6b7280;font-size:0.8em;margin-bottom:8px;">Tidak wajib. Kalau suatu saat mau tanpa ACC manual: pasang aplikasi penerus notifikasi di HP yang menerima notifikasi pembayaran, lalu arahkan ke alamat ini (metode POST, isi = teks notifikasi). Jangan bagikan alamat ini.</p>
@@ -11236,6 +11248,40 @@ ${authScript}
             : '(simpan pengaturan dulu untuk membuat alamat)';
         });
       loadPaymentOrders();
+      adminFetch('/api/admin/telegram-settings').then(r => r.json()).then(data => { if (data.success) showTelegramStatus(data.telegram); });
+    }
+
+    function showTelegramStatus(tg) {
+      const el = document.getElementById('tgStatus');
+      if (!el || !tg) return;
+      if (tg.hasToken && tg.chatId) {
+        el.style.color = '#22c55e';
+        el.textContent = 'Terhubung ke chat: ' + (tg.chatName || tg.chatId) + ' (bot ' + tg.tokenMasked + ')';
+      } else if (tg.hasToken) {
+        el.style.color = '#f59e0b';
+        el.textContent = 'Token tersimpan (' + tg.tokenMasked + '), chat belum terhubung. Tekan Start di bot lalu Deteksi chat.';
+      } else {
+        el.style.color = '#9ca3af';
+        el.textContent = 'Belum diatur.';
+      }
+    }
+
+    function telegramAction(action) {
+      const input = document.getElementById('tgToken');
+      adminFetch('/api/admin/telegram-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, token: action === 'clear' ? '' : input.value })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.telegram) showTelegramStatus(data.telegram);
+        if (!data.success) { showAlert(data.error || 'Gagal', 'warning'); return; }
+        input.value = '';
+        const done = { detect: 'Telegram terhubung. Cek pesan dari bot.', test: 'Pesan tes terkirim ke Telegram.', clear: 'Telegram diputuskan.' };
+        showAlert(done[action] || 'Tersimpan.', 'success');
+      })
+      .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
     }
 
     function savePaymentSettings(regenerateSecret) {
@@ -20625,8 +20671,69 @@ function detectImageMime(buf) {
   return null
 }
 
-// Pesan WA fitur pembayaran HANYA ke nomor admin (tidak pernah ke nomor pembayar)
-async function notifyAdminsWa(text) {
+// ---------- Telegram: cadangan notifikasi admin ----------
+// Pesan WA ke admin kadang muncul sebagai "Menunggu pesan ini" (gagal didekripsi). Notifikasi yang
+// sama dikirim juga ke bot Telegram admin. Token TIDAK ditulis di kode (repo publik): disimpan di
+// Redis lewat panel admin, atau lewat env TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+const TELEGRAM_SETTINGS_KEY = 'gold:telegram_settings'
+let telegramSettingsCache = null
+
+async function getTelegramSettings() {
+  if (!telegramSettingsCache) {
+    let saved = {}
+    try {
+      const raw = await redis.get(TELEGRAM_SETTINGS_KEY)
+      saved = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+    } catch (e) {
+      return { token: process.env.TELEGRAM_BOT_TOKEN || '', chatId: process.env.TELEGRAM_CHAT_ID || '', chatName: '' }
+    }
+    telegramSettingsCache = {
+      token: saved.token || process.env.TELEGRAM_BOT_TOKEN || '',
+      chatId: String(saved.chatId || process.env.TELEGRAM_CHAT_ID || ''),
+      chatName: saved.chatName || ''
+    }
+  }
+  return telegramSettingsCache
+}
+
+async function telegramApi(token, method, body, isForm) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    headers: isForm ? undefined : { 'Content-Type': 'application/json' },
+    body: isForm ? body : JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(15000)
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!data.ok) throw new Error(data.description || ('HTTP ' + res.status))
+  return data.result
+}
+
+// Kirim teks (dan foto, kalau ada) ke Telegram admin. Mengembalikan true kalau terkirim.
+async function notifyAdminsTelegram(text, photo) {
+  const tg = await getTelegramSettings()
+  if (!tg.token || !tg.chatId) return false
+  const plain = String(text).replace(/\*/g, '')
+  try {
+    if (photo && photo.buffer) {
+      const form = new FormData()
+      form.append('chat_id', tg.chatId)
+      form.append('caption', plain.substring(0, 1000))
+      form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
+      await telegramApi(tg.token, 'sendPhoto', form, true)
+    } else {
+      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: plain.substring(0, 4000) })
+    }
+    return true
+  } catch (e) {
+    // Jangan pernah mencatat token ke log
+    pushLog('TG | Gagal kirim ke Telegram: ' + String(e && e.message ? e.message : e).replace(tg.token, '***'))
+    return false
+  }
+}
+
+// Pesan fitur pembayaran HANYA ke admin (tidak pernah ke nomor pembayar): WA + cadangan Telegram
+async function notifyAdminsWa(text, photo) {
+  notifyAdminsTelegram(text, photo).catch(() => {})
   if (!sock || !isReady) return
   for (const admin of ADMIN_PHONES) {
     sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
@@ -20644,7 +20751,9 @@ async function sendNotInGroupReport() {
     return 0
   }
   pushLog(`PAY | Sudah di-ACC tapi belum masuk grup WA (${list.length}): ` + list.map(o => '+' + o.phone).join(', '))
-  if (!sock || !isReady) return -1
+  const tgSet = await getTelegramSettings()
+  const waOn = !!(sock && isReady)
+  if (!waOn && !(tgSet.token && tgSet.chatId)) return -1
   const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' })
   // Dipotong 50 nomor per pesan supaya pesannya tidak terlalu panjang
   const shown = list.slice(0, 50)
@@ -20688,7 +20797,7 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`)
+    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
@@ -20743,6 +20852,73 @@ app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () =>
     res.json({ success: true, matched: false, amounts: candidates })
   } catch (e) {
     res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: pengaturan Telegram (cadangan notifikasi). Token tidak pernah dikirim balik utuh.
+function telegramSettingsView(tg) {
+  return { hasToken: !!tg.token, tokenMasked: tg.token ? tg.token.split(':')[0] + ':****' : '', chatId: tg.chatId || '', chatName: tg.chatName || '' }
+}
+
+app.get('/api/admin/telegram-settings', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  res.json({ success: true, telegram: telegramSettingsView(await getTelegramSettings()) })
+})
+
+// action: 'save' (token/chatId), 'detect' (cari chat dari pesan terakhir ke bot), 'test', 'clear'
+app.post('/api/admin/telegram-settings', express.json(), async (req, res) => {
+  const { password, action, token, chatId } = req.body
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const cur = { ...(await getTelegramSettings()) }
+    const save = async () => {
+      telegramSettingsCache = cur
+      await redis.set(TELEGRAM_SETTINGS_KEY, JSON.stringify(cur))
+    }
+    if (action === 'clear') {
+      cur.token = ''; cur.chatId = ''; cur.chatName = ''
+      await save()
+      pushLog('Admin | Pengaturan Telegram dihapus')
+      return res.json({ success: true, telegram: telegramSettingsView(cur) })
+    }
+    const newToken = String(token || '').trim()
+    if (newToken) {
+      if (!/^[0-9]{6,12}:[A-Za-z0-9_-]{30,}$/.test(newToken)) return res.json({ success: false, error: 'Format token bot tidak valid' })
+      cur.token = newToken
+    }
+    if (!cur.token) return res.json({ success: false, error: 'Isi token bot dulu' })
+    if (action === 'detect') {
+      const updates = await telegramApi(cur.token, 'getUpdates', { limit: 100, allowed_updates: ['message'] })
+      const msgs = (updates || []).map(u => u.message).filter(m => m && m.chat)
+      if (msgs.length === 0) {
+        if (newToken) await save()
+        return res.json({ success: false, error: 'Belum ada pesan ke bot. Buka bot-nya di Telegram, tekan Start atau kirim pesan apa saja, lalu tekan Deteksi lagi.', telegram: telegramSettingsView(cur) })
+      }
+      const chat = msgs[msgs.length - 1].chat
+      cur.chatId = String(chat.id)
+      cur.chatName = String(chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || '').substring(0, 60)
+      await save()
+      pushLog(`Admin | Telegram terhubung ke chat "${cur.chatName}" (${cur.chatId})`)
+      await notifyAdminsTelegram('✅ Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini.')
+      return res.json({ success: true, telegram: telegramSettingsView(cur) })
+    }
+    if (action === 'test') {
+      if (!cur.chatId) return res.json({ success: false, error: 'Chat belum terhubung. Tekan Deteksi dulu.' })
+      const ok = await notifyAdminsTelegram('🔔 Tes notifikasi dari Panel Admin Gold Monitor.')
+      return res.json(ok ? { success: true, telegram: telegramSettingsView(cur) } : { success: false, error: 'Gagal mengirim. Lihat Logs untuk penyebabnya.' })
+    }
+    // save
+    if (chatId !== undefined) {
+      const c = String(chatId).trim()
+      if (c && !/^-?[0-9]{4,20}$/.test(c)) return res.json({ success: false, error: 'Chat ID harus berupa angka' })
+      if (c !== cur.chatId) cur.chatName = ''
+      cur.chatId = c
+    }
+    await save()
+    pushLog('Admin | Pengaturan Telegram disimpan')
+    res.json({ success: true, telegram: telegramSettingsView(cur) })
+  } catch (e) {
+    res.json({ success: false, error: 'Telegram: ' + e.message })
   }
 })
 
@@ -20814,7 +20990,7 @@ app.post('/api/admin/payment-orders/remind-group', express.json(), async (req, r
   if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const count = await sendNotInGroupReport()
-    if (count === -1) return res.json({ success: false, error: 'WhatsApp bot sedang tidak tersambung. Daftarnya sudah dicatat di Logs.' })
+    if (count === -1) return res.json({ success: false, error: 'WhatsApp bot sedang tidak tersambung dan Telegram belum diatur. Daftarnya sudah dicatat di Logs.' })
     res.json({ success: true, count })
   } catch (e) {
     res.json({ success: false, error: e.message })
