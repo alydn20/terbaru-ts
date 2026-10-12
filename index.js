@@ -3505,6 +3505,7 @@ setInterval(() => {
 // ==================== STARTUP INFO ====================
 
 const app = express()
+app.disable('x-powered-by')
 app.set('trust proxy', 1) // trust Koyeb/Cloudflare proxy so req.ip reflects real client IP
 app.use(express.json({ limit: '10mb' }))
 
@@ -3876,7 +3877,7 @@ app.post('/api/admin-login', rateLimit(10, 60000), async (req, res) => {
 })
 
 // API untuk verify token
-app.post('/api/verify-admin', (req, res) => {
+app.post('/api/verify-admin', rateLimit(20, 60000), (req, res) => {
   const { token } = req.body
   try {
     const decoded = Buffer.from(token, 'base64').toString()
@@ -5694,6 +5695,8 @@ async function isUserValid(phone) {
 
 // API: Request OTP for registration
 app.post('/api/request-otp', rateLimit(3, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan. Pendaftaran hanya lewat QRIS di halaman login.
+  return res.status(410).json({ success: false, error: 'Pendaftaran lewat OTP sudah tidak tersedia. Daftar lewat halaman login.' })
   const { phone } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
 
@@ -5733,6 +5736,8 @@ app.post('/api/request-otp', rateLimit(3, 10 * 60000), express.json(), async (re
 
 // API: Verify OTP and register user
 app.post('/api/verify-otp', rateLimit(10, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan (dulu mendaftarkan user Lifetime gratis setelah OTP cocok).
+  return res.status(410).json({ success: false, error: 'Pendaftaran lewat OTP sudah tidak tersedia. Daftar lewat halaman login.' })
   const { phone, otp, name } = req.body
   if (!phone || !otp) return res.json({ success: false, error: 'Nomor dan OTP wajib diisi' })
 
@@ -5835,6 +5840,7 @@ app.post('/api/check-user', rateLimit(10, 60000), express.json(), async (req, re
 })
 
 // API: Login with PIN (step 2 of login)
+const _pinFails = new Map()   // nomor -> { count, first, lockedUntil }
 app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => {
   const { phone, pin } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
@@ -5877,10 +5883,21 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     pinChanged = false
   }
 
+  // KEAMANAN: 8 kali salah PIN untuk satu nomor -> nomor itu dikunci 15 menit, dari alamat IP mana pun
+  const _pf = _pinFails.get(normalizedPhone)
+  if (_pf && _pf.lockedUntil > Date.now()) {
+    return res.json({ success: false, error: 'Terlalu banyak percobaan. Coba lagi dalam ' + Math.ceil((_pf.lockedUntil - Date.now()) / 60000) + ' menit.' })
+  }
   // Verify PIN
   if (!verifyPin(pin, storedPin)) {
+    const f = _pf && Date.now() - _pf.first < 15 * 60000 ? _pf : { count: 0, first: Date.now(), lockedUntil: 0 }
+    f.count++
+    if (f.count >= 8) { f.lockedUntil = Date.now() + 15 * 60000; f.count = 0; pushLog(`Auth | +${normalizedPhone} dikunci 15 menit (8x salah PIN)`) }
+    _pinFails.set(normalizedPhone, f)
+    if (_pinFails.size > 5000) for (const [k, v] of _pinFails) if (Date.now() - v.first > 3600000) _pinFails.delete(k)
     return res.json({ success: false, error: 'PIN salah. Silakan coba lagi.' })
   }
+  _pinFails.delete(normalizedPhone)
 
   const _clientIp = getClientIp(req)
   const _clientUa = parseBrowser(req.headers['user-agent'])
@@ -6122,6 +6139,9 @@ function generateLoginToken() {
 
 // API: Request login link via WhatsApp
 app.post('/api/user/request-login', rateLimit(3, 10 * 60000), express.json(), async (req, res) => {
+  // KEAMANAN: dimatikan. Tidak dipakai halaman mana pun, dan bisa dipakai orang luar untuk
+  // memaksa bot mengirim pesan WA ke user berulang-ulang.
+  return res.status(410).json({ success: false, error: 'Login lewat link sudah tidak tersedia. Login dengan PIN.' })
   const { phone } = req.body
   if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
 
@@ -7491,6 +7511,9 @@ app.post('/api/admin/wa-groups/sync', express.json(), async (req, res) => {
 
 // Register endpoint - user submit pendaftaran
 app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
+  // KEAMANAN: dimatikan. Pendaftaran hanya lewat QRIS; formulir lama tidak dipakai lagi dan
+  // bisa dipakai menyepam notifikasi ke admin.
+  return res.status(410).json({ success: false, message: 'Pendaftaran lewat formulir sudah tidak tersedia. Daftar lewat halaman login.' })
   try {
     const { phone, name } = req.body
 
