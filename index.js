@@ -19099,14 +19099,38 @@ app.get('/monitoring', async (req, res) => {
       var mk = function(tag, text, css) { var el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
       var btnCss = 'display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;border-radius:10px;padding:12px;margin:8px 0 14px;';
       box.appendChild(mk('div', 'Gabung Grup WA', 'font-weight:800;font-size:17px;margin-bottom:12px;'));
-      box.appendChild(mk('div', 'Langkah 1. Buka grup, lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
-      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#22c55e;color:#fff;');
-      a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
-      box.appendChild(a1);
-      box.appendChild(mk('div', 'Langkah 2. Setelah itu kabari admin supaya disetujui. Pesannya sudah terisi, tinggal kirim.', 'font-weight:600;'));
+      // Urutan dibalik: chat admin DULU. Tombol grup baru bisa ditekan setelah tombol chat ditekan,
+      // karena banyak yang langsung masuk grup tanpa mengabari admin.
+      box.appendChild(mk('div', 'Langkah 1. Kabari admin dulu. Pesannya sudah terisi, tinggal tekan kirim di WhatsApp.', 'font-weight:600;'));
       var a2 = mk('a', 'Chat Admin', btnCss + 'background:#f7931a;color:#000;');
       a2.href = 'https://wa.me/6285156260393?text=' + encodeURIComponent(pesan); a2.target = '_blank'; a2.rel = 'noopener';
       box.appendChild(a2);
+      box.appendChild(mk('div', 'Langkah 2. Setelah pesan terkirim, buka grup lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
+      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#374151;color:#9ca3af;');
+      a1.href = '#';
+      var hint = mk('div', 'Tombol grup aktif setelah Anda menekan Chat Admin.', 'font-size:12px;color:#9ca3af;margin:-8px 0 14px;');
+      var unlocked = false;
+      a2.onclick = function() {
+        unlocked = true;
+        a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
+        a1.style.background = '#22c55e'; a1.style.color = '#fff';
+        hint.textContent = 'Kirim dulu pesannya di WhatsApp, lalu kembali ke sini dan tekan Buka Grup WhatsApp.';
+      };
+      a1.onclick = function(ev) {
+        if (!unlocked) {
+          ev.preventDefault();
+          hint.textContent = 'Tekan Chat Admin dulu dan kirim pesannya.';
+          hint.style.color = '#ef4444';
+          return;
+        }
+        // Server mencatat dan melapor ke admin bahwa nomor ini membuka link grup
+        try {
+          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '' }) });
+        } catch (e) {}
+      };
+      box.appendChild(a1);
+      box.appendChild(hint);
       var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
       tutup.onclick = function() { wrap.remove(); };
       box.appendChild(tutup);
@@ -21829,6 +21853,7 @@ async function reportGroupJoinRequest(msg, text) {
   _joinCheckSeen.set(seenKey, now)
 
   const webPhone = tgParsePhones(text, 1)[0] || ''
+  if (webPhone) _joinCheckSeen.set(webPhone, now)
   const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
   const masalah = []
 
@@ -21907,6 +21932,62 @@ async function reportGroupJoinRequest(msg, text) {
     'Minta gabung grup: ' + barisMinta + '\n\n' +
     'Kesimpulan: *' + kesimpulan + '*\n\n' +
     'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
+}
+
+// User menekan "Buka Grup WhatsApp" di website. Dicatat, lalu 90 detik kemudian dilaporkan ke admin
+// KALAU ia belum mengirim chat ke admin (kalau sudah, laporan dari chatnya sudah lebih lengkap).
+// Dengan begitu admin tetap tahu nomor website siapa yang masuk grup walau orangnya tidak chat.
+const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
+app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (req, res) => {
+  res.json({ success: true })
+  try {
+    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
+    if (!phone || phone === 'admin') return
+    const check = await isUserValid(phone)
+    if (!check.valid) return
+    const now = Date.now()
+    for (const [k, t] of _groupOpenSeen) if (now - t > 3600000) _groupOpenSeen.delete(k)
+    if (_groupOpenSeen.has(phone) && now - _groupOpenSeen.get(phone) < 30 * 60 * 1000) return
+    _groupOpenSeen.set(phone, now)
+    setTimeout(() => {
+      reportGroupLinkOpened(phone, check.user, now).catch(e => pushLog('AUTO | Grup: laporan buka link error - ' + (e && e.message ? e.message : e)))
+    }, 90000)
+  } catch (e) {}
+})
+
+async function reportGroupLinkOpened(phone, user, openedAt) {
+  // Sudah chat admin (laporan lengkapnya sudah terkirim)? Tidak perlu laporan kedua.
+  if (_joinCheckSeen.has(phone) && _joinCheckSeen.get(phone) >= openedAt - 30 * 60 * 1000) return
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
+  const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+  let barisMinta = 'tidak dicek (grup belum diatur / bot terputus)'
+  if (sock && isReady && monitoredGroupId) {
+    try {
+      const list = await sock.groupRequestParticipantsList(monitoredGroupId)
+      let hidden = 0, ada = false
+      for (const r of list || []) {
+        const ph = phoneFromWaJid(r.jid) || phoneFromWaJid(r.phone_number)
+        if (!ph) hidden++
+        else if (ph === phone) ada = true
+      }
+      barisMinta = ada ? 'ADA di daftar permintaan'
+        : hidden > 0 ? 'tidak terlihat; ada ' + hidden + ' permintaan yang nomornya disembunyikan WhatsApp'
+        : 'belum terlihat (total ' + (list || []).length + ' permintaan menunggu)'
+    } catch (e) {
+      barisMinta = 'tidak bisa dibaca (' + String(e && e.message ? e.message : e).substring(0, 50) + ')'
+    }
+  }
+  const akun = 'aktif' + (user && user.expired ? ' sampai ' + tgl(user.expired) : ' (Lifetime)')
+  pushLog(`AUTO | Grup: +${phone} membuka link grup ${jam(openedAt)} tanpa chat admin - akun ${akun}, minta gabung ${barisMinta}`)
+  let kb = null
+  const o = (await loadPaymentOrders()).filter(x => x.phone === phone && x.status === 'paid' && !x.inGroup).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+  if (o) kb = [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + o.id }]]
+  await notifyAdminsWa('*MEMBUKA LINK GRUP (TANPA CHAT ADMIN)*\n\n' +
+    'Nomor di website: +' + phone + '\n' +
+    'Jam: ' + jam(openedAt) + ' WIB\n' +
+    'Status akun: ' + akun + '\n' +
+    'Minta gabung grup: ' + barisMinta + '\n\n' +
+    'Ini nomor yang LOGIN di website. Nomor WhatsApp yang dipakainya untuk bergabung bisa saja berbeda; cocokkan dengan permintaan bergabung di WhatsApp.', null, kb ? { kb } : null)
 }
 
 // User yang sedang login: link grup WA (dari pengaturan admin) + apakah ia perlu diajak bergabung.
