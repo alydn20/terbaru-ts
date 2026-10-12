@@ -9256,6 +9256,8 @@ ${authScript}
     .pay-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
     .pay-table-wrap::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
     .pay-table-wrap::-webkit-scrollbar-track, .pay-table-wrap::-webkit-scrollbar-corner { background: transparent; }
+    .pay-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .pay-filter select { background: #131a22; color: #e5e7eb; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 5px 8px; font-size: 0.8em; }
     .user-table.pay-table { min-width: 0; }
     .user-table.pay-table th, .user-table.pay-table td { padding: 6px 8px; white-space: nowrap; vertical-align: middle; }
     .user-table.pay-table th { background: #131a22; font-size: 0.66em; z-index: 1; }
@@ -9903,6 +9905,26 @@ ${authScript}
           <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;">
             <label style="font-weight:600;">Semua order pembayaran <span id="payOrdersCount" style="color:#6b7280;font-weight:400;"></span></label>
             <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
+          </div>
+          <div class="pay-filter">
+            <select id="payFilterStatus" onchange="renderPaymentOrders()">
+              <option value="">Status: semua</option>
+              <option value="pending">Menunggu</option>
+              <option value="paid">Lunas</option>
+              <option value="expired">Kedaluwarsa</option>
+              <option value="rejected">Ditolak</option>
+            </select>
+            <select id="payFilterProof" onchange="renderPaymentOrders()">
+              <option value="">Bukti: semua</option>
+              <option value="yes">Sudah upload</option>
+              <option value="no">Belum upload</option>
+            </select>
+            <select id="payFilterGroup" onchange="renderPaymentOrders()">
+              <option value="">Grup WA: semua</option>
+              <option value="yes">Sudah masuk</option>
+              <option value="no">Belum masuk</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="resetPaymentFilters()">Reset</button>
           </div>
           <div class="pay-table-wrap">
             <table class="user-table pay-table">
@@ -11287,19 +11309,55 @@ ${authScript}
         .then(r => r.json())
         .then(data => {
           if (!data.success) return;
-          if (!data.orders.length) {
-            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#6b7280;">Belum ada order</td></tr>';
-            return;
-          }
-          const countEl = document.getElementById('payOrdersCount');
-          if (countEl) countEl.textContent = '(' + data.orders.length + ')';
+          _payOrdersAll = data.orders || [];
+          renderPaymentOrders();
+        });
+    }
+
+    var _payOrdersAll = [];
+
+    function resetPaymentFilters() {
+      ['payFilterStatus', 'payFilterProof', 'payFilterGroup'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      renderPaymentOrders();
+    }
+
+    // Gambar tabel order sesuai filter yang dipilih (data sudah ada di _payOrdersAll)
+    function renderPaymentOrders() {
+      const tbody = document.getElementById('payOrdersBody');
+      if (!tbody) return;
+      const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+      const fStatus = val('payFilterStatus'), fProof = val('payFilterProof'), fGroup = val('payFilterGroup');
+      const orders = _payOrdersAll.filter(o => {
+        const adaBukti = !!(o.proof && o.proof.status);
+        if (fStatus && o.status !== fStatus) return false;
+        if (fProof === 'yes' && !adaBukti) return false;
+        if (fProof === 'no' && adaBukti) return false;
+        // Grup WA hanya berlaku untuk order yang sudah lunas
+        if (fGroup === 'yes' && !(o.status === 'paid' && o.inGroup)) return false;
+        if (fGroup === 'no' && !(o.status === 'paid' && !o.inGroup)) return false;
+        return true;
+      });
+      const countEl = document.getElementById('payOrdersCount');
+      if (countEl) countEl.textContent = orders.length === _payOrdersAll.length
+        ? '(' + _payOrdersAll.length + ')'
+        : '(' + orders.length + ' dari ' + _payOrdersAll.length + ')';
+      if (!orders.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#6b7280;">' +
+          (_payOrdersAll.length ? 'Tidak ada order yang cocok dengan filter' : 'Belum ada order') + '</td></tr>';
+        return;
+      }
+      {
+        {
           const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
           const nowTs = Date.now();
           const labels = { pending: 'Menunggu', paid: 'Lunas', expired: 'Kedaluwarsa', rejected: 'Ditolak' };
           const colors = { pending: '#f59e0b', paid: '#22c55e', expired: '#6b7280', rejected: '#ef4444' };
           const tglPendek = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
           const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-          tbody.innerHTML = data.orders.map(o => {
+          tbody.innerHTML = orders.map(o => {
             const waktu = tglPendek(o.createdAt) + ' ' + jam(o.createdAt);
             const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via : '';
             const adaBukti = !!(o.proof && o.proof.status);
@@ -11325,9 +11383,10 @@ ${authScript}
                 ? '<button class="action-btn" style="background:#22c55e;" title="Sudah masuk grup. Klik untuk membatalkan tanda." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">&#10003; Masuk</button>'
                 : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
-            const aksi = o.status === 'paid' ? '<span style="color:#6b7280;">-</span>' :
-              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' : '') +
-              (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
+            const aksi = (o.status === 'paid' ? '' :
+              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button> ' : '') +
+              (o.status === 'pending' ? '<button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button> ' : '')) +
+              '<button class="action-btn" style="background:#374151;" title="Hapus catatan order ini saja. Akun di Daftar User tidak ikut terhapus." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;delete&apos;)">Hapus</button>';
             return '<tr>' +
               '<td>' + waktu + '</td>' +
               '<td class="phone">+' + o.phone + '</td>' +
@@ -11339,7 +11398,8 @@ ${authScript}
               '<td>' + aksi + '</td>' +
             '</tr>';
           }).join('');
-        });
+        }
+      }
     }
 
     // Buka gambar bukti di tab baru (diambil lewat adminFetch supaya ikut autentikasi admin)
@@ -11362,10 +11422,13 @@ ${authScript}
     }
 
     async function paymentOrderAction(id, action) {
-      const confirmed = action === 'group' ? true : await showConfirm(
-        action === 'confirm' ? 'Konfirmasi pembayaran ini? Akun akan langsung aktif.' : 'Tolak order ini?',
-        { title: action === 'confirm' ? 'Konfirmasi Pembayaran' : 'Tolak Order', type: action === 'confirm' ? 'info' : 'danger' }
-      );
+      const texts = {
+        confirm: ['Konfirmasi pembayaran ini? Akun akan langsung aktif.', 'Konfirmasi Pembayaran', 'info'],
+        reject: ['Tolak order ini?', 'Tolak Order', 'danger'],
+        delete: ['Hapus catatan order ini? Yang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.', 'Hapus Catatan Order', 'danger']
+      };
+      const t = texts[action];
+      const confirmed = action === 'group' ? true : await showConfirm(t[0], { title: t[1], type: t[2] });
       if (!confirmed) return;
       adminFetch('/api/admin/payment-orders/action', {
         method: 'POST',
@@ -11375,9 +11438,10 @@ ${authScript}
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          if (action !== 'group') showAlert(action === 'confirm' ? 'Pembayaran dikonfirmasi, akun aktif.' : 'Order ditolak.', 'success');
+          const done = { confirm: 'Pembayaran dikonfirmasi, akun aktif.', reject: 'Order ditolak.', delete: 'Catatan order dihapus.' };
+          if (done[action]) showAlert(done[action], 'success');
           loadPaymentOrders();
-          if (action !== 'group') loadUsers();
+          if (action === 'confirm') loadUsers();
         } else {
           showAlert('Gagal: ' + data.error, 'danger');
         }
@@ -20688,6 +20752,14 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, String(id || ''))
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (action === 'delete') {
+      // Hanya catatan order + foto buktinya yang dihapus. Akun di Daftar User (gold:users)
+      // sengaja tidak disentuh: user yang sudah aktif tetap aktif sampai masa aktifnya habis.
+      await redis.hdel(REDIS_KEYS.PAYMENT_ORDERS, order.id)
+      await _ioredis.del(PAY_PROOF_PREFIX + order.id).catch(() => {})
+      pushLog(`Admin | Catatan order QRIS +${order.phone} (Rp${order.amount.toLocaleString('id-ID')}, ${order.status}) dihapus`)
+      return res.json({ success: true, deleted: true })
+    }
     if (action === 'group') {
       // Catatan admin saja: menandai user ini sudah dimasukkan ke grup WA (bisa dibatalkan)
       order.inGroup = !order.inGroup
