@@ -2114,7 +2114,7 @@ ${marketSection}${promoInfoSection}
 
 ${nominalLines}
 ${calendarSection}${highLowLine}
-🌐 Via website: https://pemulaold.com`
+🌐 Via website: https://monitoring.pemulaold.com`
 }
 async function fetchTreasury() {
   const res = await fetch(TREASURY_URL, {
@@ -2414,7 +2414,7 @@ async function doPromoBroadcast() {
         lastPromoWaMinute = currentMinute
         if (currentStatus === 'OFF') offWaCount++
         const waMsg = isOffToOn
-          ? `✅ ON\n\n🌐 Via website: https://pemulaold.com`
+          ? `✅ ON\n\n🌐 Via website: https://monitoring.pemulaold.com`
           : currentStatus === 'ON' ? '✅ ON' : '❌ OFF'
         const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
 
@@ -2738,7 +2738,7 @@ function formatPromoWaMessage(promos) {
     if (p.end_to && p.end_to !== '-') tnc.push(`s/d ${p.end_to}`)
     if (tnc.length) msg += `   ${tnc.join(' • ')}\n`
   })
-  msg += `\n🌐 Via website: https://pemulaold.com`
+  msg += `\n🌐 Via website: https://monitoring.pemulaold.com`
   return msg
 }
 
@@ -4885,7 +4885,7 @@ app.get('/favicon.ico', (_req, res) => {
 
 // PWA Manifest
 app.get('/manifest.json', (req, res) => {
-  const host = req.get('host') || 'pemulaold.com'
+  const host = req.get('host') || 'monitoring.pemulaold.com'
   res.json({
     name: 'Treasury Price',
     short_name: 'Treasury Price',
@@ -5063,7 +5063,7 @@ app.get('/admin/api-docs', (req, res) => {
     return res.redirect('/admin-login?redirect=' + encodeURIComponent('/admin/api-docs'))
   }
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-  const baseUrl = 'https://' + (req.headers.host || 'pemulaold.com')
+  const baseUrl = 'https://' + (req.headers.host || 'monitoring.pemulaold.com')
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -6839,7 +6839,7 @@ app.post('/api/admin/promo-limit', express.json(), async (req, res) => {
 
     // Kirim pesan WA limit terbaru ke grup + subscriber (dgn nama website di bawah), seperti pesan ON
     if (numLimit !== oldLimit && sock && isReady && (broadcastGroupId || subscriptions.size > 0)) {
-      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://pemulaold.com`
+      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://monitoring.pemulaold.com`
       const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
       for (const chatId of chatIds) {
         if (chatId.endsWith('@g.us')) {
@@ -7505,7 +7505,7 @@ app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
         try {
           const adminJid = adminPhone + '@s.whatsapp.net'
           await sock.sendMessage(adminJid, {
-            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://pemulaold.com/admin/users`
+            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://monitoring.pemulaold.com/admin/users`
           })
           pushLog(`REGISTER | Notification sent to admin ${adminPhone} for ${normalizedPhone}`)
         } catch (e) {
@@ -7618,7 +7618,7 @@ app.post('/api/approve-registration', async (req, res) => {
       try {
         const userJid = phone + '@s.whatsapp.net'
         await sock.sendMessage(userJid, {
-          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://pemulaold.com/login\n\nGunakan nomor ini untuk login.`
+          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://monitoring.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
         })
       } catch (e) {}
     }
