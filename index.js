@@ -9951,7 +9951,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payGroupAutoAdd" style="width:18px;height:18px;cursor:pointer;">
-            <span>Bot menambahkan anggota ke grup WA <span style="color:#ef4444;font-size:0.85em;">(BERISIKO: pada percobaan pertama WhatsApp langsung mengeluarkan bot dan harus scan QR ulang. Biarkan mati kecuali Anda siap dengan risikonya.)</span> <span style="color:#6b7280;font-size:0.85em;">Tanpa ini, user tetap bisa bergabung sendiri lewat tombol Gabung Grup WA di website, dan permintaan bergabungnya disetujui otomatis.</span></span>
+            <span>Bot menambahkan anggota ke grup WA <span style="color:#ef4444;font-size:0.85em;">(BERISIKO: pada percobaan pertama WhatsApp langsung mengeluarkan bot dan harus scan QR ulang. Biarkan mati kecuali Anda siap dengan risikonya.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -16381,10 +16381,6 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
-      <button class="nav-menu-item" id="joinGroupBtn" onclick="joinWaGroup();closeNavMenu()" title="Gabung ke grup WhatsApp">
-        <i data-lucide="users" style="width:14px;height:14px;"></i>
-        Gabung Grup WA
-      </button>
       <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
         <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
         Hubungi Admin
@@ -19070,27 +19066,6 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
-    // Gabung grup WA: link diambil dari server (hanya untuk user yang sedang login)
-    async function joinWaGroup(silent) {
-      var d = null;
-      try {
-        d = await (await fetch('/api/group-invite?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
-      } catch (e) {}
-      if (!d || !d.success) {
-        if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
-        return;
-      }
-      if (silent) {
-        // Sekali sehari saja mengajak user yang sudah lunas tapi belum masuk grup
-        if (!d.suggest) return;
-        var today = new Date().toISOString().substring(0, 10);
-        try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
-        var ok = await showConfirm('Akun Anda sudah aktif. Gabung ke grup WhatsApp sekarang?', 'Gabung Grup WA');
-        if (!ok) return;
-      }
-      window.open(d.link, '_blank');
-    }
-
     // Hubungi admin lewat WhatsApp, pesan sudah terisi nomor HP yang sedang login
     var _myPhone = '';
     function contactAdmin() {
@@ -19236,7 +19211,6 @@ app.get('/monitoring', async (req, res) => {
           }
           _sessionOk();
           _myPhone = String(data.phone || '');
-          setTimeout(function() { joinWaGroup(true); }, 6000);
 
           // Tampilkan tombol Panel Admin di menu untuk admin
           if (data.isAdmin) {
@@ -21014,7 +20988,7 @@ async function tgOrderDetail(id, fk) {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
       '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' + (o.groupAdd && o.groupAdd.how ? ' (' + tgEsc(o.groupAdd.how) + ')' : '')
-        : o.groupAdd && o.groupAdd.status === 'privacy' ? 'belum masuk (bot ditolak privasi WhatsApp, menunggu ia bergabung lewat website)'
+        : o.groupAdd && o.groupAdd.status === 'privacy' ? 'belum masuk (bot ditolak privasi WhatsApp, masukkan manual)'
         : o.groupAdd && o.groupAdd.status === 'failed' ? 'belum masuk (bot gagal menambahkan, masukkan manual)'
         : 'belum masuk')
   }
@@ -21557,7 +21531,7 @@ async function handleTelegramCallback(tg, cq) {
     const on = s.groupAutoAdd !== true
     if (on) { _groupAddPausedUntil = 0; _groupAddFailStreak = 0 }
     await tgSavePaymentSettings({ groupAutoAdd: on })
-    await show(await tgSettingsPage(on ? 'Bot akan menambahkan anggota ke grup. PERINGATAN: pada percobaan pertama, WhatsApp langsung mengeluarkan (logout) bot sesaat setelah bot menambahkan anggota, sehingga harus scan QR ulang.' : 'Bot tidak lagi menambahkan anggota. User bergabung lewat tombol Gabung Grup WA di website.'))
+    await show(await tgSettingsPage(on ? 'Bot akan menambahkan anggota ke grup. PERINGATAN: pada percobaan pertama, WhatsApp langsung mengeluarkan (logout) bot sesaat setelah bot menambahkan anggota, sehingga harus scan QR ulang.' : 'Bot tidak lagi menambahkan anggota. Masukkan anggota secara manual.'))
     return toast('')
   }
   if (data === 's:av') {
@@ -21770,9 +21744,8 @@ async function notifyAdminsWa(text, photo, opts) {
 }
 
 // ---------- Masuk grup WA otomatis ----------
-// Setelah order lunas, bot mencoba memasukkan nomornya ke grup yang dipantau. Kalau WhatsApp
-// menolak karena privasi orangnya, ia bisa bergabung sendiri lewat tombol "Gabung Grup WA" di
-// website, dan permintaannya disetujui otomatis (kalau grup memakai "Setujui anggota baru").
+// Kalau dinyalakan, setelah order lunas bot mencoba memasukkan nomornya ke grup yang dipantau.
+// Kalau WhatsApp menolak karena privasi orangnya, admin yang memasukkannya secara manual.
 // Bot TIDAK mengirim pesan pribadi ke siapa pun. Tidak ada batas jumlah per jam / per hari
 // (permintaan pemilik); yang tersisa hanya jeda antar penambahan (satu nomor tiap ~45 detik)
 // dan rem otomatis kalau WhatsApp mulai menolak berturut-turut.
@@ -21855,11 +21828,11 @@ async function groupAddTick() {
       await savePaymentOrder(order)
       pushLog(`AUTO | Grup: +${order.phone} ${status === '409' ? 'ternyata sudah ada di grup' : 'berhasil dimasukkan ke grup WA'}`)
     } else if (status === '403' || status === '408' || status === '401') {
-      // Privasi orangnya / baru saja keluar grup: tidak dipaksa, ia bergabung sendiri lewat website
+      // Privasi orangnya / baru saja keluar grup: tidak dipaksa, admin memasukkan manual
       _groupAddFailStreak = 0
       order.groupAdd = { status: 'privacy', code: status, tries, at: now }
       await savePaymentOrder(order)
-      pushLog(`AUTO | Grup: +${order.phone} tidak bisa dimasukkan bot (privasi WhatsApp, kode ${status}) - menunggu ia bergabung lewat tombol di website`)
+      pushLog(`AUTO | Grup: +${order.phone} tidak bisa dimasukkan bot (privasi WhatsApp, kode ${status}) - masukkan manual`)
     } else {
       _groupAddFailStreak++
       const giveUp = tries >= GROUP_ADD_MAX_TRIES
@@ -21880,67 +21853,6 @@ async function groupAddTick() {
   }
 }
 setInterval(() => { groupAddTick().catch(() => {}) }, 45000)
-
-// Permintaan bergabung (grup dengan "Setujui anggota baru"): user aktif disetujui, lainnya ditolak
-const _joinUnresolved = new Set()
-async function groupJoinRequestsTick() {
-  if (!sock || !isReady || !monitoredGroupId) return
-  let list
-  try { list = await sock.groupRequestParticipantsList(monitoredGroupId) } catch (e) { return }
-  for (const r of (list || []).slice(0, 10)) {
-    const jid = String(r.jid || '')
-    let phone = ''
-    if (/@s[.]whatsapp[.]net$/.test(jid)) phone = jid.split('@')[0].split(':')[0]
-    else if (r.phone_number) phone = String(r.phone_number).split('@')[0].split(':')[0]
-    if (!/^[0-9]{9,15}$/.test(phone)) {
-      // WhatsApp menyembunyikan nomornya: tidak bisa dicek, biarkan admin yang memutuskan
-      if (jid && !_joinUnresolved.has(jid)) {
-        _joinUnresolved.add(jid)
-        pushLog('AUTO | Grup: ada permintaan bergabung yang nomornya disembunyikan WhatsApp - setujui / tolak manual di WhatsApp')
-      }
-      continue
-    }
-    const check = await isUserValid(phone)
-    if (!check.valid && check.reason === 'error') continue
-    try {
-      await sock.groupRequestParticipantsUpdate(monitoredGroupId, [jid], check.valid ? 'approve' : 'reject')
-      if (check.valid) {
-        await markOrderInGroupByPhone(phone, 'bergabung lewat link')
-        pushLog(`AUTO | Grup: permintaan bergabung +${phone} disetujui otomatis`)
-      } else {
-        pushLog(`AUTO | Grup: permintaan bergabung +${phone} ditolak (bukan user aktif)`)
-      }
-    } catch (e) {
-      pushLog(`AUTO | Grup: gagal memproses permintaan bergabung +${phone}: ${e && e.message ? e.message : e}`)
-    }
-  }
-}
-setInterval(() => { groupJoinRequestsTick().catch(() => {}) }, 60000)
-
-// Link undangan grup (disimpan 10 menit supaya tidak bertanya ke WhatsApp terus-menerus)
-let _groupInviteCache = { link: '', at: 0, group: '' }
-async function getGroupInviteLink() {
-  if (!sock || !isReady || !monitoredGroupId) return ''
-  if (_groupInviteCache.link && _groupInviteCache.group === monitoredGroupId && Date.now() - _groupInviteCache.at < 10 * 60 * 1000) return _groupInviteCache.link
-  const code = await sock.groupInviteCode(monitoredGroupId)
-  if (!code) return ''
-  _groupInviteCache = { link: 'https://chat.whatsapp.com/' + code, at: Date.now(), group: monitoredGroupId }
-  return _groupInviteCache.link
-}
-
-// User yang sedang login: link grup + apakah ia perlu diajak bergabung
-app.get('/api/group-invite', rateLimit(20, 60000), async (req, res) => {
-  try {
-    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
-    if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
-    const link = await getGroupInviteLink()
-    if (!link) return res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti atau hubungi admin.' })
-    const pending = (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
-    res.json({ success: true, link, suggest: pending })
-  } catch (e) {
-    res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti atau hubungi admin.' })
-  }
-})
 
 // Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
 // Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
@@ -22185,7 +22097,7 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
-    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === true ? '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.' : '\n\nIa bisa bergabung sendiri lewat tombol Gabung Grup WA di website. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.'), photo,
+    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + (settings.groupAutoAdd === true ? '\n\nBot akan mencoba memasukkannya ke grup WA. Kalau Anda memasukkannya sendiri, tekan tombol di bawah.' : '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.'), photo,
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
   }
   if (verdict === 'reject') {
