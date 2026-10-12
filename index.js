@@ -20722,7 +20722,7 @@ async function telegramApi(token, method, body, isForm) {
 }
 
 // Kirim teks (dan foto, kalau ada) ke Telegram admin. Mengembalikan true kalau terkirim.
-async function notifyAdminsTelegram(text, photo) {
+async function notifyAdminsTelegram(text, photo, opts) {
   const tg = await getTelegramSettings()
   if (!tg.token || !tg.chatId) return false
   const plain = String(text).replace(/\*/g, '')
@@ -20732,18 +20732,26 @@ async function notifyAdminsTelegram(text, photo) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
     .replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
+  // Tombol ACC / Tolak langsung di Telegram (hanya untuk pesan bukti bayar)
+  const markup = opts && opts.orderId ? {
+    inline_keyboard: [[
+      { text: '✅ ACC', callback_data: 'pay:acc:' + opts.orderId },
+      { text: '❌ Tolak', callback_data: 'pay:rej:' + opts.orderId }
+    ]]
+  } : null
   try {
     if (photo && photo.buffer) {
       const form = new FormData()
       form.append('chat_id', tg.chatId)
+      if (markup) form.append('reply_markup', JSON.stringify(markup))
       if (html.length <= 1000) { form.append('caption', html); form.append('parse_mode', 'HTML') }
       else form.append('caption', plain.substring(0, 1000))
       form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
       await telegramApi(tg.token, 'sendPhoto', form, true)
     } else {
       await telegramApi(tg.token, 'sendMessage', html.length <= 4000
-        ? { chat_id: tg.chatId, text: html, parse_mode: 'HTML' }
-        : { chat_id: tg.chatId, text: plain.substring(0, 4000) })
+        ? { chat_id: tg.chatId, text: html, parse_mode: 'HTML', ...(markup ? { reply_markup: markup } : {}) }
+        : { chat_id: tg.chatId, text: plain.substring(0, 4000), ...(markup ? { reply_markup: markup } : {}) })
     }
     return true
   } catch (e) {
@@ -20753,9 +20761,127 @@ async function notifyAdminsTelegram(text, photo) {
   }
 }
 
+// ---------- Telegram: tombol ACC / Tolak ----------
+// Bot membaca tombol yang ditekan lewat long-polling (tidak butuh alamat webhook). Tombol hanya
+// diproses kalau ditekan di chat admin yang terhubung (chatId tersimpan); chat lain diabaikan.
+let _tgOffset = 0
+let _tgPollToken = ''
+let _tgLastChat = null   // chat terakhir yang mengirim pesan ke bot (dipakai "Deteksi chat")
+const _tgSleep = ms => new Promise(r => setTimeout(r, ms))
+
+async function handleTelegramCallback(tg, cq) {
+  const answer = (text) => telegramApi(tg.token, 'answerCallbackQuery', { callback_query_id: cq.id, text: String(text).substring(0, 190), show_alert: true }).catch(() => {})
+  const chatId = cq.message && cq.message.chat ? String(cq.message.chat.id) : ''
+  if (!tg.chatId || chatId !== String(tg.chatId)) return answer('Chat ini tidak berhak.')
+  const setButton = (label) => telegramApi(tg.token, 'editMessageReplyMarkup', {
+    chat_id: chatId, message_id: cq.message.message_id,
+    reply_markup: { inline_keyboard: [[{ text: label, callback_data: 'done' }]] }
+  }).catch(() => {})
+  const pinMatch = /^pin:reset:(62[0-9]{8,13})$/.exec(String(cq.data || ''))
+  if (pinMatch) {
+    const phone = pinMatch[1]
+    if (!(await redis.hget(REDIS_KEYS.USERS, phone))) { await setButton('User tidak ditemukan'); return answer('User +' + phone + ' tidak ditemukan.') }
+    await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin('000000'), pinChanged: false }) })
+    pushLog(`Admin | Reset PIN for user +${phone} (Telegram)`)
+    await setButton('🔑 PIN sudah direset ke 000000')
+    return answer('PIN +' + phone + ' direset ke 000000.')
+  }
+  const m = /^pay:(acc|rej):([0-9a-f]{16})$/.exec(String(cq.data || ''))
+  if (!m) return answer('Sudah diproses.')
+  const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[2])
+  if (!raw) { await setButton('Order sudah dihapus'); return answer('Order tidak ditemukan (sudah dihapus).') }
+  const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+  if (order.status === 'paid') { await setButton('✅ Sudah di-ACC'); return answer('Order ini sudah di-ACC sebelumnya.') }
+  const siapa = cq.from ? (cq.from.first_name || cq.from.username || '') : ''
+  if (m[1] === 'acc') {
+    if (!order.proof || !order.proof.status) return answer('Order ini belum ada bukti bayarnya.')
+    const done = await completePaymentOrder(order, 'konfirmasi admin (Telegram)')
+    const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
+    await setButton('✅ Sudah di-ACC' + (siapa ? ' oleh ' + siapa : ''))
+    return answer('ACC berhasil. +' + order.phone + ' aktif sampai ' + until + '.')
+  }
+  if (order.status === 'rejected') { await setButton('❌ Sudah ditolak'); return answer('Order ini sudah ditolak sebelumnya.') }
+  order.status = 'rejected'
+  await savePaymentOrder(order)
+  pushLog(`Admin | Order QRIS +${order.phone} ditolak (Telegram)`)
+  await setButton('❌ Ditolak' + (siapa ? ' oleh ' + siapa : ''))
+  return answer('Order +' + order.phone + ' ditolak.')
+}
+
+// Admin menempel nomor HP (format bebas: 08.. / +62.. / 62..) di chat bot: bot membalas data
+// user itu dengan tombol Reset PIN. Reset baru terjadi setelah tombolnya ditekan.
+async function handleTelegramMessage(tg, msg) {
+  if (!tg.chatId || String(msg.chat.id) !== String(tg.chatId)) return
+  const text = String(msg.text || '')
+  if (!text || text.startsWith('/start')) return
+  // Ambil deretan angka yang mirip nomor HP (boleh ada spasi / strip / tanda +), maksimal 5 nomor
+  const found = (text.match(/[+]?[0-9][0-9 .()-]{7,20}[0-9]/g) || [])
+    .map(x => x.replace(/[^0-9]/g, ''))
+    .filter(x => x.length >= 9 && x.length <= 15)
+    .map(x => normalizePhone(x))
+  const phones = [...new Set(found)].slice(0, 5)
+  if (phones.length === 0) {
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: 'Kirim nomor HP user (format bebas: 0851..., +62851..., 62851...) untuk reset PIN-nya.' }).catch(() => {})
+    return
+  }
+  for (const phone of phones) {
+    const raw = await redis.hget(REDIS_KEYS.USERS, phone)
+    if (!raw) {
+      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: '<code>+' + phone + '</code>\nUser tidak ditemukan di Daftar User.', parse_mode: 'HTML' }).catch(() => {})
+      continue
+    }
+    const user = typeof raw === 'string' ? JSON.parse(raw) : raw
+    const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const masa = !user.expired ? 'Lifetime'
+      : new Date(user.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) + (user.expired < Date.now() ? ' (sudah habis)' : '')
+    await telegramApi(tg.token, 'sendMessage', {
+      chat_id: tg.chatId,
+      parse_mode: 'HTML',
+      text: '<code>+' + phone + '</code>\nNama: ' + esc(user.name || '-') + '\nMasa aktif: ' + masa,
+      reply_markup: { inline_keyboard: [[{ text: '🔑 Reset PIN ke 000000', callback_data: 'pin:reset:' + phone }]] }
+    }).catch(() => {})
+  }
+}
+
+async function telegramPollLoop() {
+  for (;;) {
+    let tg = null
+    try {
+      tg = await getTelegramSettings()
+      if (!tg.token) { await _tgSleep(5000); continue }
+      if (tg.token !== _tgPollToken) { _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null }
+      const res = await fetch(`https://api.telegram.org/bot${tg.token}/getUpdates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offset: _tgOffset, timeout: 25, allowed_updates: ['message', 'callback_query'] }),
+        signal: AbortSignal.timeout(40000)
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!data.ok) {
+        // 409 = instance lain sedang polling (mis. saat redeploy); tunggu lalu coba lagi
+        await _tgSleep(res.status === 409 ? 8000 : 15000)
+        continue
+      }
+      for (const u of data.result || []) {
+        _tgOffset = u.update_id + 1
+        if (u.message && u.message.chat) {
+          _tgLastChat = u.message.chat
+          await handleTelegramMessage(tg, u.message).catch(e => pushLog('TG | Gagal memproses pesan: ' + String(e && e.message ? e.message : e).replace(tg.token, '***')))
+        }
+        if (u.callback_query) {
+          await handleTelegramCallback(tg, u.callback_query).catch(e => pushLog('TG | Gagal memproses tombol: ' + String(e && e.message ? e.message : e).replace(tg.token, '***')))
+        }
+      }
+    } catch (e) {
+      await _tgSleep(10000)
+    }
+  }
+}
+setTimeout(() => { telegramPollLoop().catch(() => {}) }, 8000)
+
 // Pesan fitur pembayaran HANYA ke admin (tidak pernah ke nomor pembayar): WA + cadangan Telegram
-async function notifyAdminsWa(text, photo) {
-  notifyAdminsTelegram(text, photo).catch(() => {})
+async function notifyAdminsWa(text, photo, opts) {
+  notifyAdminsTelegram(text, photo, opts).catch(() => {})
   if (!sock || !isReady) return
   // Kalau ada foto (bukti bayar), kirim sebagai gambar dengan teksnya sebagai keterangan
   const content = photo && photo.buffer
@@ -20827,7 +20953,7 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime })
+    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
@@ -20918,18 +21044,21 @@ app.post('/api/admin/telegram-settings', express.json(), async (req, res) => {
     }
     if (!cur.token) return res.json({ success: false, error: 'Isi token bot dulu' })
     if (action === 'detect') {
-      const updates = await telegramApi(cur.token, 'getUpdates', { limit: 100, allowed_updates: ['message'] })
-      const msgs = (updates || []).map(u => u.message).filter(m => m && m.chat)
-      if (msgs.length === 0) {
-        if (newToken) await save()
-        return res.json({ success: false, error: 'Belum ada pesan ke bot. Buka bot-nya di Telegram, tekan Start atau kirim pesan apa saja, lalu tekan Deteksi lagi.', telegram: telegramSettingsView(cur) })
+      let chat = (!newToken || newToken === _tgPollToken) ? _tgLastChat : null
+      if (!chat) {
+        const updates = await telegramApi(cur.token, 'getUpdates', { limit: 100, allowed_updates: ['message', 'callback_query'] }).catch(() => [])
+        const msgs = (updates || []).map(u => u.message).filter(m => m && m.chat)
+        if (msgs.length) chat = msgs[msgs.length - 1].chat
       }
-      const chat = msgs[msgs.length - 1].chat
+      if (!chat) {
+        if (newToken) await save()
+        return res.json({ success: false, error: 'Belum ada pesan ke bot. Buka bot-nya di Telegram, kirim pesan apa saja (mis. halo), tunggu 5 detik, lalu tekan Deteksi lagi.', telegram: telegramSettingsView(cur) })
+      }
       cur.chatId = String(chat.id)
       cur.chatName = String(chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || '').substring(0, 60)
       await save()
       pushLog(`Admin | Telegram terhubung ke chat "${cur.chatName}" (${cur.chatId})`)
-      await notifyAdminsTelegram('✅ Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini.')
+      await notifyAdminsTelegram('✅ Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini. Bukti bayar bisa langsung di-ACC / ditolak dari sini.')
       return res.json({ success: true, telegram: telegramSettingsView(cur) })
     }
     if (action === 'test') {
