@@ -20773,12 +20773,21 @@ async function handleTelegramCallback(tg, cq) {
   const answer = (text) => telegramApi(tg.token, 'answerCallbackQuery', { callback_query_id: cq.id, text: String(text).substring(0, 190), show_alert: true }).catch(() => {})
   const chatId = cq.message && cq.message.chat ? String(cq.message.chat.id) : ''
   if (!tg.chatId || chatId !== String(tg.chatId)) return answer('Chat ini tidak berhak.')
-  const m = /^pay:(acc|rej):([0-9a-f]{16})$/.exec(String(cq.data || ''))
-  if (!m) return answer('Sudah diproses.')
   const setButton = (label) => telegramApi(tg.token, 'editMessageReplyMarkup', {
     chat_id: chatId, message_id: cq.message.message_id,
     reply_markup: { inline_keyboard: [[{ text: label, callback_data: 'done' }]] }
   }).catch(() => {})
+  const pinMatch = /^pin:reset:(62[0-9]{8,13})$/.exec(String(cq.data || ''))
+  if (pinMatch) {
+    const phone = pinMatch[1]
+    if (!(await redis.hget(REDIS_KEYS.USERS, phone))) { await setButton('User tidak ditemukan'); return answer('User +' + phone + ' tidak ditemukan.') }
+    await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin('000000'), pinChanged: false }) })
+    pushLog(`Admin | Reset PIN for user +${phone} (Telegram)`)
+    await setButton('🔑 PIN sudah direset ke 000000')
+    return answer('PIN +' + phone + ' direset ke 000000.')
+  }
+  const m = /^pay:(acc|rej):([0-9a-f]{16})$/.exec(String(cq.data || ''))
+  if (!m) return answer('Sudah diproses.')
   const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[2])
   if (!raw) { await setButton('Order sudah dihapus'); return answer('Order tidak ditemukan (sudah dihapus).') }
   const order = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -20797,6 +20806,41 @@ async function handleTelegramCallback(tg, cq) {
   pushLog(`Admin | Order QRIS +${order.phone} ditolak (Telegram)`)
   await setButton('❌ Ditolak' + (siapa ? ' oleh ' + siapa : ''))
   return answer('Order +' + order.phone + ' ditolak.')
+}
+
+// Admin menempel nomor HP (format bebas: 08.. / +62.. / 62..) di chat bot: bot membalas data
+// user itu dengan tombol Reset PIN. Reset baru terjadi setelah tombolnya ditekan.
+async function handleTelegramMessage(tg, msg) {
+  if (!tg.chatId || String(msg.chat.id) !== String(tg.chatId)) return
+  const text = String(msg.text || '')
+  if (!text || text.startsWith('/start')) return
+  // Ambil deretan angka yang mirip nomor HP (boleh ada spasi / strip / tanda +), maksimal 5 nomor
+  const found = (text.match(/[+]?[0-9][0-9 .()-]{7,20}[0-9]/g) || [])
+    .map(x => x.replace(/[^0-9]/g, ''))
+    .filter(x => x.length >= 9 && x.length <= 15)
+    .map(x => normalizePhone(x))
+  const phones = [...new Set(found)].slice(0, 5)
+  if (phones.length === 0) {
+    await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: 'Kirim nomor HP user (format bebas: 0851..., +62851..., 62851...) untuk reset PIN-nya.' }).catch(() => {})
+    return
+  }
+  for (const phone of phones) {
+    const raw = await redis.hget(REDIS_KEYS.USERS, phone)
+    if (!raw) {
+      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: '<code>+' + phone + '</code>\nUser tidak ditemukan di Daftar User.', parse_mode: 'HTML' }).catch(() => {})
+      continue
+    }
+    const user = typeof raw === 'string' ? JSON.parse(raw) : raw
+    const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const masa = !user.expired ? 'Lifetime'
+      : new Date(user.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) + (user.expired < Date.now() ? ' (sudah habis)' : '')
+    await telegramApi(tg.token, 'sendMessage', {
+      chat_id: tg.chatId,
+      parse_mode: 'HTML',
+      text: '<code>+' + phone + '</code>\nNama: ' + esc(user.name || '-') + '\nMasa aktif: ' + masa,
+      reply_markup: { inline_keyboard: [[{ text: '🔑 Reset PIN ke 000000', callback_data: 'pin:reset:' + phone }]] }
+    }).catch(() => {})
+  }
 }
 
 async function telegramPollLoop() {
@@ -20820,7 +20864,10 @@ async function telegramPollLoop() {
       }
       for (const u of data.result || []) {
         _tgOffset = u.update_id + 1
-        if (u.message && u.message.chat) _tgLastChat = u.message.chat
+        if (u.message && u.message.chat) {
+          _tgLastChat = u.message.chat
+          await handleTelegramMessage(tg, u.message).catch(e => pushLog('TG | Gagal memproses pesan: ' + String(e && e.message ? e.message : e).replace(tg.token, '***')))
+        }
         if (u.callback_query) {
           await handleTelegramCallback(tg, u.callback_query).catch(e => pushLog('TG | Gagal memproses tombol: ' + String(e && e.message ? e.message : e).replace(tg.token, '***')))
         }
