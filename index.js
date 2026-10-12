@@ -22297,7 +22297,7 @@ async function start() {
           continue
         }
         
-        if (!/\bemas\b/.test(text)) continue
+        if (!/\bhoreg\b/.test(text)) continue
 
         const now = Date.now()
         const lastReply = lastReplyAtPerChat.get(sendTarget) || 0
@@ -22879,7 +22879,7 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
         const OWNER_JIDS = ADMIN_PHONES.map(p => `${p}@s.whatsapp.net`)
         const normalizedSender = senderJid.replace(/:[0-9]+@/, '@')
         const isOwner = OWNER_JIDS.includes(normalizedSender) || ADMIN_PHONES.some(p => normalizedSender.includes(p))
-        const isEmasCommand = /\bemas\b/.test(text)
+        const isEmasCommand = /\bhoreg\b/.test(text)
 
         if (isGroup) {
           // horeg: semua anggota grup boleh pakai
@@ -22922,7 +22922,7 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
         }
 
         // Command: horeg (cek harga) — gunakan cache jika segar, atau antri ke update berikutnya
-        if (/\bemas\b/.test(text)) {
+        if (/\bhoreg\b/.test(text)) {
           const now = Date.now()
           const cacheAge = now - lastSuccessfulFetch
 
