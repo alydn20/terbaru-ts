@@ -9946,7 +9946,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payAutoVerify" style="width:18px;height:18px;cursor:pointer;">
-            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, jelas salah = tolak otomatis, ragu = menunggu ACC manual. Laporan tetap dikirim ke Telegram dan WA admin.)</span></span>
+            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, selain itu = tolak otomatis dengan alasannya dan orangnya bisa upload ulang. Anda tetap bisa ACC atau menolak sendiri. Laporan dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -21961,8 +21961,9 @@ function scheduleNotInGroupReport() {
 // ---------- Pemeriksaan bukti otomatis (OCR) ----------
 // Teks di screenshot dibaca (Tesseract, berjalan di server sendiri) lalu diperiksa: nominal,
 // nama penerima, status transaksi, tanggal, dan apakah bukti/ID transaksinya pernah dipakai.
-// Hasilnya: 'accept' (ACC otomatis), 'reject' (tolak otomatis + alasan), atau 'manual'
-// (ragu / tidak terbaca: admin yang memutuskan lewat tombol di Telegram atau panel).
+// Hasilnya selalu diputuskan sendiri: 'accept' (ACC otomatis) atau 'reject' (tolak otomatis +
+// alasan). 'manual' hanya terjadi kalau gambarnya gagal dibaca karena gangguan teknis.
+// Admin selalu bisa mengubah keputusan: ACC yang ditolak, atau hapus / blokir yang sudah di-ACC.
 // CATATAN: OCR hanya membaca tulisan. Screenshot yang diedit rapi tetap bisa lolos, jadi
 // laporan ke admin selalu menyertakan fotonya untuk dicek sekilas.
 const PAYMENT_PROOF_IDS_KEY = 'gold:payment_proof_ids'   // Hash: sidik bukti (ID transaksi / hash gambar) -> orderId
@@ -22100,6 +22101,18 @@ function analyzeProofText(text, order, merchantName, now) {
     verdict = 'reject'; reason = 'Status transaksi di bukti bukan berhasil'
   } else if (amountOk && successOk && dateOk && (merchantOk || !mName)) {
     verdict = 'accept'
+  } else {
+    // Tidak ada keputusan "menunggu admin": yang tidak lengkap ditolak, dan orangnya diberi tahu
+    // apa yang kurang supaya bisa upload bukti yang benar. Admin tetap bisa membatalkan penolakan.
+    verdict = 'reject'
+    const kurang = []
+    if (!amountOk) kurang.push('nominal ' + rp(order.amount))
+    if (!successOk) kurang.push('status berhasil')
+    if (mName && !merchantOk) kurang.push('nama penerima ' + mName)
+    if (!dateOk) kurang.push('tanggal pembayaran')
+    reason = (!amountOk && !successOk && !dateOk && amounts.all.length === 0)
+      ? 'Foto bukan bukti pembayaran atau tidak terbaca. Upload screenshot bukti pembayaran yang jelas dan utuh'
+      : 'Bukti tidak lengkap, tidak terbaca: ' + kurang.join(', ') + '. Upload screenshot bukti pembayaran yang jelas dan utuh'
   }
   return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
 }
@@ -22173,10 +22186,10 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   if (verdict === 'reject') {
     await rejectPaymentOrder(order, reason, 'otomatis')
     return notifyAdminsWa('*DITOLAK OTOMATIS*\n\n' + kepala + '\nAlasan: ' + reason + hasil + '\n\nOrangnya melihat alasan ini dan bisa upload bukti baru. Kalau penolakan ini keliru, tekan ACC.', photo,
-      { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }]] })
+      { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }], [{ text: 'Lihat order', callback_data: 'o:v:' + order.id + ':x' }]] })
   }
   await savePaymentOrder(order)
-  return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nCek otomatis tidak cukup yakin. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
+  return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nGambar gagal dibaca karena gangguan teknis, jadi tidak diputuskan otomatis. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
 }
 
 // Publik: unggah screenshot bukti bayar untuk sebuah order
