@@ -20407,17 +20407,9 @@ async function completePaymentOrder(order, via) {
   await savePaymentOrder(order)
   const until = user.expired ? new Date(user.expired).toLocaleDateString('id-ID') : 'Lifetime'
   pushLog(`PAY | ✅ Lunas Rp${order.amount.toLocaleString('id-ID')} dari +${order.phone} (${via}) - aktif sampai ${until}`)
-  // Kabari user lewat WA (kalau bot tersambung) — gagal kirim tidak membatalkan aktivasi
-  if (sock && isReady) {
-    sock.sendMessage(order.phone + '@s.whatsapp.net', {
-      text: `✅ *PEMBAYARAN DITERIMA*
-
-Terima kasih. Akun Anda aktif sampai *${until}*.
-
-Login dengan nomor ini.
-PIN awal: *${getDefaultPin(order.phone)}* (wajib diganti saat login pertama).`
-    }).catch(() => {})
-  }
+  // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
+  // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
+  // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
   return order
 }
 
