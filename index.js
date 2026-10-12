@@ -8111,7 +8111,7 @@ app.get('/login', async (req, res) => {
         </style>
         <div id="payUploadBox" style="border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(34,197,94,0.12);">
           <div style="font-weight:800;font-size:1em;color:#22c55e;margin-bottom:4px;">Langkah 2. SUDAH BAYAR?</div>
-          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri. <b>Hanya bisa 1 kali</b>, pastikan fotonya benar.</div>
+          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri. Pastikan fotonya benar: bukti tidak bisa diganti selama dicek admin.</div>
           <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
           <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">&#128228; UPLOAD BUKTI PEMBAYARAN</button>
           <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
@@ -8121,7 +8121,7 @@ app.get('/login', async (req, res) => {
           <div style="font-size:0.88em;margin-bottom:8px;">Alasan: <b id="payRejectReason"></b></div>
           <div style="font-size:0.8em;color:#9ca3af;margin-bottom:6px;">Bukti yang Anda kirim:</div>
           <img id="payRejectImg" alt="Bukti yang ditolak" style="display:block;max-width:100%;max-height:260px;margin:0 auto 8px;border-radius:8px;">
-          <div style="font-size:0.85em;">Bukti hanya bisa dikirim 1 kali. Kalau Anda memang sudah membayar, <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">hubungi admin</a>.</div>
+          <div style="font-size:0.85em;">Upload bukti yang benar lewat tombol hijau. Butuh bantuan? <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">Hubungi admin</a>.</div>
         </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
@@ -8570,8 +8570,17 @@ app.get('/login', async (req, res) => {
       }
       _payRejectShown = true;
       box.style.display = 'block';
-      // Tidak ada upload ulang: kotak upload disembunyikan, yang tampil hanya alasan + foto
-      document.getElementById('payUploadBox').style.display = 'none';
+      // Setelah ditolak boleh upload bukti baru: tombol upload ditampilkan lagi
+      var cb = document.getElementById('payClaimBtn');
+      var st = document.getElementById('payStatus');
+      var hint = document.getElementById('payUploadHint');
+      document.getElementById('payUploadBox').style.display = '';
+      if (hint) hint.style.display = '';
+      cb.style.display = 'block';
+      cb.disabled = false;
+      cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI BARU';
+      st.textContent = 'Bukti sebelumnya ditolak. Upload bukti yang benar.';
+      st.style.color = '#ef4444';
     }
     function contactAdminRejected() {
       var nomor = (document.getElementById('phoneInput') || {}).value || '';
@@ -8639,7 +8648,7 @@ app.get('/login', async (req, res) => {
       var file = input.files && input.files[0];
       input.value = '';
       if (!file || !_payOrder) return;
-      if (!window.confirm('Bukti hanya bisa dikirim 1 kali dan tidak bisa diganti. Pastikan ini foto bukti pembayaran yang benar. Kirim sekarang?')) return;
+      if (!window.confirm('Pastikan ini foto bukti pembayaran yang benar. Setelah terkirim, bukti tidak bisa diganti selama dicek admin. Kirim sekarang?')) return;
       var cb = document.getElementById('payClaimBtn');
       var st = document.getElementById('payStatus');
       _payUploading = true;
@@ -8662,13 +8671,17 @@ app.get('/login', async (req, res) => {
           _hideReject();
           _showProofState('uploaded', false);
         } else {
-          _showProofState(null, false);
+          if (!_payRejectShown) _showProofState(null, false);
+          cb.disabled = false;
+          cb.textContent = String.fromCodePoint(128228) + (_payRejectShown ? ' UPLOAD BUKTI BARU' : ' UPLOAD BUKTI PEMBAYARAN');
           st.textContent = d.error || 'Gagal mengunggah. Coba lagi.';
           st.style.color = '#ef4444';
         }
       } catch (e) {
         _payUploading = false;
-        _showProofState(null, false);
+        if (!_payRejectShown) _showProofState(null, false);
+        cb.disabled = false;
+        cb.textContent = String.fromCodePoint(128228) + (_payRejectShown ? ' UPLOAD BUKTI BARU' : ' UPLOAD BUKTI PEMBAYARAN');
         st.textContent = 'Gagal mengunggah. Periksa koneksi lalu coba lagi.';
         st.style.color = '#ef4444';
       }
@@ -20643,7 +20656,7 @@ async function completePaymentOrder(order, via) {
 }
 
 // Tolak order dengan alasan. Saat orangnya login lagi, halaman bayar menampilkan alasannya
-// bersama foto bukti yang ia kirim. Bukti hanya 1x: ia tidak bisa mengunggah lagi di order ini.
+// bersama foto bukti yang ia kirim, dan ia boleh mengunggah bukti baru (order kembali menunggu ACC).
 async function rejectPaymentOrder(order, reason, via) {
   order.status = 'rejected'
   order.rejectReason = String(reason || '').replace(/\s+/g, ' ').trim().substring(0, 200)
@@ -20756,7 +20769,7 @@ app.get('/api/payment/status', rateLimit(90, 60000), async (req, res) => {
 // Tidak ada pembacaan otomatis (OCR) — sengaja, supaya server tetap ringan.
 const PAY_PROOF_PREFIX = 'gold:payproof:'   // String base64 per order (kedaluwarsa sendiri)
 const PAY_PROOF_TTL_SEC = 7 * 24 * 3600
-const PAY_PROOF_MAX_UPLOADS = 1   // bukti hanya bisa dikirim satu kali per order
+const PAY_PROOF_MAX_UPLOADS = 5   // batas total per order (1x, lalu 1x lagi tiap kali ditolak)
 
 function detectImageMime(buf) {
   if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
@@ -21357,7 +21370,7 @@ async function handleTelegramCallback(tg, cq) {
     const kb = TG_REJECT_REASONS.map((r, i) => [{ text: r, callback_data: 'o:rr:' + m[1] + ':' + m[2] + ':' + i }])
     kb.push([{ text: '✏️ Tulis alasan sendiri', callback_data: 'o:rc:' + m[1] + ':' + m[2] }])
     kb.push([{ text: '⬅️ Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }])
-    await show({ text: '❌ <b>Tolak order ini?</b>\n\nPilih alasannya. Alasan ini akan terlihat oleh orangnya saat login lagi, bersama foto bukti yang ia kirim. Ia tidak bisa mengunggah bukti lagi di order ini.', kb })
+    await show({ text: '❌ <b>Tolak order ini?</b>\n\nPilih alasannya. Alasan ini akan terlihat oleh orangnya saat login lagi, bersama foto bukti yang ia kirim, dan ia bisa mengunggah bukti baru.', kb })
     return toast('')
   }
   if ((m = /^o:rc:([0-9a-f]{16}):([a-z])$/.exec(data))) {
@@ -21693,10 +21706,18 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (order.status === 'rejected') return res.json({ success: false, error: 'Bukti Anda sudah ditolak. Hubungi admin.' })
-    if (order.status !== 'pending' || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
+    const wasRejected = order.status === 'rejected'
+    if ((order.status !== 'pending' && !wasRejected) || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
     const count = (order.proof && order.proof.count) || 0
-    if (count >= PAY_PROOF_MAX_UPLOADS) return res.json({ success: false, error: 'Bukti hanya bisa dikirim 1 kali. Hubungi admin.' })
+    // Selama masih menunggu ACC, bukti tidak bisa diganti. Upload lagi hanya setelah ditolak.
+    if (!wasRejected && count >= 1) return res.json({ success: false, error: 'Bukti sudah terkirim dan sedang menunggu dicek admin.' })
+    if (count >= PAY_PROOF_MAX_UPLOADS) return res.json({ success: false, error: 'Batas unggah bukti tercapai. Hubungi admin.' })
+    const prevReason = wasRejected ? (order.rejectReason || '') : ''
+    if (wasRejected) {
+      order.status = 'pending'
+      delete order.rejectReason
+      delete order.rejectedAt
+    }
 
     await _ioredis.set(PAY_PROOF_PREFIX + id, mime + ';' + buf.toString('base64'), 'EX', PAY_PROOF_TTL_SEC)
     order.claimedAt = order.claimedAt || Date.now()
@@ -21705,7 +21726,7 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
+    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*${wasRejected ? '\n\n🔁 Bukti BARU setelah ditolak' + (prevReason ? ' (alasan: ' + prevReason + ')' : '') : ''}\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
