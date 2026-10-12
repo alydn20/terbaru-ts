@@ -6201,13 +6201,24 @@ app.get('/api/admin/users', async (req, res) => {
 
   try {
     // Status push diambil sekaligus (HKEYS) — dulu 1 HGET per user berurutan, sangat lambat
-    const [users, blockedUsers, pinData, pushSubPhones] = await Promise.all([
+    const [users, blockedUsers, pinData, pushSubPhones, payOrders] = await Promise.all([
       redis.hgetall(REDIS_KEYS.USERS),
       redis.hgetall(REDIS_KEYS.BLOCKED_USERS),
       redis.hgetall(REDIS_KEYS.USER_PINS),
-      redis.hkeys(REDIS_KEYS.PUSH_SUBS)
+      redis.hkeys(REDIS_KEYS.PUSH_SUBS),
+      redis.hgetall(REDIS_KEYS.PAYMENT_ORDERS).catch(() => ({}))
     ])
     const pushSubSet = new Set(pushSubPhones)
+    // Status grup WA dari order lunas terbaru: 'belum' / 'masuk'. Tanpa order lunas = tidak diketahui.
+    const groupByPhone = {}
+    for (const raw of Object.values(payOrders || {})) {
+      try {
+        const o = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (o.status !== 'paid') continue
+        const cur = groupByPhone[o.phone]
+        if (!cur || (o.paidAt || 0) > cur.paidAt) groupByPhone[o.phone] = { paidAt: o.paidAt || 0, status: o.inGroup ? 'masuk' : 'belum' }
+      } catch (e) { /* ignore */ }
+    }
     const result = []
 
     for (const [phone, data] of Object.entries(users || {})) {
@@ -6229,7 +6240,8 @@ app.get('/api/admin/users', async (req, res) => {
         ...user,
         hasPushSubscription: !!hasPushSub,
         isBlocked,
-        pinChanged
+        pinChanged,
+        groupStatus: groupByPhone[phone] ? groupByPhone[phone].status : null
       })
     }
 
@@ -12493,7 +12505,10 @@ ${authScript}
             return '<tr' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
               '<td class="phone">+' + u.phone + '</td>' +
               '<td>' + (u.name || '-') + '</td>' +
-              '<td><span class="status-badge ' + statusClass + '">' + status + '</span></td>' +
+              '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
+                (u.groupStatus === 'belum' ? ' <span title="Sudah lunas, belum ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(245,158,11,0.15);color:#f59e0b;white-space:nowrap;">Belum masuk grup</span>'
+                  : u.groupStatus === 'masuk' ? ' <span title="Sudah ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(34,197,94,0.12);color:#22c55e;white-space:nowrap;">Di grup</span>' : '') +
+              '</td>' +
               '<td><span class="push-badge ' + (u.hasPushSubscription ? 'push-yes' : 'push-no') + '"></span></td>' +
               '<td>' + pinStatus + '</td>' +
               '<td>' + expDate + '</td>' +
@@ -16388,7 +16403,7 @@ app.get('/monitoring', async (req, res) => {
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
       </button>
-      <button class="nav-menu-item" id="joinGroupBtn" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
+      <button class="nav-menu-item" id="joinGroupBtn" style="display:none;" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
         <i data-lucide="users" style="width:14px;height:14px;"></i>
         Gabung Grup WA
       </button>
@@ -19084,13 +19099,19 @@ app.get('/monitoring', async (req, res) => {
       try {
         d = await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
       } catch (e) {}
+      // Menu hanya ditampilkan untuk yang sudah lunas tetapi belum ditandai masuk grup
+      var menuBtn = document.getElementById('joinGroupBtn');
+      if (menuBtn) menuBtn.style.display = (d && d.success && d.suggest) ? '' : 'none';
       if (!d || !d.success) {
         if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
         return;
       }
+      if (!d.suggest) {
+        if (!silent) await showConfirm('Anda sudah tercatat masuk grup.', 'Gabung Grup WA');
+        return;
+      }
       if (silent) {
         // Sekali sehari saja mengajak user yang sudah lunas tapi belum masuk grup
-        if (!d.suggest) return;
         var today = new Date().toISOString().substring(0, 10);
         try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
       }
@@ -21209,12 +21230,14 @@ async function tgUserCard(phone, note) {
     return { text: head + 'Tidak terdaftar di Daftar User.' + (blockedRaw ? '\nStatus: diblokir' : ''), kb }
   }
   const u = tgParse(raw)
+  const grupOrder = (await loadPaymentOrders()).filter(o => o.phone === phone && o.status === 'paid').sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
   let pinChanged = false
   try { pinChanged = !!(pinRaw && tgParse(pinRaw).pinChanged) } catch (e) {}
   const left = u.expired ? tgDaysLeft(u.expired) : null
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
     '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'masih bawaan (000000)') +
+    (grupOrder ? '\nGrup WA: ' + (grupOrder.inGroup ? 'sudah masuk' : 'BELUM masuk') : '') +
     (blockedRaw ? '\nStatus: diblokir' : '')
   kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
   kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
@@ -22113,7 +22136,8 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
     const s = await getPaymentSettings()
     if (!s.groupLink) return res.json({ success: false, error: 'Link grup belum diatur. Hubungi admin.' })
     const pending = (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup)
-    res.json({ success: true, link: s.groupLink, phone, suggest: pending })
+    if (!pending) return res.json({ success: true, suggest: false })
+    res.json({ success: true, link: s.groupLink, phone, suggest: true })
   } catch (e) {
     res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
   }
