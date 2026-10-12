@@ -8113,11 +8113,11 @@ app.get('/login', async (req, res) => {
           <div style="font-weight:800;font-size:1em;color:#22c55e;margin-bottom:4px;">Langkah 2. SUDAH BAYAR?</div>
           <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri. Pastikan fotonya benar: bukti tidak bisa diganti selama dicek admin.</div>
           <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
-          <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">&#128228; UPLOAD BUKTI PEMBAYARAN</button>
+          <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">UPLOAD BUKTI PEMBAYARAN</button>
           <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
         </div>
         <div id="payReject" style="display:none;border:2px solid #ef4444;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(239,68,68,0.1);text-align:left;">
-          <div style="font-weight:800;color:#ef4444;margin-bottom:6px;">&#10060; BUKTI ANDA DITOLAK</div>
+          <div style="font-weight:800;color:#ef4444;margin-bottom:6px;">BUKTI ANDA DITOLAK</div>
           <div style="font-size:0.88em;margin-bottom:8px;">Alasan: <b id="payRejectReason"></b></div>
           <div style="font-size:0.8em;color:#9ca3af;margin-bottom:6px;">Bukti yang Anda kirim:</div>
           <img id="payRejectImg" alt="Bukti yang ditolak" style="display:block;max-width:100%;max-height:260px;margin:0 auto 8px;border-radius:8px;">
@@ -8488,7 +8488,7 @@ app.get('/login', async (req, res) => {
         cb.style.display = 'block';
         var hint0 = document.getElementById('payUploadHint');
         if (hint0) hint0.style.display = '';
-        cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI PEMBAYARAN';
+        cb.textContent = 'UPLOAD BUKTI PEMBAYARAN';
         st.textContent = 'WAJIB. Tanpa upload bukti, pembayaran Anda tidak diproses admin.';
         st.style.color = '#fbbf24';
         return;
@@ -8578,7 +8578,7 @@ app.get('/login', async (req, res) => {
       if (hint) hint.style.display = '';
       cb.style.display = 'block';
       cb.disabled = false;
-      cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI BARU';
+      cb.textContent = 'UPLOAD BUKTI BARU';
       st.textContent = 'Bukti sebelumnya ditolak. Upload bukti yang benar.';
       st.style.color = '#ef4444';
     }
@@ -8673,7 +8673,7 @@ app.get('/login', async (req, res) => {
         } else {
           if (!_payRejectShown) _showProofState(null, false);
           cb.disabled = false;
-          cb.textContent = String.fromCodePoint(128228) + (_payRejectShown ? ' UPLOAD BUKTI BARU' : ' UPLOAD BUKTI PEMBAYARAN');
+          cb.textContent = (_payRejectShown ? 'UPLOAD BUKTI BARU' : 'UPLOAD BUKTI PEMBAYARAN');
           st.textContent = d.error || 'Gagal mengunggah. Coba lagi.';
           st.style.color = '#ef4444';
         }
@@ -8681,7 +8681,7 @@ app.get('/login', async (req, res) => {
         _payUploading = false;
         if (!_payRejectShown) _showProofState(null, false);
         cb.disabled = false;
-        cb.textContent = String.fromCodePoint(128228) + (_payRejectShown ? ' UPLOAD BUKTI BARU' : ' UPLOAD BUKTI PEMBAYARAN');
+        cb.textContent = (_payRejectShown ? 'UPLOAD BUKTI BARU' : 'UPLOAD BUKTI PEMBAYARAN');
         st.textContent = 'Gagal mengunggah. Periksa koneksi lalu coba lagi.';
         st.style.color = '#ef4444';
       }
@@ -11515,7 +11515,7 @@ ${authScript}
             let grup = '<span style="color:#6b7280;">-</span>';
             if (o.status === 'paid') {
               grup = o.inGroup
-                ? '<button class="action-btn" style="background:#22c55e;" title="Sudah masuk grup. Klik untuk membatalkan tanda." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">&#10003; Masuk</button>'
+                ? '<button class="action-btn" style="background:#22c55e;" title="Sudah masuk grup. Klik untuk membatalkan tanda." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Masuk</button>'
                 : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
             const aksi = (o.status === 'paid' ? '' :
@@ -20647,7 +20647,7 @@ async function completePaymentOrder(order, via) {
   order.activeUntil = user.expired || null
   await savePaymentOrder(order)
   const until = user.expired ? new Date(user.expired).toLocaleDateString('id-ID') : 'Lifetime'
-  pushLog(`PAY | ✅ Lunas Rp${order.amount.toLocaleString('id-ID')} dari +${order.phone} (${via}) - aktif sampai ${until}`)
+  pushLog(`PAY | Lunas Rp${order.amount.toLocaleString('id-ID')} dari +${order.phone} (${via}) - aktif sampai ${until}`)
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
@@ -20830,8 +20830,8 @@ async function notifyAdminsTelegram(text, photo, opts) {
   // Tombol ACC / Tolak langsung di Telegram (hanya untuk pesan bukti bayar)
   const markup = opts && opts.orderId ? {
     inline_keyboard: [[
-      { text: '✅ ACC', callback_data: 'pay:acc:' + opts.orderId },
-      { text: '❌ Tolak', callback_data: 'pay:rej:' + opts.orderId }
+      { text: 'ACC', callback_data: 'pay:acc:' + opts.orderId },
+      { text: 'Tolak', callback_data: 'pay:rej:' + opts.orderId }
     ]]
   } : null
   try {
@@ -20870,7 +20870,7 @@ const tgRp = n => 'Rp' + Number(n).toLocaleString('id-ID')
 const tgDate = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
 const tgDateTime = t => new Date(t).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
 const tgDaysLeft = t => Math.ceil((t - Date.now()) / 86400000)
-const TG_HOME_ROW = [{ text: '🏠 Menu', callback_data: 'm:home' }]
+const TG_HOME_ROW = [{ text: 'Menu utama', callback_data: 'm:home' }]
 const tgSetAwait = (mode, orderId) => { _tgAwait = { mode, until: mode ? Date.now() + 5 * 60 * 1000 : 0, orderId: orderId || '' } }
 // Alasan penolakan siap pakai (tombol). Selain ini admin bisa menulis alasan sendiri.
 const TG_REJECT_REASONS = ['Nominal tidak sesuai', 'Bukti tidak jelas / terpotong', 'Uang belum masuk', 'Bukti tidak valid']
@@ -20903,30 +20903,30 @@ function tgHomePage() {
   return {
     text: '<b>Panel Admin Gold Monitor</b>\nPilih menu:',
     kb: [
-      [{ text: '🧾 Order pembayaran', callback_data: 'm:ord' }, { text: '👤 User', callback_data: 'm:usr' }],
-      [{ text: '⏳ Mau expired', callback_data: 'm:exp' }, { text: '🟢 Online', callback_data: 'm:on' }],
-      [{ text: '📱 WhatsApp', callback_data: 'm:wa' }, { text: '⚙️ Pengaturan', callback_data: 'm:set' }],
-      [{ text: '📋 Logs', callback_data: 'l:a' }, { text: '📊 Ringkasan', callback_data: 'm:stats' }]
+      [{ text: 'Order pembayaran', callback_data: 'm:ord' }, { text: 'User', callback_data: 'm:usr' }],
+      [{ text: 'Mau expired', callback_data: 'm:exp' }, { text: 'Online', callback_data: 'm:on' }],
+      [{ text: 'WhatsApp', callback_data: 'm:wa' }, { text: 'Pengaturan', callback_data: 'm:set' }],
+      [{ text: 'Logs', callback_data: 'l:a' }, { text: 'Ringkasan', callback_data: 'm:stats' }]
     ]
   }
 }
 
 const tgHasProof = o => !!(o.proof && o.proof.status)
 const TG_ORDER_FILTERS = {
-  w: { label: 'Menunggu ACC', icon: '🟡', test: o => o.status === 'pending' && tgHasProof(o) },
-  n: { label: 'Belum upload bukti', icon: '⚪', test: o => o.status === 'pending' && !tgHasProof(o) },
-  g: { label: 'Lunas, belum masuk grup', icon: '🟢', test: o => o.status === 'paid' && !o.inGroup },
-  d: { label: 'Lunas, sudah masuk grup', icon: '✅', test: o => o.status === 'paid' && !!o.inGroup },
-  x: { label: 'Ditolak / kedaluwarsa', icon: '🔴', test: o => o.status === 'rejected' || o.status === 'expired' }
+  w: { label: 'Menunggu ACC', test: o => o.status === 'pending' && tgHasProof(o) },
+  n: { label: 'Belum upload bukti', test: o => o.status === 'pending' && !tgHasProof(o) },
+  g: { label: 'Lunas, belum masuk grup', test: o => o.status === 'paid' && !o.inGroup },
+  d: { label: 'Lunas, sudah masuk grup', test: o => o.status === 'paid' && !!o.inGroup },
+  x: { label: 'Ditolak / kedaluwarsa', test: o => o.status === 'rejected' || o.status === 'expired' }
 }
 const TG_ORDER_STATUS = { pending: 'Menunggu', paid: 'Lunas', expired: 'Kedaluwarsa', rejected: 'Ditolak' }
 const TG_ORDER_PAGE_SIZE = 8
 
 async function tgOrdersMenu() {
   const orders = await loadPaymentOrders()
-  const kb = Object.entries(TG_ORDER_FILTERS).map(([k, f]) => [{ text: f.icon + ' ' + f.label + ' (' + orders.filter(f.test).length + ')', callback_data: 'o:l:' + k + ':0' }])
+  const kb = Object.entries(TG_ORDER_FILTERS).map(([k, f]) => [{ text: f.label + ' (' + orders.filter(f.test).length + ')', callback_data: 'o:l:' + k + ':0' }])
   kb.push(TG_HOME_ROW)
-  return { text: '🧾 <b>Order pembayaran</b>\nTotal: ' + orders.length + ' order\n\nPilih daftar:', kb }
+  return { text: '<b>Order pembayaran</b>\nTotal: ' + orders.length + ' order\n\nPilih daftar:', kb }
 }
 
 async function tgOrderList(fk, page) {
@@ -20939,15 +20939,15 @@ async function tgOrderList(fk, page) {
   const kb = shown.map(o => [{ text: '+' + o.phone + '  ·  ' + tgRp(o.amount), callback_data: 'o:v:' + o.id + ':' + fk }])
   if (pages > 1) {
     const nav = []
-    if (p > 0) nav.push({ text: '◀️ Sebelumnya', callback_data: 'o:l:' + fk + ':' + (p - 1) })
-    if (p < pages - 1) nav.push({ text: 'Berikutnya ▶️', callback_data: 'o:l:' + fk + ':' + (p + 1) })
+    if (p > 0) nav.push({ text: '« Sebelumnya', callback_data: 'o:l:' + fk + ':' + (p - 1) })
+    if (p < pages - 1) nav.push({ text: 'Berikutnya »', callback_data: 'o:l:' + fk + ':' + (p + 1) })
     kb.push(nav)
   }
   // Order yang sudah selesai (sudah masuk grup / ditolak / kedaluwarsa) boleh dibersihkan sekaligus
-  if ((fk === 'd' || fk === 'x') && list.length > 0) kb.push([{ text: '🗑 Hapus semua di daftar ini (' + list.length + ')', callback_data: 'o:bd:' + fk }])
-  kb.push([{ text: '⬅️ Order', callback_data: 'm:ord' }, TG_HOME_ROW[0]])
+  if ((fk === 'd' || fk === 'x') && list.length > 0) kb.push([{ text: 'Hapus semua di daftar ini (' + list.length + ')', callback_data: 'o:bd:' + fk }])
+  kb.push([{ text: '« Order', callback_data: 'm:ord' }, TG_HOME_ROW[0]])
   return {
-    text: f.icon + ' <b>' + f.label + '</b> (' + list.length + ')' + (pages > 1 ? '  ·  hal ' + (p + 1) + '/' + pages : '') +
+    text: '<b>' + f.label + '</b> (' + list.length + ')' + (pages > 1 ? '  ·  hal ' + (p + 1) + '/' + pages : '') +
       '\n\n' + (list.length ? 'Tekan nomor untuk melihat detail dan aksinya.' : 'Kosong.'),
     kb
   }
@@ -20955,29 +20955,29 @@ async function tgOrderList(fk, page) {
 
 async function tgOrderDetail(id, fk) {
   const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
-  if (!raw) return { text: 'Order ini sudah tidak ada (sudah dihapus).', kb: [[{ text: '⬅️ Daftar', callback_data: 'o:l:' + fk + ':0' }, TG_HOME_ROW[0]]] }
+  if (!raw) return { text: 'Order ini sudah tidak ada (sudah dihapus).', kb: [[{ text: '« Daftar', callback_data: 'o:l:' + fk + ':0' }, TG_HOME_ROW[0]]] }
   const o = tgParse(raw)
   const status = o.status === 'pending' && o.expiresAt < Date.now() ? 'expired' : o.status
   const proof = tgHasProof(o)
-  let text = '🧾 <b>Order pembayaran</b>\n\nNomor: <code>+' + o.phone + '</code>\nNominal: <b>' + tgRp(o.amount) + '</b>\nStatus: <b>' + (TG_ORDER_STATUS[status] || status) + '</b>' +
+  let text = '<b>Order pembayaran</b>\n\nNomor: <code>+' + o.phone + '</code>\nNominal: <b>' + tgRp(o.amount) + '</b>\nStatus: <b>' + (TG_ORDER_STATUS[status] || status) + '</b>' +
     '\nDibuat: ' + tgDateTime(o.createdAt) + '\nBukti: ' + (proof ? 'sudah upload' + (o.proof.uploadedAt ? ' (' + tgDateTime(o.proof.uploadedAt) + ')' : '') : 'belum upload')
   if (status === 'rejected') text += '\nAlasan ditolak: <b>' + tgEsc(o.rejectReason || '-') + '</b>'
   if (status === 'paid') {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
-      '\nGrup WA: ' + (o.inGroup ? '✅ sudah masuk' : 'belum masuk')
+      '\nGrup WA: ' + (o.inGroup ? 'sudah masuk' : 'belum masuk')
   }
   const kb = []
   const row1 = []
-  if (status !== 'paid' && proof) row1.push({ text: '✅ ACC', callback_data: 'o:acc:' + id + ':' + fk })
-  if (status === 'pending') row1.push({ text: '❌ Tolak', callback_data: 'o:rej:' + id + ':' + fk })
+  if (status !== 'paid' && proof) row1.push({ text: 'ACC', callback_data: 'o:acc:' + id + ':' + fk })
+  if (status === 'pending') row1.push({ text: 'Tolak', callback_data: 'o:rej:' + id + ':' + fk })
   if (row1.length) kb.push(row1)
-  if (status === 'paid') kb.push([{ text: o.inGroup ? '↩️ Batalkan tanda masuk grup' : '✓ Tandai sudah masuk grup', callback_data: 'o:grp:' + id + ':' + fk }])
+  if (status === 'paid') kb.push([{ text: o.inGroup ? 'Batalkan tanda masuk grup' : 'Tandai sudah masuk grup', callback_data: 'o:grp:' + id + ':' + fk }])
   const row3 = []
-  if (proof) row3.push({ text: '🖼 Lihat bukti', callback_data: 'o:prf:' + id + ':' + fk })
-  row3.push({ text: '🗑 Hapus', callback_data: 'o:dq:' + id + ':' + fk })
+  if (proof) row3.push({ text: 'Lihat bukti', callback_data: 'o:prf:' + id + ':' + fk })
+  row3.push({ text: 'Hapus', callback_data: 'o:dq:' + id + ':' + fk })
   kb.push(row3)
-  kb.push([{ text: '⬅️ Daftar', callback_data: 'o:l:' + fk + ':0' }, TG_HOME_ROW[0]])
+  kb.push([{ text: '« Daftar', callback_data: 'o:l:' + fk + ':0' }, TG_HOME_ROW[0]])
   return { text, kb }
 }
 
@@ -21036,13 +21036,13 @@ async function tgUsersPage() {
   const lifetime = list.filter(u => !u.expired).length
   const soon = list.filter(u => u.expired && u.expired > now && u.expired - now <= 3 * 86400000).length
   return {
-    text: '👤 <b>User</b>\n\nTotal: ' + list.length + '\nLifetime: ' + lifetime + '\nBerbatas waktu: ' + (list.length - lifetime) +
+    text: '<b>User</b>\n\nTotal: ' + list.length + '\nLifetime: ' + lifetime + '\nBerbatas waktu: ' + (list.length - lifetime) +
       '\nHabis dalam 3 hari: ' + soon + '\nDiblokir: ' + Object.keys(blocked || {}).length +
       '\n\nUntuk mengelola satu user, tekan Cari lalu kirim nomornya (format bebas: 0851..., +62851..., 62851...).',
     kb: [
-      [{ text: '🔎 Cari / kelola nomor', callback_data: 'u:find' }],
-      [{ text: '➕ Tambah user', callback_data: 'u:add' }, { text: '🔑 Reset PIN', callback_data: 'u:pin' }],
-      [{ text: '⏳ Mau expired', callback_data: 'm:exp' }, TG_HOME_ROW[0]]
+      [{ text: 'Cari / kelola nomor', callback_data: 'u:find' }],
+      [{ text: 'Tambah user', callback_data: 'u:add' }, { text: 'Reset PIN', callback_data: 'u:pin' }],
+      [{ text: 'Mau expired', callback_data: 'm:exp' }, TG_HOME_ROW[0]]
     ]
   }
 }
@@ -21051,13 +21051,13 @@ async function tgUserCard(phone, note) {
   const [raw, blockedRaw, pinRaw] = await Promise.all([
     redis.hget(REDIS_KEYS.USERS, phone), redis.hget(REDIS_KEYS.BLOCKED_USERS, phone), redis.hget(REDIS_KEYS.USER_PINS, phone)
   ])
-  const head = (note ? '<i>' + tgEsc(note) + '</i>\n\n' : '') + '👤 <code>+' + phone + '</code>\n'
+  const head = (note ? '<i>' + tgEsc(note) + '</i>\n\n' : '') + '<code>+' + phone + '</code>\n'
   const kb = []
   if (!raw) {
-    kb.push([{ text: '➕ Daftarkan (masa aktif QRIS)', callback_data: 'u:ex:' + phone }, { text: '♾ Lifetime', callback_data: 'u:lf:' + phone }])
-    if (blockedRaw) kb.push([{ text: '✅ Buka blokir', callback_data: 'u:ub:' + phone }])
-    kb.push([{ text: '⬅️ User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
-    return { text: head + 'Tidak terdaftar di Daftar User.' + (blockedRaw ? '\nStatus: 🚫 diblokir' : ''), kb }
+    kb.push([{ text: 'Daftarkan (masa aktif QRIS)', callback_data: 'u:ex:' + phone }, { text: 'Lifetime', callback_data: 'u:lf:' + phone }])
+    if (blockedRaw) kb.push([{ text: 'Buka blokir', callback_data: 'u:ub:' + phone }])
+    kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
+    return { text: head + 'Tidak terdaftar di Daftar User.' + (blockedRaw ? '\nStatus: diblokir' : ''), kb }
   }
   const u = tgParse(raw)
   let pinChanged = false
@@ -21066,11 +21066,11 @@ async function tgUserCard(phone, note) {
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
     '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'masih bawaan (000000)') +
-    (blockedRaw ? '\nStatus: 🚫 diblokir' : '')
-  kb.push([{ text: '🔑 Reset PIN', callback_data: 'u:rp:' + phone }, { text: '➕ Perpanjang', callback_data: 'u:ex:' + phone }])
-  kb.push([blockedRaw ? { text: '✅ Buka blokir', callback_data: 'u:ub:' + phone } : { text: '🚫 Blokir', callback_data: 'u:bl:' + phone }, { text: '👢 Kick + hapus', callback_data: 'u:kq:' + phone }])
-  kb.push([{ text: '🗑 Hapus user', callback_data: 'u:dq:' + phone }])
-  kb.push([{ text: '⬅️ User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
+    (blockedRaw ? '\nStatus: diblokir' : '')
+  kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
+  kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
+  kb.push([{ text: 'Hapus user', callback_data: 'u:dq:' + phone }])
+  kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
   return { text, kb }
 }
 
@@ -21136,32 +21136,32 @@ async function tgExpiringPage() {
   const lines = list.slice(0, 40).map(u => {
     const d = tgDaysLeft(u.expired)
     const kapan = u.expired <= now ? 'sudah habis' : d <= 1 ? 'habis hari ini / besok' : 'sisa ' + d + ' hari'
-    return (u.expired <= now ? '🔴' : d <= 3 ? '🟠' : '🟡') + ' <code>+' + u.phone + '</code>  ' + kapan + ' (' + tgDate(u.expired) + ')'
+    return '<code>+' + u.phone + '</code>  ' + kapan + ' (' + tgDate(u.expired) + ')'
   })
   return {
-    text: '⏳ <b>Habis dalam 7 hari</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada.') +
+    text: '<b>Habis dalam 7 hari</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada.') +
       (list.length > 40 ? '\n...dan ' + (list.length - 40) + ' lagi' : '') +
       '\n\nUser yang masa aktifnya habis otomatis dikeluarkan. Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.',
-    kb: [[{ text: '🔄 Muat ulang', callback_data: 'm:exp' }], [{ text: '🔎 Kelola nomor', callback_data: 'u:find' }, TG_HOME_ROW[0]]]
+    kb: [[{ text: 'Muat ulang', callback_data: 'm:exp' }], [{ text: 'Kelola nomor', callback_data: 'u:find' }, TG_HOME_ROW[0]]]
   }
 }
 
 function tgOnlinePage() {
   const users = getOnlineUsers()
-  const lines = users.slice(0, 40).map(u => '🟢 <code>' + (/^[0-9]+$/.test(String(u.phone)) ? '+' : '') + tgEsc(u.phone) + '</code>  ' + tgEsc(u.name || ''))
+  const lines = users.slice(0, 40).map(u => '<code>' + (/^[0-9]+$/.test(String(u.phone)) ? '+' : '') + tgEsc(u.phone) + '</code>  ' + tgEsc(u.name || ''))
   return {
-    text: '🟢 <b>Online sekarang</b> (' + users.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada yang online.') + (users.length > 40 ? '\n...dan ' + (users.length - 40) + ' lagi' : ''),
-    kb: [[{ text: '🔄 Muat ulang', callback_data: 'm:on' }], TG_HOME_ROW]
+    text: '<b>Online sekarang</b> (' + users.length + ')\n\n' + (lines.length ? lines.join('\n') : 'Tidak ada yang online.') + (users.length > 40 ? '\n...dan ' + (users.length - 40) + ' lagi' : ''),
+    kb: [[{ text: 'Muat ulang', callback_data: 'm:on' }], TG_HOME_ROW]
   }
 }
 
 function tgWaPage() {
   const phone = sock && sock.user && sock.user.id ? sock.user.id.split(':')[0].split('@')[0] : null
-  const kb = [[{ text: '🔄 Muat ulang', callback_data: 'm:wa' }]]
-  if (!isReady && lastQr) kb.push([{ text: '📷 Kirim QR ke sini', callback_data: 'wa:qr' }])
+  const kb = [[{ text: 'Muat ulang', callback_data: 'm:wa' }]]
+  if (!isReady && lastQr) kb.push([{ text: 'Kirim QR ke sini', callback_data: 'wa:qr' }])
   kb.push(TG_HOME_ROW)
   return {
-    text: '📱 <b>WhatsApp bot</b>\n\nStatus: ' + (isReady ? '✅ tersambung' : '❌ terputus') +
+    text: '<b>WhatsApp bot</b>\n\nStatus: ' + (isReady ? 'tersambung' : 'terputus') +
       '\nNomor bot: ' + (phone ? '<code>+' + phone + '</code>' : '-') +
       '\nGrup yang dipantau: ' + (monitoredGroupId ? 'sudah diatur' : 'belum diatur') +
       (!isReady ? '\nQR untuk scan: ' + (lastQr ? 'tersedia' : 'belum tersedia') : '') +
@@ -21181,16 +21181,16 @@ async function tgSettingsPage(note) {
   const s = await getPaymentSettings()
   const tg = await getTelegramSettings()
   return {
-    text: (note ? '<i>' + tgEsc(note) + '</i>\n\n' : '') + '⚙️ <b>Pengaturan</b>\n\nPendaftaran lewat QRIS: <b>' + (s.enabled ? 'AKTIF' : 'MATI') + '</b>' +
+    text: (note ? '<i>' + tgEsc(note) + '</i>\n\n' : '') + '<b>Pengaturan</b>\n\nPendaftaran lewat QRIS: <b>' + (s.enabled ? 'AKTIF' : 'MATI') + '</b>' +
       '\nHarga: <b>' + tgRp(s.price) + '</b>\nMasa aktif: <b>' + s.days + ' hari</b>' +
       '\nKalau QRIS mati, arahkan ke WA admin: <b>' + (s.waFallback !== false ? 'YA' : 'TIDAK') + '</b>' +
       '\nLog otomatis ke Telegram: <b>' + (tg.logPush !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\n\nString QRIS, nominal investasi, suara, dan pengaturan lain tetap lewat panel admin web.',
     kb: [
-      [{ text: s.enabled ? '⏸ Matikan QRIS' : '▶️ Aktifkan QRIS', callback_data: 's:en' }],
-      [{ text: '💰 Ubah harga', callback_data: 's:pr' }, { text: '📅 Ubah masa aktif', callback_data: 's:dy' }],
-      [{ text: (s.waFallback !== false ? '🚫 Jangan arahkan ke WA admin' : '↪️ Arahkan ke WA admin'), callback_data: 's:wf' }],
-      [{ text: (tg.logPush !== false ? '🔕 Matikan log otomatis' : '🔔 Aktifkan log otomatis'), callback_data: 's:lg' }],
+      [{ text: s.enabled ? 'Matikan QRIS' : 'Aktifkan QRIS', callback_data: 's:en' }],
+      [{ text: 'Ubah harga', callback_data: 's:pr' }, { text: 'Ubah masa aktif', callback_data: 's:dy' }],
+      [{ text: (s.waFallback !== false ? 'Jangan arahkan ke WA admin' : 'Arahkan ke WA admin'), callback_data: 's:wf' }],
+      [{ text: (tg.logPush !== false ? 'Matikan log otomatis' : 'Aktifkan log otomatis'), callback_data: 's:lg' }],
       TG_HOME_ROW
     ]
   }
@@ -21203,16 +21203,18 @@ const TG_LOG_CATS = {
   m: { label: 'Admin', test: s => /^Admin \|/.test(s) },
   k: { label: 'Expired', test: s => /^Auto-kick \|/.test(s) },
   w: { label: 'WA', test: s => /^WA \|/.test(s) },
-  e: { label: 'Error', test: s => /❌|error|gagal|failed/i.test(s) }
+  e: { label: 'Error', test: s => /\u274C|error|gagal|failed/i.test(s) }
 }
 
 // "PAY | teks" -> ikon + teks tanpa awalan
 function tgPrettyLog(body) {
   const m = /^([A-Za-z-]+) \| (.*)$/s.exec(body)
-  const icons = { PAY: '💳', Admin: '🛠', 'Auto-kick': '⛔', WA: '📱', TG: '✈️' }
-  const isErr = /❌|error|gagal|failed/i.test(body)
-  if (m && icons[m[1]]) return (isErr && m[1] !== 'PAY' ? '❗' : icons[m[1]]) + ' ' + m[2]
-  return (isErr ? '❗ ' : '▫️ ') + body
+  const tags = { PAY: 'Bayar', Admin: 'Admin', 'Auto-kick': 'Expired', WA: 'WA', TG: 'Telegram' }
+  const isErr = /\u274C|error|gagal|failed/i.test(body)
+  // Tanpa emoji: kategori ditulis sebagai label teks, emoji di isi log dibuang
+  const clean = t => t.replace(/[\u{1F000}-\u{1FAFF}\u2600-\u27BF\u2B00-\u2BFF\uFE0F]\s?/gu, '').trim()
+  if (m && tags[m[1]]) return '[' + (isErr && m[1] !== 'PAY' ? 'Error' : tags[m[1]]) + '] ' + clean(m[2])
+  return (isErr ? '[Error] ' : '') + clean(body)
 }
 
 // Jam di log memakai zona waktu server; tampilkan sebagai WIB
@@ -21234,8 +21236,8 @@ function tgLogsPage(cat) {
   }
   const btn = k => ({ text: (k === c ? '• ' : '') + TG_LOG_CATS[k].label, callback_data: 'l:' + k })
   return {
-    text: '📋 <b>Logs: ' + TG_LOG_CATS[c].label + '</b> (15 terbaru, jam WIB)\n\n' + (rows.length ? rows.reverse().join('\n') : 'Belum ada catatan.'),
-    kb: [[btn('a'), btn('p'), btn('m')], [btn('k'), btn('w'), btn('e')], [{ text: '🔄 Muat ulang', callback_data: 'l:' + c }, TG_HOME_ROW[0]]]
+    text: '<b>Logs: ' + TG_LOG_CATS[c].label + '</b> (15 terbaru, jam WIB)\n\n' + (rows.length ? rows.reverse().join('\n') : 'Belum ada catatan.'),
+    kb: [[btn('a'), btn('p'), btn('m')], [btn('k'), btn('w'), btn('e')], [{ text: 'Muat ulang', callback_data: 'l:' + c }, TG_HOME_ROW[0]]]
   }
 }
 
@@ -21243,7 +21245,7 @@ function tgLogsPage(cat) {
 let _tgLogBuf = []
 function tgLogHook(s) {
   const text = String(s)
-  const important = /^(PAY|Admin|Auto-kick) \|/.test(text) || /^❌/.test(text) ||
+  const important = /^(PAY|Admin|Auto-kick) \|/.test(text) || /^\u274C/.test(text) ||
     (/^WA \|/.test(text) && /(connected|terhubung|tersambung|terputus|disconnect|logout|logged out|Kicked|repair|QR)/i.test(text))
   if (!important) return
   // Yang sudah punya pesan sendiri, atau baru saja dilakukan admin di Telegram, tidak diulang
@@ -21263,7 +21265,7 @@ async function tgFlushLogs() {
     if (body.length > 160) body = body.substring(0, 157) + '...'
     return '<code>' + jam(x.t) + '</code> ' + tgEsc(body).replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
   })
-  const text = '📋 <b>Log</b>\n\n' + lines.join('\n') + (items.length > 25 ? '\n...dan ' + (items.length - 25) + ' catatan lain (lihat menu Logs)' : '')
+  const text = '<b>Log</b>\n\n' + lines.join('\n') + (items.length > 25 ? '\n...dan ' + (items.length - 25) + ' catatan lain (lihat menu Logs)' : '')
   await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, parse_mode: 'HTML', disable_notification: true }).catch(() => {})
 }
 setInterval(() => { tgFlushLogs().catch(() => {}) }, 120000)
@@ -21273,12 +21275,12 @@ async function tgStatsPage() {
   const c = st => orders.filter(o => o.status === st).length
   const paid = orders.filter(o => o.status === 'paid')
   return {
-    text: '📊 <b>Ringkasan</b>\n\n<b>User</b>\nTerdaftar: ' + Object.keys(users || {}).length + '\nOnline: ' + getOnlineUsers().length +
+    text: '<b>Ringkasan</b>\n\n<b>User</b>\nTerdaftar: ' + Object.keys(users || {}).length + '\nOnline: ' + getOnlineUsers().length +
       '\n\n<b>Order pembayaran</b>\nTotal: ' + orders.length + '\nLunas: ' + paid.length + '\nMenunggu: ' + c('pending') +
       ' (sudah upload bukti: ' + orders.filter(TG_ORDER_FILTERS.w.test).length + ')\nKedaluwarsa: ' + c('expired') + '\nDitolak: ' + c('rejected') +
       '\n\nSudah masuk grup WA: ' + paid.filter(o => o.inGroup).length + '\nBelum masuk grup WA: ' + paid.filter(o => !o.inGroup).length +
       '\nUang masuk (lunas): ' + tgRp(paid.reduce((t, o) => t + (Number(o.amount) || 0), 0)),
-    kb: [[{ text: '🔄 Muat ulang', callback_data: 'm:stats' }], TG_HOME_ROW]
+    kb: [[{ text: 'Muat ulang', callback_data: 'm:stats' }], TG_HOME_ROW]
   }
 }
 
@@ -21305,14 +21307,14 @@ async function handleTelegramCallback(tg, cq) {
   const setKeyboard = (kb) => telegramApi(tg.token, 'editMessageReplyMarkup', { chat_id: chatId, message_id: cq.message.message_id, reply_markup: { inline_keyboard: kb } }).catch(() => {})
   if ((m = /^pay:rej:([0-9a-f]{16})$/.exec(data))) {
     const kb = TG_REJECT_REASONS.map((r, i) => [{ text: r, callback_data: 'pr:' + m[1] + ':' + i }])
-    kb.push([{ text: '✏️ Tulis alasan sendiri', callback_data: 'pr:' + m[1] + ':c' }])
-    kb.push([{ text: '⬅️ Batal', callback_data: 'pr:' + m[1] + ':b' }])
+    kb.push([{ text: 'Tulis alasan sendiri', callback_data: 'pr:' + m[1] + ':c' }])
+    kb.push([{ text: '« Batal', callback_data: 'pr:' + m[1] + ':b' }])
     await setKeyboard(kb)
     return toast('Pilih alasan penolakan.')
   }
   if ((m = /^pr:([0-9a-f]{16}):([0-9cb])$/.exec(data))) {
     if (m[2] === 'b') {
-      await setKeyboard([[{ text: '✅ ACC', callback_data: 'pay:acc:' + m[1] }, { text: '❌ Tolak', callback_data: 'pay:rej:' + m[1] }]])
+      await setKeyboard([[{ text: 'ACC', callback_data: 'pay:acc:' + m[1] }, { text: 'Tolak', callback_data: 'pay:rej:' + m[1] }]])
       return toast('')
     }
     if (m[2] === 'c') {
@@ -21322,8 +21324,8 @@ async function handleTelegramCallback(tg, cq) {
     const msg = await tgOrderAction(tg, 'rej', m[1], TG_REJECT_REASONS[parseInt(m[2], 10)])
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[1])
     const st = raw ? tgParse(raw).status : 'deleted'
-    if (st === 'rejected') await setButton('❌ Ditolak: ' + (tgParse(raw).rejectReason || '-'))
-    else if (st === 'paid') await setButton('✅ Sudah di-ACC')
+    if (st === 'rejected') await setButton('Ditolak: ' + (tgParse(raw).rejectReason || '-'))
+    else if (st === 'paid') await setButton('Sudah di-ACC')
     else await setButton('Order sudah dihapus')
     return toast(msg, true)
   }
@@ -21333,15 +21335,15 @@ async function handleTelegramCallback(tg, cq) {
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[2])
     const st = raw ? tgParse(raw).status : 'deleted'
     const siapa = cq.from ? (cq.from.first_name || cq.from.username || '') : ''
-    if (st === 'paid') await setButton('✅ Sudah di-ACC' + (siapa ? ' oleh ' + siapa : ''))
-    else if (st === 'rejected') await setButton('❌ Ditolak' + (siapa ? ' oleh ' + siapa : ''))
+    if (st === 'paid') await setButton('Sudah di-ACC' + (siapa ? ' oleh ' + siapa : ''))
+    else if (st === 'rejected') await setButton('Ditolak' + (siapa ? ' oleh ' + siapa : ''))
     else if (st === 'deleted') await setButton('Order sudah dihapus')
     return toast(msg, true)
   }
   // Tombol Reset PIN dari versi lama
   if ((m = /^pin:reset:(62[0-9]{8,13})$/.exec(data))) {
     const ok = await tgResetPin(m[1])
-    await setButton(ok ? '🔑 PIN sudah direset ke 000000' : 'User tidak ditemukan')
+    await setButton(ok ? 'PIN sudah direset ke 000000' : 'User tidak ditemukan')
     return toast(ok ? 'PIN +' + m[1] + ' direset ke 000000.' : 'User tidak ditemukan.', true)
   }
 
@@ -21361,21 +21363,21 @@ async function handleTelegramCallback(tg, cq) {
   if ((m = /^o:v:([0-9a-f]{16}):([a-z])$/.exec(data))) { await show(await tgOrderDetail(m[1], m[2])); return toast('') }
   if ((m = /^o:dq:([0-9a-f]{16}):([a-z])$/.exec(data))) {
     await show({
-      text: '🗑 <b>Hapus catatan order ini?</b>\n\nYang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.',
-      kb: [[{ text: '🗑 Ya, hapus', callback_data: 'o:dy:' + m[1] + ':' + m[2] }, { text: 'Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }]]
+      text: '<b>Hapus catatan order ini?</b>\n\nYang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.',
+      kb: [[{ text: 'Ya, hapus', callback_data: 'o:dy:' + m[1] + ':' + m[2] }, { text: 'Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }]]
     })
     return toast('')
   }
   if ((m = /^o:rej:([0-9a-f]{16}):([a-z])$/.exec(data))) {
     const kb = TG_REJECT_REASONS.map((r, i) => [{ text: r, callback_data: 'o:rr:' + m[1] + ':' + m[2] + ':' + i }])
-    kb.push([{ text: '✏️ Tulis alasan sendiri', callback_data: 'o:rc:' + m[1] + ':' + m[2] }])
-    kb.push([{ text: '⬅️ Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }])
-    await show({ text: '❌ <b>Tolak order ini?</b>\n\nPilih alasannya. Alasan ini akan terlihat oleh orangnya saat login lagi, bersama foto bukti yang ia kirim, dan ia bisa mengunggah bukti baru.', kb })
+    kb.push([{ text: 'Tulis alasan sendiri', callback_data: 'o:rc:' + m[1] + ':' + m[2] }])
+    kb.push([{ text: '« Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }])
+    await show({ text: '<b>Tolak order ini?</b>\n\nPilih alasannya. Alasan ini akan terlihat oleh orangnya saat login lagi, bersama foto bukti yang ia kirim, dan ia bisa mengunggah bukti baru.', kb })
     return toast('')
   }
   if ((m = /^o:rc:([0-9a-f]{16}):([a-z])$/.exec(data))) {
     tgSetAwait('rej', m[1])
-    await show({ text: '✏️ <b>Alasan penolakan</b>\n\nKirim alasannya sebagai pesan teks sekarang.', kb: [[{ text: '⬅️ Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }]] })
+    await show({ text: '<b>Alasan penolakan</b>\n\nKirim alasannya sebagai pesan teks sekarang.', kb: [[{ text: '« Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }]] })
     return toast('')
   }
   if ((m = /^o:rr:([0-9a-f]{16}):([a-z]):([0-9])$/.exec(data))) {
@@ -21393,8 +21395,8 @@ async function handleTelegramCallback(tg, cq) {
     const f = TG_ORDER_FILTERS[m[1]]
     const n = (await loadPaymentOrders()).filter(f.test).length
     await show({
-      text: '🗑 <b>Hapus ' + n + ' catatan order?</b>\n\nDaftar: ' + f.label + '\n\nYang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.',
-      kb: [[{ text: '🗑 Ya, hapus semua', callback_data: 'o:bdy:' + m[1] }, { text: 'Batal', callback_data: 'o:l:' + m[1] + ':0' }]]
+      text: '<b>Hapus ' + n + ' catatan order?</b>\n\nDaftar: ' + f.label + '\n\nYang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.',
+      kb: [[{ text: 'Ya, hapus semua', callback_data: 'o:bdy:' + m[1] }, { text: 'Batal', callback_data: 'o:l:' + m[1] + ':0' }]]
     })
     return toast('')
   }
@@ -21410,20 +21412,20 @@ async function handleTelegramCallback(tg, cq) {
   // --- user ---
   if (data === 'u:find') {
     tgSetAwait('user')
-    await show({ text: '🔎 <b>Kelola user</b>\n\nKirim nomor HP-nya sekarang (format bebas: 0851..., +62851..., 62851...).', kb: [[{ text: '⬅️ User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
+    await show({ text: '<b>Kelola user</b>\n\nKirim nomor HP-nya sekarang (format bebas: 0851..., +62851..., 62851...).', kb: [[{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
     return toast('')
   }
   if (data === 'u:pin') {
     tgSetAwait('pin')
-    await show({ text: '🔑 <b>Reset PIN</b>\n\nKirim nomor HP-nya sekarang (format bebas). PIN langsung direset ke 000000.', kb: [[{ text: '⬅️ User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
+    await show({ text: '<b>Reset PIN</b>\n\nKirim nomor HP-nya sekarang (format bebas). PIN langsung direset ke 000000.', kb: [[{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
     return toast('')
   }
   if (data === 'u:add') {
     tgSetAwait('add')
     const s = await getPaymentSettings()
     await show({
-      text: '➕ <b>Tambah user</b>\n\nKirim nomor HP, boleh diikuti jumlah hari:\n<code>085156260393 30</code>\n\nTanpa jumlah hari = ' + s.days + ' hari. Tulis 0 untuk Lifetime. Boleh beberapa nomor, satu per baris.',
-      kb: [[{ text: '⬅️ User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]]
+      text: '<b>Tambah user</b>\n\nKirim nomor HP, boleh diikuti jumlah hari:\n<code>085156260393 30</code>\n\nTanpa jumlah hari = ' + s.days + ' hari. Tulis 0 untuk Lifetime. Boleh beberapa nomor, satu per baris.',
+      kb: [[{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]]
     })
     return toast('')
   }
@@ -21431,9 +21433,9 @@ async function handleTelegramCallback(tg, cq) {
   if ((m = /^u:(kq|dq):(62[0-9]{8,13})$/.exec(data))) {
     const kick = m[1] === 'kq'
     await show({
-      text: (kick ? '👢 <b>Kick + hapus user ini?</b>' : '🗑 <b>Hapus user ini?</b>') + '\n\n<code>+' + m[2] + '</code>\n\n' +
+      text: (kick ? '<b>Kick + hapus user ini?</b>' : '<b>Hapus user ini?</b>') + '\n\n<code>+' + m[2] + '</code>\n\n' +
         (kick ? 'Dikeluarkan dari grup WA, dihapus dari Daftar User, dan semua sesi loginnya diputus.' : 'Dihapus dari Daftar User dan semua sesi loginnya diputus. Tidak dikeluarkan dari grup WA.') + ' Tidak bisa dibatalkan.',
-      kb: [[{ text: kick ? '👢 Ya, kick + hapus' : '🗑 Ya, hapus', callback_data: (kick ? 'u:ky:' : 'u:dy:') + m[2] }, { text: 'Batal', callback_data: 'u:v:' + m[2] }]]
+      kb: [[{ text: kick ? 'Ya, kick + hapus' : 'Ya, hapus', callback_data: (kick ? 'u:ky:' : 'u:dy:') + m[2] }, { text: 'Batal', callback_data: 'u:v:' + m[2] }]]
     })
     return toast('')
   }
@@ -21468,8 +21470,8 @@ async function handleTelegramCallback(tg, cq) {
   if (data === 's:pr' || data === 's:dy') {
     tgSetAwait(data === 's:pr' ? 'price' : 'days')
     await show({
-      text: data === 's:pr' ? '💰 <b>Ubah harga</b>\n\nKirim harga baru dalam rupiah, angka saja. Contoh: <code>5000</code>' : '📅 <b>Ubah masa aktif</b>\n\nKirim jumlah hari, angka saja. Contoh: <code>30</code>',
-      kb: [[{ text: '⬅️ Pengaturan', callback_data: 'm:set' }, TG_HOME_ROW[0]]]
+      text: data === 's:pr' ? '<b>Ubah harga</b>\n\nKirim harga baru dalam rupiah, angka saja. Contoh: <code>5000</code>' : '<b>Ubah masa aktif</b>\n\nKirim jumlah hari, angka saja. Contoh: <code>30</code>',
+      kb: [[{ text: '« Pengaturan', callback_data: 'm:set' }, TG_HOME_ROW[0]]]
     })
     return toast('')
   }
@@ -21510,7 +21512,7 @@ async function handleTelegramMessage(tg, msg) {
     if (targets.length === 0) { tgSetAwait('pin'); return say('Kirim nomor HP yang mau direset PIN-nya (format bebas: 0851..., +62851..., 62851...).') }
     tgSetAwait('')
     const out = []
-    for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? '🔑 PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
+    for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
   }
 
@@ -21550,15 +21552,15 @@ async function handleTelegramMessage(tg, msg) {
         parts.pop()
       }
       const phone = tgParsePhones(parts.join(''), 1)[0]
-      if (!phone) { out.push('❗ Tidak terbaca: ' + tgEsc(line.substring(0, 40))); continue }
-      if (days === 0) { await tgUserAction('lf', phone); out.push('✅ <code>+' + phone + '</code> Lifetime'); continue }
-      if (days > 3650) { out.push('❗ <code>+' + phone + '</code> jumlah hari terlalu besar'); continue }
+      if (!phone) { out.push('Tidak terbaca: ' + tgEsc(line.substring(0, 40))); continue }
+      if (days === 0) { await tgUserAction('lf', phone); out.push('<code>+' + phone + '</code> Lifetime'); continue }
+      if (days > 3650) { out.push('<code>+' + phone + '</code> jumlah hari terlalu besar'); continue }
       const u = await activateUserFromPayment(phone, '', days)
       pushLog(`Admin | User +${phone} ${u.expired ? 'aktif sampai ' + tgDate(u.expired) : 'Lifetime (tidak diubah)'} (Telegram)`)
-      out.push('✅ <code>+' + phone + '</code> ' + (u.expired ? 'aktif sampai ' + tgDate(u.expired) : 'Lifetime (tidak diubah)'))
+      out.push('<code>+' + phone + '</code> ' + (u.expired ? 'aktif sampai ' + tgDate(u.expired) : 'Lifetime (tidak diubah)'))
     }
     tgSetAwait('')
-    return send({ text: '➕ <b>Tambah user</b>\n\n' + (out.join('\n') || 'Tidak ada nomor yang terbaca.') + '\n\nPIN awal user baru: 000000', kb: [[{ text: '➕ Tambah lagi', callback_data: 'u:add' }, { text: '⬅️ User', callback_data: 'm:usr' }], TG_HOME_ROW] })
+    return send({ text: '<b>Tambah user</b>\n\n' + (out.join('\n') || 'Tidak ada nomor yang terbaca.') + '\n\nPIN awal user baru: 000000', kb: [[{ text: 'Tambah lagi', callback_data: 'u:add' }, { text: '« User', callback_data: 'm:usr' }], TG_HOME_ROW] })
   }
 
   // Nomor ditempel begitu saja: tampilkan kartu user dengan tombol aksinya
@@ -21621,12 +21623,12 @@ async function sendDailyUserReport() {
     const d = tgDaysLeft(u.expired)
     return '• +' + u.phone + ' - ' + (u.expired <= now ? 'sudah habis' : d <= 1 ? 'habis hari ini / besok' : 'sisa ' + d + ' hari') + ' (' + tgDate(u.expired) + ')'
   })
-  const text = '📅 *LAPORAN HARIAN* (' + tgDate(now) + ')\n\n' +
+  const text = '*LAPORAN HARIAN* (' + tgDate(now) + ')\n\n' +
     'User terdaftar: ' + list.length + ' (lifetime ' + list.filter(u => !u.expired).length + ')\n\n' +
-    '⏳ *Habis dalam 3 hari* (' + soon.length + ')\n' + (lines.length ? lines.join('\n') : 'Tidak ada.') + (soon.length > 40 ? '\n...dan ' + (soon.length - 40) + ' lagi' : '') +
-    '\n\n🧾 Menunggu ACC: ' + orders.filter(TG_ORDER_FILTERS.w.test).length +
-    '\n⚪ Belum upload bukti: ' + orders.filter(TG_ORDER_FILTERS.n.test).length +
-    '\n👥 Sudah ACC, belum masuk grup: ' + orders.filter(TG_ORDER_FILTERS.g.test).length +
+    '*Habis dalam 3 hari* (' + soon.length + ')\n' + (lines.length ? lines.join('\n') : 'Tidak ada.') + (soon.length > 40 ? '\n...dan ' + (soon.length - 40) + ' lagi' : '') +
+    '\n\nMenunggu ACC: ' + orders.filter(TG_ORDER_FILTERS.w.test).length +
+    '\nBelum upload bukti: ' + orders.filter(TG_ORDER_FILTERS.n.test).length +
+    '\nSudah ACC, belum masuk grup: ' + orders.filter(TG_ORDER_FILTERS.g.test).length +
     '\n\nUser yang habis otomatis dikeluarkan. Kalau login lagi, ia melihat QRIS untuk bayar.'
   pushLog(`Laporan harian | user ${list.length}, habis dalam 3 hari ${soon.length}`)
   await notifyAdminsWa(text)
@@ -21679,7 +21681,7 @@ async function sendNotInGroupReport() {
   const shown = list.slice(0, 50)
   const lines = shown.map((o, i) => `${i + 1}. +${o.phone}${o.paidAt ? ' (ACC ' + tgl(o.paidAt) + ')' : ''}`)
   const more = list.length > shown.length ? `\n...dan ${list.length - shown.length} nomor lagi (lihat di panel).` : ''
-  await notifyAdminsWa(`👥 *SUDAH ACC, BELUM MASUK GRUP WA* (${list.length})\n\n${lines.join('\n')}${more}\n\nSetelah dimasukkan ke grup, tandai "Masuk" di Panel Admin → Pengaturan → Semua order pembayaran.`)
+  await notifyAdminsWa(`*SUDAH ACC, BELUM MASUK GRUP WA* (${list.length})\n\n${lines.join('\n')}${more}\n\nSetelah dimasukkan ke grup, tandai "Masuk" di Panel Admin → Pengaturan → Semua order pembayaran.`)
   return list.length
 }
 
@@ -21726,7 +21728,7 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*${wasRejected ? '\n\n🔁 Bukti BARU setelah ditolak' + (prevReason ? ' (alasan: ' + prevReason + ')' : '') : ''}\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
+    notifyAdminsWa(`*BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*${wasRejected ? '\n\nBukti BARU setelah ditolak' + (prevReason ? ' (alasan: ' + prevReason + ')' : '') : ''}\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
@@ -21844,12 +21846,12 @@ app.post('/api/admin/telegram-settings', express.json(), async (req, res) => {
       cur.chatName = String(chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || '').substring(0, 60)
       await save()
       pushLog(`Admin | Telegram terhubung ke chat "${cur.chatName}" (${cur.chatId})`)
-      await notifyAdminsTelegram('✅ Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini. Bukti bayar bisa langsung di-ACC / ditolak dari sini.')
+      await notifyAdminsTelegram('Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini. Bukti bayar bisa langsung di-ACC / ditolak dari sini.')
       return res.json({ success: true, telegram: telegramSettingsView(cur) })
     }
     if (action === 'test') {
       if (!cur.chatId) return res.json({ success: false, error: 'Chat belum terhubung. Tekan Deteksi dulu.' })
-      const ok = await notifyAdminsTelegram('🔔 Tes notifikasi dari Panel Admin Gold Monitor.')
+      const ok = await notifyAdminsTelegram('Tes notifikasi dari Panel Admin Gold Monitor.')
       return res.json(ok ? { success: true, telegram: telegramSettingsView(cur) } : { success: false, error: 'Gagal mengirim. Lihat Logs untuk penyebabnya.' })
     }
     // save
@@ -22052,7 +22054,7 @@ async function checkAndKickExpiredUsers() {
       const lines = expiredNow.slice(0, 40).map(u => '• +' + u.phone + (u.name ? ' (' + u.name + ')' : '') +
         ' - habis ' + new Date(u.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) +
         (u.kicked ? ', sudah dikeluarkan dari grup WA' : ', BELUM dikeluarkan dari grup WA'))
-      notifyAdminsWa('⛔ *MASA AKTIF HABIS* (' + expiredNow.length + ')\n\n' + lines.join('\n') +
+      notifyAdminsWa('*MASA AKTIF HABIS* (' + expiredNow.length + ')\n\n' + lines.join('\n') +
         (expiredNow.length > 40 ? '\n...dan ' + (expiredNow.length - 40) + ' lagi' : '') +
         '\n\nNomor di atas sudah dihapus dari Daftar User dan tidak bisa mengakses web lagi. Kalau login lagi, ia melihat QRIS untuk bayar seperti pendaftaran awal.').catch(() => {})
     }
