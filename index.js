@@ -3298,7 +3298,7 @@ async function fastPoll() {
                   statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
                 }
               }
-              const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+              const replyText = [`*HARGA SOUNDHOREG*`, timeStr, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
               await sock.sendMessage(target, { text: replyText }, { quoted: pendingMsg })
               pushLog(`CMD | emas (antrian→terkirim) ke ${target.substring(0, 20)}`)
             } catch (e) {
@@ -22950,13 +22950,13 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
                 statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
               }
             }
-            const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+            const replyText = [`*HARGA SOUNDHOREG*`, timeStr, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
             await sock.sendMessage(sendTarget, { text: replyText }, { quoted: msg })
             pushLog(`CMD | emas (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
           } else {
             // Cache lama atau belum ada — antri ke update Treasury berikutnya
             pendingEmasReplies.set(sendTarget, { pendingMsg: msg, requestTime: now })
-            await sock.sendMessage(sendTarget, { text: '⏳ Menunggu harga terbaru Treasury...' }, { quoted: msg })
+            await sock.sendMessage(sendTarget, { text: '⏳ Menunggu harga terbaru...' }, { quoted: msg })
             pushLog(`CMD | emas antri (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
           }
           continue
