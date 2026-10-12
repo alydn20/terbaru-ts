@@ -22483,9 +22483,11 @@ function analyzeProofText(text, order, merchantName, now) {
   }
   checks.push('Penerima: ' + (mName ? (merchantOk ? 'cocok (' + mName + ')' : 'tidak terbaca') : 'tidak dicek'))
 
-  // 4. Tanggal: harus antara tanggal order dibuat dan hari ini (WIB)
+  // 4. Tanggal: dari 2 hari sebelum order dibuat sampai hari ini (WIB). Kelonggaran 2 hari itu
+  // untuk orang yang sudah membayar, lalu order-nya dibuat ulang (kedaluwarsa / dihapus / lewat
+  // tengah malam) dan ia mengirim bukti pembayaran yang sama. Bukti bulan lalu tetap ditolak.
   const dates = extractProofDates(text)
-  const from = wibDateStr(order.createdAt), to = wibDateStr(now)
+  const from = wibDateStr(order.createdAt - 2 * 24 * 3600 * 1000), to = wibDateStr(now)
   const dateOk = dates.some(d => d >= from && d <= to)
   const dateWrong = !dateOk && dates.length > 0
   const tampil = d => d.substring(8, 10) + '/' + d.substring(5, 7) + '/' + d.substring(0, 4)
