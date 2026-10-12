@@ -19110,7 +19110,14 @@ app.get('/monitoring', async (req, res) => {
       a1.href = '#';
       var hint = mk('div', 'Tombol grup aktif setelah Anda menekan Chat Admin.', 'font-size:12px;color:#9ca3af;margin:-8px 0 14px;');
       var unlocked = false;
+      var lapor = function(action) {
+        try {
+          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '', action: action }) });
+        } catch (e) {}
+      };
       a2.onclick = function() {
+        lapor('chat');
         unlocked = true;
         a1.href = d.link; a1.target = '_blank'; a1.rel = 'noopener';
         a1.style.background = '#22c55e'; a1.style.color = '#fff';
@@ -19124,10 +19131,7 @@ app.get('/monitoring', async (req, res) => {
           return;
         }
         // Server mencatat dan melapor ke admin bahwa nomor ini membuka link grup
-        try {
-          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '' }) });
-        } catch (e) {}
+        lapor('group');
       };
       box.appendChild(a1);
       box.appendChild(hint);
@@ -21934,9 +21938,10 @@ async function reportGroupJoinRequest(msg, text) {
     'Setujui atau tolak di WhatsApp. Bot tidak melakukan apa pun di grup.', null, kb ? { kb } : null)
 }
 
-// User menekan "Buka Grup WhatsApp" di website. Dicatat, lalu 90 detik kemudian dilaporkan ke admin
-// KALAU ia belum mengirim chat ke admin (kalau sudah, laporan dari chatnya sudah lebih lengkap).
-// Dengan begitu admin tetap tahu nomor website siapa yang masuk grup walau orangnya tidak chat.
+// User menekan tombol di kotak "Gabung Grup WA". SETIAP klik dicatat di log (bagian Otomatis):
+//  - "Chat Admin": dicatat saja (isi chatnya dilaporkan terpisah saat pesannya benar-benar masuk).
+//  - "Buka Grup WhatsApp": 90 detik kemudian admin mendapat laporan lengkap, baik orangnya sudah
+//    chat admin maupun belum, beserta ada/tidaknya permintaan bergabung di grup.
 const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
 app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (req, res) => {
   res.json({ success: true })
@@ -21946,9 +21951,17 @@ app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (
     const check = await isUserValid(phone)
     if (!check.valid) return
     const now = Date.now()
+    const action = req.body && req.body.action === 'chat' ? 'chat' : 'group'
     for (const [k, t] of _groupOpenSeen) if (now - t > 3600000) _groupOpenSeen.delete(k)
-    if (_groupOpenSeen.has(phone) && now - _groupOpenSeen.get(phone) < 30 * 60 * 1000) return
-    _groupOpenSeen.set(phone, now)
+    // Klik berulang dalam 10 menit tidak dilaporkan lagi (per tombol)
+    const seenKey = action + ':' + phone
+    if (_groupOpenSeen.has(seenKey) && now - _groupOpenSeen.get(seenKey) < 10 * 60 * 1000) return
+    _groupOpenSeen.set(seenKey, now)
+    if (action === 'chat') {
+      pushLog(`AUTO | Grup: +${phone} menekan tombol Chat Admin di website`)
+      return
+    }
+    pushLog(`AUTO | Grup: +${phone} menekan tombol Buka Grup WhatsApp di website`)
     setTimeout(() => {
       reportGroupLinkOpened(phone, check.user, now).catch(e => pushLog('AUTO | Grup: laporan buka link error - ' + (e && e.message ? e.message : e)))
     }, 90000)
@@ -21956,8 +21969,8 @@ app.post('/api/group-link/opened', rateLimit(10, 60000), express.json(), async (
 })
 
 async function reportGroupLinkOpened(phone, user, openedAt) {
-  // Sudah chat admin (laporan lengkapnya sudah terkirim)? Tidak perlu laporan kedua.
-  if (_joinCheckSeen.has(phone) && _joinCheckSeen.get(phone) >= openedAt - 30 * 60 * 1000) return
+  // Pesan chatnya ke admin sudah masuk? (dicatat saat pesan "mau gabung grup" diterima bot)
+  const sudahChat = _joinCheckSeen.has(phone) && _joinCheckSeen.get(phone) >= openedAt - 30 * 60 * 1000
   const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
   const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
   let barisMinta = 'tidak dicek (grup belum diatur / bot terputus)'
@@ -21978,13 +21991,14 @@ async function reportGroupLinkOpened(phone, user, openedAt) {
     }
   }
   const akun = 'aktif' + (user && user.expired ? ' sampai ' + tgl(user.expired) : ' (Lifetime)')
-  pushLog(`AUTO | Grup: +${phone} membuka link grup ${jam(openedAt)} tanpa chat admin - akun ${akun}, minta gabung ${barisMinta}`)
+  pushLog(`AUTO | Grup: +${phone} membuka link grup ${jam(openedAt)} - chat admin ${sudahChat ? 'sudah masuk' : 'BELUM masuk'}, akun ${akun}, minta gabung ${barisMinta}`)
   let kb = null
   const o = (await loadPaymentOrders()).filter(x => x.phone === phone && x.status === 'paid' && !x.inGroup).sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
   if (o) kb = [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + o.id }]]
-  await notifyAdminsWa('*MEMBUKA LINK GRUP (TANPA CHAT ADMIN)*\n\n' +
+  await notifyAdminsWa('*MEMBUKA LINK GRUP' + (sudahChat ? '' : ' (TANPA CHAT ADMIN)') + '*\n\n' +
     'Nomor di website: +' + phone + '\n' +
     'Jam: ' + jam(openedAt) + ' WIB\n' +
+    'Chat ke admin: ' + (sudahChat ? 'sudah masuk' : 'BELUM masuk') + '\n' +
     'Status akun: ' + akun + '\n' +
     'Minta gabung grup: ' + barisMinta + '\n\n' +
     'Ini nomor yang LOGIN di website. Nomor WhatsApp yang dipakainya untuk bergabung bisa saja berbeda; cocokkan dengan permintaan bergabung di WhatsApp.', null, kb ? { kb } : null)
