@@ -8113,6 +8113,13 @@ app.get('/login', async (req, res) => {
           <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">&#128228; UPLOAD BUKTI PEMBAYARAN</button>
           <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
         </div>
+        <div id="payReject" style="display:none;border:2px solid #ef4444;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(239,68,68,0.1);text-align:left;">
+          <div style="font-weight:800;color:#ef4444;margin-bottom:6px;">&#10060; BUKTI ANDA DITOLAK</div>
+          <div style="font-size:0.88em;margin-bottom:8px;">Alasan: <b id="payRejectReason"></b></div>
+          <div style="font-size:0.8em;color:#9ca3af;margin-bottom:6px;">Bukti yang Anda kirim:</div>
+          <img id="payRejectImg" alt="Bukti yang ditolak" style="display:block;max-width:100%;max-height:260px;margin:0 auto 8px;border-radius:8px;">
+          <div style="font-size:0.85em;">Silakan upload bukti yang benar lewat tombol hijau di atas.</div>
+        </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
 
@@ -8521,7 +8528,11 @@ app.get('/login', async (req, res) => {
         hideMessage();
         document.getElementById('phoneForm').style.display = 'none';
         document.getElementById('payForm').style.display = 'block';
-        if (data.order.existing && !data.order.proofStatus) {
+        _hideReject();
+        if (data.order.status === 'rejected') {
+          _showReject(data.order.rejectReason);
+          try { document.getElementById('payReject').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+        } else if (data.order.existing && !data.order.proofStatus) {
           try { document.getElementById('payUploadBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
         }
         _pollPayment();
@@ -8536,6 +8547,33 @@ app.get('/login', async (req, res) => {
       if (_payTimer) { clearInterval(_payTimer); _payTimer = null; }
     }
 
+    // Kotak merah "bukti ditolak": alasan dari admin + foto bukti yang tadi dikirim
+    var _payRejectShown = false;
+    function _showReject(reason) {
+      var box = document.getElementById('payReject');
+      if (!box || !_payOrder) return;
+      document.getElementById('payRejectReason').textContent = reason || 'Bukti tidak sesuai';
+      if (!_payRejectShown) {
+        var img = document.getElementById('payRejectImg');
+        img.onerror = function() { img.style.display = 'none'; };
+        img.style.display = 'block';
+        img.src = '/api/payment/proof-image?id=' + _payOrder.id + '&t=' + Date.now();
+      }
+      _payRejectShown = true;
+      box.style.display = 'block';
+      var cb = document.getElementById('payClaimBtn');
+      var st = document.getElementById('payStatus');
+      cb.disabled = false;
+      cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI BARU';
+      st.textContent = 'Bukti sebelumnya ditolak. Upload bukti yang benar.';
+      st.style.color = '#ef4444';
+    }
+    function _hideReject() {
+      _payRejectShown = false;
+      var box = document.getElementById('payReject');
+      if (box) box.style.display = 'none';
+    }
+
     function _pollPayment() {
       _stopPayPolling();
       _payTimer = setInterval(async function() {
@@ -8546,12 +8584,15 @@ app.get('/login', async (req, res) => {
         try { d = await (await fetch('/api/payment/status?id=' + _payOrder.id)).json(); } catch (e) {}
         var status = d && d.success ? d.status : '';
         if (status === 'paid') { _paymentDone(); return; }
+        if (status === 'rejected' && left > 0) {
+          if (!_payUploading) _showReject(d.rejectReason);
+          return;
+        }
+        if (_payRejectShown && !_payUploading) _hideReject();
         if (status === 'expired' || status === 'rejected' || left === 0) {
           _stopPayPolling();
           _forgetPayOrder();
-          st.textContent = status === 'rejected'
-            ? 'Pembayaran ditolak admin. Hubungi admin bila sudah membayar.'
-            : 'Order sudah tidak berlaku. Tekan "Ganti nomor" lalu masukkan nomor lagi.';
+          st.textContent = 'Order sudah tidak berlaku. Tekan "Ganti nomor" lalu masukkan nomor lagi.';
           st.style.color = '#ef4444';
           document.getElementById('payClaimBtn').disabled = true;
           return;
@@ -8605,6 +8646,7 @@ app.get('/login', async (req, res) => {
         var d = await res.json();
         _payUploading = false;
         if (d.success) {
+          _hideReject();
           _showProofState('uploaded', false);
         } else {
           _showProofState(null, false);
@@ -11423,7 +11465,10 @@ ${authScript}
           const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
           tbody.innerHTML = orders.map(o => {
             const waktu = tglPendek(o.createdAt) + ' ' + jam(o.createdAt);
-            const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via : '';
+            const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via
+              : (o.status === 'rejected' && o.rejectReason ? 'Alasan: ' + _escHtml(o.rejectReason) : '');
+            const alasan = o.status === 'rejected' && o.rejectReason
+              ? ' <small style="color:#9ca3af;">' + _escHtml(o.rejectReason.length > 22 ? o.rejectReason.substring(0, 20) + '...' : o.rejectReason) + '</small>' : '';
             const adaBukti = !!(o.proof && o.proof.status);
             let bukti = '<span style="color:' + (o.status === 'pending' ? '#f59e0b' : '#6b7280') + ';">' + (o.status === 'pending' ? 'belum upload' : '-') + '</span>';
             if (adaBukti) {
@@ -11455,7 +11500,7 @@ ${authScript}
               '<td>' + waktu + '</td>' +
               '<td class="phone">+' + o.phone + '</td>' +
               '<td>Rp' + Number(o.amount).toLocaleString('id-ID') + '</td>' +
-              '<td><span title="' + via + '" style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span></td>' +
+              '<td><span title="' + via + '" style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span>' + alasan + '</td>' +
               '<td>' + masa + '</td>' +
               '<td>' + bukti + '</td>' +
               '<td>' + grup + '</td>' +
@@ -11507,12 +11552,20 @@ ${authScript}
         delete: ['Hapus catatan order ini? Yang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.', 'Hapus Catatan Order', 'danger']
       };
       const t = texts[action];
-      const confirmed = action === 'group' ? true : await showConfirm(t[0], { title: t[1], type: t[2] });
+      let reason = '';
+      if (action === 'reject') {
+        // Alasan wajib diisi: tampil ke orangnya di halaman bayar bersama foto buktinya
+        reason = window.prompt('Alasan penolakan (akan terlihat oleh orangnya):', 'Nominal tidak sesuai');
+        if (reason === null) return;
+        reason = reason.trim();
+        if (!reason) { showAlert('Alasan penolakan wajib diisi.', 'warning'); return; }
+      }
+      const confirmed = (action === 'group' || action === 'reject') ? true : await showConfirm(t[0], { title: t[1], type: t[2] });
       if (!confirmed) return;
       adminFetch('/api/admin/payment-orders/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: id, action: action })
+        body: JSON.stringify({ id: id, action: action, reason: reason })
       })
       .then(r => r.json())
       .then(data => {
@@ -20576,6 +20629,17 @@ async function completePaymentOrder(order, via) {
   return order
 }
 
+// Tolak order dengan alasan. Alasannya tampil ke orangnya di halaman bayar (bersama foto bukti
+// yang ia kirim), dan ia bisa mengunggah bukti baru selama order belum kedaluwarsa.
+async function rejectPaymentOrder(order, reason, via) {
+  order.status = 'rejected'
+  order.rejectReason = String(reason || '').replace(/\s+/g, ' ').trim().substring(0, 200)
+  order.rejectedAt = Date.now()
+  await savePaymentOrder(order)
+  pushLog(`Admin | Order QRIS +${order.phone} ditolak${via ? ' (' + via + ')' : ''}: ${order.rejectReason || 'tanpa alasan'}`)
+  return order
+}
+
 // Cocokkan nominal yang masuk dengan order yang masih menunggu
 async function confirmPaymentByAmount(amount, via) {
   const orders = (await loadPaymentOrders()).filter(o => o.status === 'pending' && o.amount === amount)
@@ -20620,7 +20684,8 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
     const orders = await loadPaymentOrders()
     const active = orders.filter(o => o.status === 'pending')
     // Pakai lagi order yang masih berlaku untuk nomor yang sama (hindari banyak nominal berbeda)
-    let order = active.find(o => o.phone === phone && o.price === s.price)
+    let order = active.find(o => o.phone === phone && o.price === s.price) ||
+      orders.find(o => o.status === 'rejected' && o.phone === phone && o.price === s.price && o.expiresAt > now)
     if (!order) {
       // Nominal = harga + 3 angka terakhir nomor HP. Kalau nominal itu sedang dipakai order
       // lain yang masih menunggu (nomor berbeda, akhiran sama), pakai kode acak yang kosong.
@@ -20653,7 +20718,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, status: order.status, rejectReason: order.status === 'rejected' ? (order.rejectReason || '') : '', qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
@@ -20668,7 +20733,7 @@ app.get('/api/payment/status', rateLimit(90, 60000), async (req, res) => {
   if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
   const o = typeof raw === 'string' ? JSON.parse(raw) : raw
   const status = o.status === 'pending' && o.expiresAt < Date.now() ? 'expired' : o.status
-  res.json({ success: true, status, activeUntil: o.activeUntil || null, proofStatus: (o.proof && o.proof.status) || null, proofReused: !!(o.proof && o.proof.reused) })
+  res.json({ success: true, status, activeUntil: o.activeUntil || null, proofStatus: (o.proof && o.proof.status) || null, proofReused: !!(o.proof && o.proof.reused), rejectReason: status === 'rejected' ? (o.rejectReason || '') : '' })
 })
 
 // ---------- Bukti pembayaran (screenshot) ----------
@@ -20778,7 +20843,9 @@ const tgDate = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', mo
 const tgDateTime = t => new Date(t).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
 const tgDaysLeft = t => Math.ceil((t - Date.now()) / 86400000)
 const TG_HOME_ROW = [{ text: '🏠 Menu', callback_data: 'm:home' }]
-const tgSetAwait = mode => { _tgAwait = { mode, until: mode ? Date.now() + 5 * 60 * 1000 : 0 } }
+const tgSetAwait = (mode, orderId) => { _tgAwait = { mode, until: mode ? Date.now() + 5 * 60 * 1000 : 0, orderId: orderId || '' } }
+// Alasan penolakan siap pakai (tombol). Selain ini admin bisa menulis alasan sendiri.
+const TG_REJECT_REASONS = ['Nominal tidak sesuai', 'Bukti tidak jelas / terpotong', 'Uang belum masuk', 'Bukti tidak valid']
 const tgParse = raw => (typeof raw === 'string' ? JSON.parse(raw) : raw)
 
 function tgParsePhones(text, max) {
@@ -20866,6 +20933,7 @@ async function tgOrderDetail(id, fk) {
   const proof = tgHasProof(o)
   let text = '🧾 <b>Order pembayaran</b>\n\nNomor: <code>+' + o.phone + '</code>\nNominal: <b>' + tgRp(o.amount) + '</b>\nStatus: <b>' + (TG_ORDER_STATUS[status] || status) + '</b>' +
     '\nDibuat: ' + tgDateTime(o.createdAt) + '\nBukti: ' + (proof ? 'sudah upload' + (o.proof.uploadedAt ? ' (' + tgDateTime(o.proof.uploadedAt) + ')' : '') : 'belum upload')
+  if (status === 'rejected') text += '\nAlasan ditolak: <b>' + tgEsc(o.rejectReason || '-') + '</b>'
   if (status === 'paid') {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
@@ -20892,7 +20960,7 @@ async function tgDeleteOrder(order, via) {
 }
 
 // Aksi pada satu order. Mengembalikan pesan singkat untuk admin.
-async function tgOrderAction(tg, act, id) {
+async function tgOrderAction(tg, act, id, reason) {
   const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
   if (!raw) return 'Order tidak ditemukan (sudah dihapus).'
   const order = tgParse(raw)
@@ -20905,10 +20973,8 @@ async function tgOrderAction(tg, act, id) {
   if (act === 'rej') {
     if (order.status === 'paid') return 'Order sudah lunas, tidak bisa ditolak.'
     if (order.status === 'rejected') return 'Order ini sudah ditolak sebelumnya.'
-    order.status = 'rejected'
-    await savePaymentOrder(order)
-    pushLog(`Admin | Order QRIS +${order.phone} ditolak (Telegram)`)
-    return 'Order +' + order.phone + ' ditolak.'
+    await rejectPaymentOrder(order, reason, 'Telegram')
+    return 'Order +' + order.phone + ' ditolak. Alasan: ' + (order.rejectReason || '-')
   }
   if (act === 'grp') {
     if (order.status !== 'paid') return 'Hanya order lunas yang bisa ditandai.'
@@ -21207,8 +21273,34 @@ async function handleTelegramCallback(tg, cq) {
 
   if (data === 'done') return toast('')
 
-  // Tombol ACC / Tolak yang menempel di pesan foto bukti
-  if ((m = /^pay:(acc|rej):([0-9a-f]{16})$/.exec(data))) {
+  // Tolak dari pesan foto bukti: tombolnya berganti jadi pilihan alasan (pesan fotonya tetap)
+  const setKeyboard = (kb) => telegramApi(tg.token, 'editMessageReplyMarkup', { chat_id: chatId, message_id: cq.message.message_id, reply_markup: { inline_keyboard: kb } }).catch(() => {})
+  if ((m = /^pay:rej:([0-9a-f]{16})$/.exec(data))) {
+    const kb = TG_REJECT_REASONS.map((r, i) => [{ text: r, callback_data: 'pr:' + m[1] + ':' + i }])
+    kb.push([{ text: '✏️ Tulis alasan sendiri', callback_data: 'pr:' + m[1] + ':c' }])
+    kb.push([{ text: '⬅️ Batal', callback_data: 'pr:' + m[1] + ':b' }])
+    await setKeyboard(kb)
+    return toast('Pilih alasan penolakan.')
+  }
+  if ((m = /^pr:([0-9a-f]{16}):([0-9cb])$/.exec(data))) {
+    if (m[2] === 'b') {
+      await setKeyboard([[{ text: '✅ ACC', callback_data: 'pay:acc:' + m[1] }, { text: '❌ Tolak', callback_data: 'pay:rej:' + m[1] }]])
+      return toast('')
+    }
+    if (m[2] === 'c') {
+      tgSetAwait('rej', m[1])
+      return toast('Kirim alasan penolakannya sebagai pesan teks sekarang.', true)
+    }
+    const msg = await tgOrderAction(tg, 'rej', m[1], TG_REJECT_REASONS[parseInt(m[2], 10)])
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[1])
+    const st = raw ? tgParse(raw).status : 'deleted'
+    if (st === 'rejected') await setButton('❌ Ditolak: ' + (tgParse(raw).rejectReason || '-'))
+    else if (st === 'paid') await setButton('✅ Sudah di-ACC')
+    else await setButton('Order sudah dihapus')
+    return toast(msg, true)
+  }
+  // Tombol ACC yang menempel di pesan foto bukti
+  if ((m = /^pay:(acc):([0-9a-f]{16})$/.exec(data))) {
     const msg = await tgOrderAction(tg, m[1], m[2])
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[2])
     const st = raw ? tgParse(raw).status : 'deleted'
@@ -21246,7 +21338,24 @@ async function handleTelegramCallback(tg, cq) {
     })
     return toast('')
   }
-  if ((m = /^o:(acc|rej|grp|prf|dy):([0-9a-f]{16}):([a-z])$/.exec(data))) {
+  if ((m = /^o:rej:([0-9a-f]{16}):([a-z])$/.exec(data))) {
+    const kb = TG_REJECT_REASONS.map((r, i) => [{ text: r, callback_data: 'o:rr:' + m[1] + ':' + m[2] + ':' + i }])
+    kb.push([{ text: '✏️ Tulis alasan sendiri', callback_data: 'o:rc:' + m[1] + ':' + m[2] }])
+    kb.push([{ text: '⬅️ Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }])
+    await show({ text: '❌ <b>Tolak order ini?</b>\n\nPilih alasannya. Alasan ini akan terlihat oleh orangnya di halaman bayar, bersama foto bukti yang ia kirim, dan ia bisa mengunggah bukti baru.', kb })
+    return toast('')
+  }
+  if ((m = /^o:rc:([0-9a-f]{16}):([a-z])$/.exec(data))) {
+    tgSetAwait('rej', m[1])
+    await show({ text: '✏️ <b>Alasan penolakan</b>\n\nKirim alasannya sebagai pesan teks sekarang.', kb: [[{ text: '⬅️ Batal', callback_data: 'o:v:' + m[1] + ':' + m[2] }]] })
+    return toast('')
+  }
+  if ((m = /^o:rr:([0-9a-f]{16}):([a-z]):([0-9])$/.exec(data))) {
+    const msg = await tgOrderAction(tg, 'rej', m[1], TG_REJECT_REASONS[parseInt(m[3], 10)])
+    await show(await tgOrderDetail(m[1], m[2]))
+    return toast(msg, true)
+  }
+  if ((m = /^o:(acc|grp|prf|dy):([0-9a-f]{16}):([a-z])$/.exec(data))) {
     const msg = await tgOrderAction(tg, m[1], m[2])
     if (m[1] === 'dy') await show(await tgOrderList(m[3], 0))
     else if (m[1] !== 'prf') await show(await tgOrderDetail(m[2], m[3]))
@@ -21375,6 +21484,14 @@ async function handleTelegramMessage(tg, msg) {
     const out = []
     for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? '🔑 PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
+  }
+
+  if (awaiting === 'rej' && !text.startsWith('/')) {
+    const id = _tgAwait.orderId
+    tgSetAwait('')
+    const msg = await tgOrderAction(tg, 'rej', id, text)
+    const pg = await tgOrderDetail(id, 'x')
+    return send({ text: '<i>' + tgEsc(msg) + '</i>\n\n' + pg.text, kb: pg.kb })
   }
 
   if (awaiting === 'price' || awaiting === 'days') {
@@ -21561,7 +21678,14 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (order.status !== 'pending' || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
+    const wasRejected = order.status === 'rejected'
+    if ((order.status !== 'pending' && !wasRejected) || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
+    const prevReason = wasRejected ? (order.rejectReason || '') : ''
+    if (wasRejected) {
+      order.status = 'pending'
+      delete order.rejectReason
+      delete order.rejectedAt
+    }
     const count = (order.proof && order.proof.count) || 0
     if (count >= PAY_PROOF_MAX_UPLOADS) return res.json({ success: false, error: 'Batas unggah bukti tercapai. Hubungi admin.' })
 
@@ -21572,10 +21696,23 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
+    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*${wasRejected ? '\n\n🔁 Bukti BARU setelah ditolak' + (prevReason ? ' (alasan: ' + prevReason + ')' : '') : ''}\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
+})
+
+// Publik: foto bukti milik order ini. Hanya bisa dibuka oleh yang tahu ID order (tersimpan di
+// browser orang yang membuat order), dipakai untuk menampilkan bukti yang ditolak.
+app.get('/api/payment/proof-image', rateLimit(30, 60000), async (req, res) => {
+  const id = String(req.query.id || '')
+  if (!/^[0-9a-f]{16}$/.test(id)) return res.status(400).end()
+  const val = await _ioredis.get(PAY_PROOF_PREFIX + id)
+  if (!val) return res.status(404).end()
+  const sep = val.indexOf(';')
+  res.setHeader('Content-Type', val.substring(0, sep))
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.send(Buffer.from(val.substring(sep + 1), 'base64'))
 })
 
 // Admin: lihat gambar bukti sebuah order
@@ -21777,7 +21914,7 @@ app.post('/api/admin/payment-orders/remind-group', express.json(), async (req, r
 
 // Admin: konfirmasi manual / tolak order
 app.post('/api/admin/payment-orders/action', express.json(), async (req, res) => {
-  const { password, id, action } = req.body
+  const { password, id, action, reason } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, String(id || ''))
@@ -21806,9 +21943,8 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
       }
       await completePaymentOrder(order, 'konfirmasi admin')
     } else if (action === 'reject') {
-      order.status = 'rejected'
-      await savePaymentOrder(order)
-      pushLog(`Admin | Order QRIS +${order.phone} ditolak`)
+      if (!String(reason || '').trim()) return res.json({ success: false, error: 'Isi alasan penolakan dulu' })
+      await rejectPaymentOrder(order, reason, 'panel admin')
     } else {
       return res.json({ success: false, error: 'Aksi tidak dikenal' })
     }
