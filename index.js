@@ -9252,6 +9252,17 @@ ${authScript}
     .user-table tr:hover { background: rgba(247,147,26,0.04); }
     .user-table td { font-size: 0.85em; }
     .user-table td.phone { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; }
+    .pay-table-wrap { overflow: auto; max-height: 420px; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; scrollbar-width: thin; scrollbar-color: #374151 transparent; }
+    .pay-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+    .pay-table-wrap::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+    .pay-table-wrap::-webkit-scrollbar-track, .pay-table-wrap::-webkit-scrollbar-corner { background: transparent; }
+    .user-table.pay-table { min-width: 0; }
+    .user-table.pay-table th, .user-table.pay-table td { padding: 6px 8px; white-space: nowrap; vertical-align: middle; }
+    .user-table.pay-table th { background: #131a22; font-size: 0.66em; z-index: 1; }
+    .user-table.pay-table td { font-size: 0.76em; }
+    .user-table.pay-table td.phone { font-size: 0.74em; }
+    .user-table.pay-table .action-btn { padding: 3px 8px; font-size: 0.95em; }
+    .user-table.pay-table small { font-size: 0.9em; }
 
     /* Status Badges */
     .status-badge {
@@ -9893,10 +9904,10 @@ ${authScript}
             <label style="font-weight:600;">Semua order pembayaran <span id="payOrdersCount" style="color:#6b7280;font-weight:400;"></span></label>
             <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
           </div>
-          <div style="overflow:auto;max-height:520px;">
-            <table class="user-table">
+          <div class="pay-table-wrap">
+            <table class="user-table pay-table">
               <thead>
-                <tr><th>Waktu order</th><th>Nomor</th><th>Nominal</th><th>Status</th><th>Masa aktif</th><th>Bukti</th><th>Grup WA</th><th>Aksi</th></tr>
+                <tr><th>Waktu</th><th>Nomor</th><th>Nominal</th><th>Status</th><th>Masa aktif</th><th>Bukti</th><th>Grup WA</th><th>Aksi</th></tr>
               </thead>
               <tbody id="payOrdersBody">
                 <tr><td colspan="8" style="text-align:center;color:#6b7280;">Loading...</td></tr>
@@ -11286,41 +11297,42 @@ ${authScript}
           const nowTs = Date.now();
           const labels = { pending: 'Menunggu', paid: 'Lunas', expired: 'Kedaluwarsa', rejected: 'Ditolak' };
           const colors = { pending: '#f59e0b', paid: '#22c55e', expired: '#6b7280', rejected: '#ef4444' };
+          const tglPendek = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+          const jam = t => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
           tbody.innerHTML = data.orders.map(o => {
-            const waktu = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-            let ket = o.status === 'paid' && o.via ? ' <small style="color:#6b7280;">(' + o.via + ')</small>' : '';
-            if (o.status === 'paid' && o.via === 'notifikasi otomatis') ket = ' <small style="color:#22c55e;font-weight:600;">(uang masuk terverifikasi)</small>';
-            let bukti = '<span style="color:#6b7280;">belum ada</span>';
+            const waktu = tglPendek(o.createdAt) + ' ' + jam(o.createdAt);
+            const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via : '';
+            let bukti = '<span style="color:#6b7280;">-</span>';
             if (o.proof && o.proof.status) {
-              bukti = '<button class="action-btn" style="background:#3b82f6;" onclick="viewPaymentProof(&apos;' + o.id + '&apos;)">Lihat bukti</button>' +
-                (o.proof.uploadedAt ? '<br><small style="color:#9ca3af;">' + tgl(o.proof.uploadedAt) + '</small>' : '');
+              bukti = '<button class="action-btn" style="background:#3b82f6;" title="Diunggah ' + (o.proof.uploadedAt ? tgl(o.proof.uploadedAt) : '') + '" onclick="viewPaymentProof(&apos;' + o.id + '&apos;)">Lihat</button>';
             }
             // Masa aktif: tanggal di-ACC sampai tanggal habis
             let masa = '<span style="color:#6b7280;">-</span>';
             if (o.status === 'paid' && o.paidAt) {
               if (o.activeUntil) {
                 const sisa = Math.ceil((o.activeUntil - nowTs) / 86400000);
-                masa = tgl(o.paidAt) + ' &ndash; ' + tgl(o.activeUntil) + '<br><small style="color:' + (sisa > 0 ? '#22c55e' : '#ef4444') + ';">' +
-                  (sisa > 0 ? 'sisa ' + sisa + ' hari' : 'sudah habis') + '</small>';
+                masa = '<span title="' + tgl(o.paidAt) + ' sampai ' + tgl(o.activeUntil) + '">' + tglPendek(o.paidAt) + ' &ndash; ' + tglPendek(o.activeUntil) + '</span>' +
+                  ' <small style="color:' + (sisa > 0 ? '#22c55e' : '#ef4444') + ';">' + (sisa > 0 ? '(' + sisa + ' hari)' : '(habis)') + '</small>';
               } else {
-                masa = tgl(o.paidAt) + ' &ndash; Lifetime';
+                masa = tglPendek(o.paidAt) + ' &ndash; Lifetime';
               }
             }
+            // Penanda manual: admin menandai sendiri setelah memasukkan orangnya ke grup WA
             let grup = '<span style="color:#6b7280;">-</span>';
             if (o.status === 'paid') {
               grup = o.inGroup
-                ? '<button class="action-btn" style="background:#22c55e;" title="Klik untuk membatalkan tanda" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">&#10003; Sudah masuk</button>'
-                : '<button class="action-btn" style="background:#6b7280;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Tandai sudah masuk</button>';
+                ? '<button class="action-btn" style="background:#22c55e;" title="Sudah masuk grup. Klik untuk membatalkan tanda." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">&#10003; Masuk</button>'
+                : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
-            const aksi = o.status === 'paid' ? '-' :
+            const aksi = o.status === 'paid' ? '<span style="color:#6b7280;">-</span>' :
               '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' +
               (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
             return '<tr>' +
               '<td>' + waktu + '</td>' +
               '<td class="phone">+' + o.phone + '</td>' +
               '<td>Rp' + Number(o.amount).toLocaleString('id-ID') + '</td>' +
-              '<td><span style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span>' + ket + '</td>' +
-              '<td style="white-space:nowrap;">' + masa + '</td>' +
+              '<td><span title="' + via + '" style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span></td>' +
+              '<td>' + masa + '</td>' +
               '<td>' + bukti + '</td>' +
               '<td>' + grup + '</td>' +
               '<td>' + aksi + '</td>' +
