@@ -8095,13 +8095,17 @@ app.get('/login', async (req, res) => {
       <div id="payForm" style="display:none;text-align:center;">
         <div style="font-weight:700;font-size:1.05em;margin-bottom:4px;">Nomor belum terdaftar</div>
         <div id="payDesc" style="color:#9ca3af;font-size:0.85em;margin-bottom:14px;"></div>
-        <img id="payQr" alt="QRIS" style="width:240px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
-        <div style="margin:12px 0 2px;color:#9ca3af;font-size:0.8em;">Bayar TEPAT sejumlah</div>
-        <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;"></div>
-        <div style="color:#9ca3af;font-size:0.75em;margin:4px 0 12px;">Nominal sudah termasuk 3 angka terakhir nomor Anda sebagai tanda pengenal. Jangan dibulatkan.</div>
-        <div id="payStatus" style="font-size:0.85em;margin-bottom:12px;"></div>
-        <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
-        <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="margin-bottom:8px;">Upload bukti pembayaran</button>
+        <div style="text-align:left;font-weight:700;font-size:0.85em;margin-bottom:6px;"><span style="color:#f7931a;">Langkah 1.</span> Scan QRIS, bayar TEPAT <span id="payAmountStep" style="color:#f7931a;"></span></div>
+        <img id="payQr" alt="QRIS" style="width:200px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
+        <div style="margin-top:4px;font-size:0.78em;"><a href="#" id="payQrSave" download="qris-pembayaran.png" style="color:#f7931a;">Simpan gambar QRIS</a> <span style="color:#9ca3af;">(kalau bayar dari HP ini)</span></div>
+        <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;margin-top:6px;"></div>
+        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Jangan dibulatkan. 3 angka terakhir adalah tanda pengenal nomor Anda.</div>
+        <div style="border:2px solid #22c55e;border-radius:12px;padding:12px;margin-bottom:10px;background:rgba(34,197,94,0.08);">
+          <div style="text-align:left;font-weight:700;font-size:0.85em;margin-bottom:8px;"><span style="color:#22c55e;">Langkah 2.</span> Sudah bayar? Kirim screenshot buktinya di sini</div>
+          <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
+          <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="background:#22c55e;color:#fff;font-size:1.05em;font-weight:800;padding:14px;margin-bottom:8px;">&#128228; UPLOAD BUKTI PEMBAYARAN</button>
+          <div id="payStatus" style="font-size:0.82em;"></div>
+        </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
 
@@ -8464,8 +8468,9 @@ app.get('/login', async (req, res) => {
       st.style.color = '';
       cb.disabled = false;
       if (!proofStatus) {
-        cb.textContent = 'Upload bukti pembayaran';
-        st.textContent = 'Setelah membayar, WAJIB upload screenshot bukti pembayaran. Tanpa bukti, pembayaran tidak diproses.';
+        cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI PEMBAYARAN';
+        st.textContent = 'WAJIB. Tanpa upload bukti, pembayaran Anda tidak diproses admin.';
+        st.style.color = '#fbbf24';
         return;
       }
       cb.textContent = 'Upload ulang bukti';
@@ -8500,9 +8505,11 @@ app.get('/login', async (req, res) => {
         try { localStorage.setItem('pay_order', JSON.stringify({ phone: phone, id: data.order.id })); } catch (e) {}
         document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
         document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
+        document.getElementById('payAmountStep').textContent = _rupiah(data.order.amount);
         var img = document.getElementById('payQr');
-        if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; }
-        else { img.style.display = 'none'; }
+        var save = document.getElementById('payQrSave');
+        if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; save.href = data.order.qrDataUrl; save.parentNode.style.display = ''; }
+        else { img.style.display = 'none'; save.parentNode.style.display = 'none'; }
         _showProofState(data.order.proofStatus, data.order.proofReused);
         hideMessage();
         document.getElementById('phoneForm').style.display = 'none';
@@ -11385,7 +11392,8 @@ ${authScript}
                 : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
             const aksi = (o.status === 'paid' ? '' :
-              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button> ' : '') +
+              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button> '
+                : '<button class="action-btn" style="background:#b45309;" title="Belum ada bukti bayar. ACC hanya kalau uangnya sudah Anda cek masuk." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirmNoProof&apos;)">ACC tanpa bukti</button> ') +
               (o.status === 'pending' ? '<button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button> ' : '')) +
               '<button class="action-btn" style="background:#374151;" title="Hapus catatan order ini saja. Akun di Daftar User tidak ikut terhapus." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;delete&apos;)">Hapus</button>';
             return '<tr>' +
@@ -11440,6 +11448,7 @@ ${authScript}
     async function paymentOrderAction(id, action) {
       const texts = {
         confirm: ['Konfirmasi pembayaran ini? Akun akan langsung aktif.', 'Konfirmasi Pembayaran', 'info'],
+        confirmNoProof: ['Order ini BELUM ada bukti bayarnya. ACC hanya kalau uangnya sudah Anda cek sendiri masuk dengan nominal yang sama. Lanjut ACC? Akun akan langsung aktif.', 'ACC Tanpa Bukti', 'danger'],
         reject: ['Tolak order ini?', 'Tolak Order', 'danger'],
         delete: ['Hapus catatan order ini? Yang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.', 'Hapus Catatan Order', 'danger']
       };
@@ -11449,15 +11458,15 @@ ${authScript}
       adminFetch('/api/admin/payment-orders/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: id, action: action })
+        body: JSON.stringify(action === 'confirmNoProof' ? { id: id, action: 'confirm', force: true } : { id: id, action: action })
       })
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          const done = { confirm: 'Pembayaran dikonfirmasi, akun aktif.', reject: 'Order ditolak.', delete: 'Catatan order dihapus.' };
+          const done = { confirm: 'Pembayaran dikonfirmasi, akun aktif.', confirmNoProof: 'Pembayaran dikonfirmasi, akun aktif.', reject: 'Order ditolak.', delete: 'Catatan order dihapus.' };
           if (done[action]) showAlert(done[action], 'success');
           loadPaymentOrders();
-          if (action === 'confirm') loadUsers();
+          if (action === 'confirm' || action === 'confirmNoProof') loadUsers();
         } else {
           showAlert('Gagal: ' + data.error, 'danger');
         }
@@ -20807,7 +20816,7 @@ app.post('/api/admin/payment-orders/remind-group', express.json(), async (req, r
 
 // Admin: konfirmasi manual / tolak order
 app.post('/api/admin/payment-orders/action', express.json(), async (req, res) => {
-  const { password, id, action } = req.body
+  const { password, id, action, force } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, String(id || ''))
@@ -20830,11 +20839,12 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
     }
     if (order.status === 'paid') return res.json({ success: false, error: 'Order ini sudah lunas' })
     if (action === 'confirm') {
-      // Upload bukti WAJIB: order tanpa bukti bayar tidak bisa di-ACC
-      if (!order.proof || !order.proof.status) {
-        return res.json({ success: false, error: 'Order ini belum ada bukti bayarnya. Minta orangnya upload bukti dulu.' })
+      // Tanpa bukti bayar, ACC hanya lewat persetujuan tegas admin (force) setelah peringatan di panel
+      const adaBukti = !!(order.proof && order.proof.status)
+      if (!adaBukti && force !== true) {
+        return res.json({ success: false, error: 'Order ini belum ada bukti bayarnya.' })
       }
-      await completePaymentOrder(order, 'konfirmasi admin')
+      await completePaymentOrder(order, adaBukti ? 'konfirmasi admin' : 'konfirmasi admin (tanpa bukti)')
     } else if (action === 'reject') {
       order.status = 'rejected'
       await savePaymentOrder(order)
