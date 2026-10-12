@@ -8122,7 +8122,7 @@ app.get('/login', async (req, res) => {
         <img id="payQr" alt="QRIS" style="width:200px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
         <div style="margin-top:4px;font-size:0.78em;"><a href="#" id="payQrSave" download="qris-pembayaran.png" style="color:#f7931a;">Simpan gambar QRIS</a> <span style="color:#9ca3af;">(kalau bayar dari HP ini)</span></div>
         <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;margin-top:6px;"></div>
-        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Jangan dibulatkan. 3 angka terakhir adalah tanda pengenal nomor Anda.</div>
+        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Bayar tepat sesuai nominal, jangan dibulatkan.</div>
         <style>
           @keyframes payPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); } 50% { box-shadow: 0 0 0 12px rgba(34,197,94,0); } }
           #payClaimBtn { animation: payPulse 1.6s infinite; }
@@ -8130,7 +8130,7 @@ app.get('/login', async (req, res) => {
         </style>
         <div id="payUploadBox" style="border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(34,197,94,0.12);">
           <div style="font-weight:800;font-size:1em;color:#22c55e;margin-bottom:4px;">Langkah 2. SUDAH BAYAR?</div>
-          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri. Pastikan fotonya benar: bukti tidak bisa diganti selama dicek admin.</div>
+          <div id="payUploadHint" style="font-size:0.88em;margin-bottom:10px;">Upload bukti pembayaran Anda.</div>
           <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
           <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">UPLOAD BUKTI PEMBAYARAN</button>
           <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
@@ -8140,7 +8140,7 @@ app.get('/login', async (req, res) => {
           <div style="font-size:0.88em;margin-bottom:8px;">Alasan: <b id="payRejectReason"></b></div>
           <div style="font-size:0.8em;color:#9ca3af;margin-bottom:6px;">Bukti yang Anda kirim:</div>
           <img id="payRejectImg" alt="Bukti yang ditolak" style="display:block;max-width:100%;max-height:260px;margin:0 auto 8px;border-radius:8px;">
-          <div style="font-size:0.85em;">Upload bukti yang benar lewat tombol hijau. Butuh bantuan? <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">Hubungi admin</a>.</div>
+          <div style="font-size:0.85em;">Upload bukti baru, atau <a href="#" onclick="contactAdminRejected();return false;" style="color:#f7931a;font-weight:700;">hubungi admin</a>.</div>
         </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
@@ -8508,7 +8508,7 @@ app.get('/login', async (req, res) => {
         var hint0 = document.getElementById('payUploadHint');
         if (hint0) hint0.style.display = '';
         cb.textContent = 'UPLOAD BUKTI PEMBAYARAN';
-        st.textContent = 'WAJIB. Tanpa upload bukti, pembayaran Anda tidak diproses admin.';
+        st.textContent = 'Wajib upload bukti.';
         st.style.color = '#fbbf24';
         return;
       }
@@ -8517,8 +8517,8 @@ app.get('/login', async (req, res) => {
       var hint = document.getElementById('payUploadHint');
       if (hint) hint.style.display = 'none';
       st.textContent = proofStatus === 'checking'
-        ? 'Bukti terkirim dan sedang diperiksa. Tunggu sebentar, halaman ini lanjut otomatis.'
-        : 'Bukti terkirim. Menunggu konfirmasi admin, halaman ini lanjut otomatis. Boleh ditutup: pembayaran ini tetap tersimpan.';
+        ? 'Bukti terkirim. Sedang diperiksa...'
+        : 'Bukti terkirim. Menunggu konfirmasi.';
       st.style.color = '#4ade80';
     }
 
@@ -8600,7 +8600,7 @@ app.get('/login', async (req, res) => {
       cb.style.display = 'block';
       cb.disabled = false;
       cb.textContent = 'UPLOAD BUKTI BARU';
-      st.textContent = 'Bukti sebelumnya ditolak. Upload bukti yang benar.';
+      st.textContent = 'Bukti ditolak. Upload bukti baru.';
       st.style.color = '#ef4444';
     }
     function contactAdminRejected() {
@@ -8664,12 +8664,49 @@ app.get('/login', async (req, res) => {
       return await new Promise(function(resolve) { c.toBlob(resolve, 'image/jpeg', 0.75); });
     }
 
+    // Kotak konfirmasi (tampilan sama dengan konfirmasi Logout di halaman monitoring)
+    function payConfirm(title, message, okText) {
+      return new Promise(function(resolve) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100000;';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:linear-gradient(180deg,rgba(25,32,42,0.98) 0%,rgba(18,24,32,0.98) 100%);border-radius:16px;padding:24px;width:90%;max-width:340px;text-align:center;border:1px solid rgba(255,255,255,0.1);box-shadow:0 25px 60px rgba(0,0,0,0.5);';
+        var icon = document.createElement('div');
+        icon.style.cssText = 'width:56px;height:56px;border-radius:50%;background:rgba(251,191,36,0.15);color:#fbbf24;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;font-weight:700;';
+        icon.textContent = '?';
+        var t = document.createElement('div');
+        t.style.cssText = 'color:#fff;font-size:1.1em;font-weight:600;margin-bottom:8px;';
+        t.textContent = title;
+        var m = document.createElement('div');
+        m.style.cssText = 'color:#9ca3af;font-size:0.9em;line-height:1.5;margin-bottom:20px;';
+        m.textContent = message;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+        var btnCss = 'padding:10px 24px;border-radius:10px;font-size:0.88em;font-weight:600;cursor:pointer;border:none;';
+        var no = document.createElement('button');
+        no.type = 'button';
+        no.style.cssText = btnCss + 'background:rgba(255,255,255,0.08);color:#e7e9ea;';
+        no.textContent = 'Batal';
+        var yes = document.createElement('button');
+        yes.type = 'button';
+        yes.style.cssText = btnCss + 'background:linear-gradient(135deg,#f7931a 0%,#e8850f 100%);color:#fff;';
+        yes.textContent = okText || 'Ya';
+        var done = function(v) { wrap.remove(); resolve(v); };
+        no.onclick = function() { done(false); };
+        yes.onclick = function() { done(true); };
+        row.appendChild(no); row.appendChild(yes);
+        box.appendChild(icon); box.appendChild(t); box.appendChild(m); box.appendChild(row);
+        wrap.appendChild(box);
+        document.body.appendChild(wrap);
+      });
+    }
+
     var _payUploading = false;
     async function uploadPaymentProof(input) {
       var file = input.files && input.files[0];
       input.value = '';
       if (!file || !_payOrder) return;
-      if (!window.confirm('Pastikan ini foto bukti pembayaran yang benar. Setelah terkirim, bukti tidak bisa diganti selama dicek admin. Kirim sekarang?')) return;
+      if (!(await payConfirm('Kirim bukti?', 'Pastikan fotonya benar.', 'Kirim'))) return;
       var cb = document.getElementById('payClaimBtn');
       var st = document.getElementById('payStatus');
       _payUploading = true;
