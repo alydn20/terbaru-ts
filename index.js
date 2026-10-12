@@ -9951,7 +9951,7 @@ ${authScript}
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payGroupAutoAdd" style="width:18px;height:18px;cursor:pointer;">
-            <span>Masuk grup WA otomatis <span style="color:#6b7280;font-size:0.85em;">(setelah lunas, bot memasukkan nomornya ke grup; paling banyak 10 per jam dan 40 per hari. Kalau ditolak privasi WhatsApp, orangnya bergabung lewat tombol di website dan disetujui otomatis. Bot harus admin grup.)</span></span>
+            <span>Masuk grup WA otomatis <span style="color:#6b7280;font-size:0.85em;">(setelah lunas, bot memasukkan nomornya ke grup, satu nomor tiap sekitar 45 detik. Kalau ditolak privasi WhatsApp, orangnya bergabung lewat tombol di website dan disetujui otomatis. Bot harus admin grup.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -21773,9 +21773,9 @@ async function notifyAdminsWa(text, photo, opts) {
 // Setelah order lunas, bot mencoba memasukkan nomornya ke grup yang dipantau. Kalau WhatsApp
 // menolak karena privasi orangnya, ia bisa bergabung sendiri lewat tombol "Gabung Grup WA" di
 // website, dan permintaannya disetujui otomatis (kalau grup memakai "Setujui anggota baru").
-// Bot TIDAK mengirim pesan pribadi ke siapa pun. Penambahan dibatasi supaya nomor bot aman.
-const GROUP_ADD_PER_HOUR = 10
-const GROUP_ADD_PER_DAY = 40
+// Bot TIDAK mengirim pesan pribadi ke siapa pun. Tidak ada batas jumlah per jam / per hari
+// (permintaan pemilik); yang tersisa hanya jeda antar penambahan (satu nomor tiap ~45 detik)
+// dan rem otomatis kalau WhatsApp mulai menolak berturut-turut.
 const GROUP_ADD_MAX_TRIES = 3
 const GROUP_ADD_MAX_AGE_MS = 30 * 24 * 3600 * 1000   // order lunas lebih lama dari ini tidak diproses
 let _groupAddPausedUntil = 0
@@ -21816,7 +21816,6 @@ async function groupAddTick() {
   if (Date.now() < _groupAddPausedUntil) return
   const settings = await getPaymentSettings()
   if (settings.groupAutoAdd === false) return
-  if (Math.random() < 0.4) return   // jeda acak antar penambahan
   _groupAddBusy = true
   try {
     const now = Date.now()
@@ -21828,7 +21827,6 @@ async function groupAddTick() {
     const wib = new Date(now + 7 * 3600 * 1000).toISOString()
     const hourKey = 'gold:group_add:h:' + wib.substring(0, 13)
     const dayKey = 'gold:group_add:d:' + wib.substring(0, 10)
-    if ((await groupAddCount(hourKey)) >= GROUP_ADD_PER_HOUR || (await groupAddCount(dayKey)) >= GROUP_ADD_PER_DAY) return
     const order = await readPaymentOrder(cand.id)
     if (!order || order.status !== 'paid' || order.inGroup) return
     // Nomornya masih user aktif? (bisa saja sudah dihapus / di-kick admin)
@@ -21837,6 +21835,7 @@ async function groupAddTick() {
       await savePaymentOrder(order)
       return
     }
+    // Hanya dihitung untuk catatan, tidak membatasi
     await groupAddCount(hourKey, 2 * 3600, true)
     await groupAddCount(dayKey, 2 * 24 * 3600, true)
     const jid = order.phone + '@s.whatsapp.net'
