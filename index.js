@@ -8100,7 +8100,7 @@ app.get('/login', async (req, res) => {
         <div style="color:#9ca3af;font-size:0.75em;margin:4px 0 12px;">Nominal sudah termasuk 3 angka terakhir nomor Anda sebagai tanda pengenal. Jangan dibulatkan.</div>
         <div id="payStatus" style="font-size:0.85em;margin-bottom:12px;"></div>
         <button class="btn btn-primary" id="payClaimBtn" onclick="claimPayment()" style="margin-bottom:8px;">Saya sudah bayar</button>
-        <button class="btn btn-secondary" onclick="cancelPayment()">Batal</button>
+        <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
 
       <!-- Step 2: PIN Input -->
@@ -8469,10 +8469,12 @@ app.get('/login', async (req, res) => {
         });
         var data = await res.json();
         if (!data.success) {
-          showMessage(data.error || 'Gagal membuat pembayaran', 'error');
+          if (data.alreadyRegistered) showMessage('Nomor ini sudah aktif. Silakan masuk.', 'success');
+          else showMessage(data.error || 'Gagal membuat pembayaran', 'error');
           return 'none';
         }
         _payOrder = data.order;
+        try { localStorage.setItem('pay_order', JSON.stringify({ phone: phone, id: data.order.id })); } catch (e) {}
         document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
         document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
         var img = document.getElementById('payQr');
@@ -8484,6 +8486,7 @@ app.get('/login', async (req, res) => {
         var cb = document.getElementById('payClaimBtn');
         cb.disabled = false;
         cb.textContent = 'Saya sudah bayar';
+        if (data.order.claimed) _showClaimed();
         hideMessage();
         document.getElementById('phoneForm').style.display = 'none';
         document.getElementById('payForm').style.display = 'block';
@@ -8514,9 +8517,10 @@ app.get('/login', async (req, res) => {
         if (status === 'paid') { _paymentDone(); return; }
         if (status === 'expired' || status === 'rejected' || left === 0) {
           _stopPayPolling();
+          _forgetPayOrder();
           st.textContent = status === 'rejected'
             ? 'Pembayaran ditolak admin. Hubungi admin bila sudah membayar.'
-            : 'Order sudah tidak berlaku. Tekan Batal lalu coba lagi.';
+            : 'Order sudah tidak berlaku. Tekan "Ganti nomor" lalu masukkan nomor lagi.';
           st.style.color = '#ef4444';
           return;
         }
@@ -8526,11 +8530,37 @@ app.get('/login', async (req, res) => {
     function _paymentDone() {
       _stopPayPolling();
       _payOrder = null;
+      _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
       showMessage('Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
       setTimeout(function() { checkUser(); }, 1500);
     }
+
+    function _showClaimed() {
+      var cb = document.getElementById('payClaimBtn');
+      var st = document.getElementById('payStatus');
+      cb.disabled = true;
+      cb.textContent = 'Menunggu konfirmasi admin...';
+      st.textContent = 'Admin sudah diberi tahu. Halaman ini lanjut otomatis setelah pembayaran dikonfirmasi. Boleh ditutup: saat dibuka lagi, pembayaran ini tetap tersimpan.';
+      st.style.color = '';
+    }
+
+    function _forgetPayOrder() {
+      try { localStorage.removeItem('pay_order'); } catch (e) {}
+    }
+
+    // Tab tertutup / halaman dimuat ulang: tampilkan lagi pembayaran yang masih menunggu
+    async function restorePendingPayment() {
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem('pay_order') || 'null'); } catch (e) {}
+      if (!saved || !saved.phone) return;
+      var input = document.getElementById('phoneInput');
+      if (input && !input.value) input.value = saved.phone;
+      var result = await startPaymentFlow(saved.phone);
+      if (result !== 'pay') _forgetPayOrder();
+    }
+    document.addEventListener('DOMContentLoaded', function() { restorePendingPayment(); });
 
     async function claimPayment() {
       if (!_payOrder) return;
@@ -8544,9 +8574,7 @@ app.get('/login', async (req, res) => {
           body: JSON.stringify({ id: _payOrder.id })
         })).json();
         if (d.success) {
-          cb.textContent = 'Menunggu konfirmasi admin...';
-          st.textContent = 'Admin sudah diberi tahu. Halaman ini lanjut otomatis setelah pembayaran dikonfirmasi. Boleh ditutup, lalu login lagi nanti.';
-          st.style.color = '';
+          _showClaimed();
         } else {
           cb.disabled = false;
           st.textContent = d.error || 'Gagal mengirim. Coba lagi.';
@@ -8557,9 +8585,12 @@ app.get('/login', async (req, res) => {
       }
     }
 
-    function cancelPayment() {
+    // Kembali ke form nomor. Order di server TIDAK dihapus: memasukkan nomor yang sama
+    // lagi akan menampilkan pembayaran yang sama.
+    function changePayNumber() {
       _stopPayPolling();
       _payOrder = null;
+      _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
       hideMessage();
@@ -20340,7 +20371,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, claimed: !!order.claimedAt, qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
