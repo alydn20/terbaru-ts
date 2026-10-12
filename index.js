@@ -8465,7 +8465,7 @@ app.get('/login', async (req, res) => {
       cb.disabled = false;
       if (!proofStatus) {
         cb.textContent = 'Upload bukti pembayaran';
-        st.textContent = 'Setelah membayar, upload screenshot bukti pembayarannya.';
+        st.textContent = 'Setelah membayar, WAJIB upload screenshot bukti pembayaran. Tanpa bukti, pembayaran tidak diproses.';
         return;
       }
       cb.textContent = 'Upload ulang bukti';
@@ -11302,8 +11302,9 @@ ${authScript}
           tbody.innerHTML = data.orders.map(o => {
             const waktu = tglPendek(o.createdAt) + ' ' + jam(o.createdAt);
             const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via : '';
-            let bukti = '<span style="color:#6b7280;">-</span>';
-            if (o.proof && o.proof.status) {
+            const adaBukti = !!(o.proof && o.proof.status);
+            let bukti = '<span style="color:' + (o.status === 'pending' ? '#f59e0b' : '#6b7280') + ';">' + (o.status === 'pending' ? 'belum upload' : '-') + '</span>';
+            if (adaBukti) {
               bukti = '<button class="action-btn" style="background:#3b82f6;" title="Diunggah ' + (o.proof.uploadedAt ? tgl(o.proof.uploadedAt) : '') + '" onclick="viewPaymentProof(&apos;' + o.id + '&apos;)">Lihat</button>';
             }
             // Masa aktif: tanggal di-ACC sampai tanggal habis
@@ -11325,7 +11326,7 @@ ${authScript}
                 : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
             const aksi = o.status === 'paid' ? '<span style="color:#6b7280;">-</span>' :
-              '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' +
+              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' : '') +
               (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
             return '<tr>' +
               '<td>' + waktu + '</td>' +
@@ -20696,6 +20697,10 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
     }
     if (order.status === 'paid') return res.json({ success: false, error: 'Order ini sudah lunas' })
     if (action === 'confirm') {
+      // Upload bukti WAJIB: order tanpa bukti bayar tidak bisa di-ACC
+      if (!order.proof || !order.proof.status) {
+        return res.json({ success: false, error: 'Order ini belum ada bukti bayarnya. Minta orangnya upload bukti dulu.' })
+      }
       await completePaymentOrder(order, 'konfirmasi admin')
     } else if (action === 'reject') {
       order.status = 'rejected'
