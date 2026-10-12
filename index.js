@@ -11325,9 +11325,10 @@ ${authScript}
                 ? '<button class="action-btn" style="background:#22c55e;" title="Sudah masuk grup. Klik untuk membatalkan tanda." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">&#10003; Masuk</button>'
                 : '<button class="action-btn" style="background:#4b5563;" title="Klik setelah orang ini dimasukkan ke grup WA" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;group&apos;)">Belum</button>';
             }
-            const aksi = o.status === 'paid' ? '<span style="color:#6b7280;">-</span>' :
-              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' : '') +
-              (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
+            const aksi = (o.status === 'paid' ? '' :
+              (adaBukti ? '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button> ' : '') +
+              (o.status === 'pending' ? '<button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button> ' : '')) +
+              '<button class="action-btn" style="background:#374151;" title="Hapus catatan order ini saja. Akun di Daftar User tidak ikut terhapus." onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;delete&apos;)">Hapus</button>';
             return '<tr>' +
               '<td>' + waktu + '</td>' +
               '<td class="phone">+' + o.phone + '</td>' +
@@ -11362,10 +11363,13 @@ ${authScript}
     }
 
     async function paymentOrderAction(id, action) {
-      const confirmed = action === 'group' ? true : await showConfirm(
-        action === 'confirm' ? 'Konfirmasi pembayaran ini? Akun akan langsung aktif.' : 'Tolak order ini?',
-        { title: action === 'confirm' ? 'Konfirmasi Pembayaran' : 'Tolak Order', type: action === 'confirm' ? 'info' : 'danger' }
-      );
+      const texts = {
+        confirm: ['Konfirmasi pembayaran ini? Akun akan langsung aktif.', 'Konfirmasi Pembayaran', 'info'],
+        reject: ['Tolak order ini?', 'Tolak Order', 'danger'],
+        delete: ['Hapus catatan order ini? Yang dihapus hanya catatan pembayaran dan foto buktinya. Akun di Daftar User tidak ikut terhapus. Tidak bisa dibatalkan.', 'Hapus Catatan Order', 'danger']
+      };
+      const t = texts[action];
+      const confirmed = action === 'group' ? true : await showConfirm(t[0], { title: t[1], type: t[2] });
       if (!confirmed) return;
       adminFetch('/api/admin/payment-orders/action', {
         method: 'POST',
@@ -11375,9 +11379,10 @@ ${authScript}
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          if (action !== 'group') showAlert(action === 'confirm' ? 'Pembayaran dikonfirmasi, akun aktif.' : 'Order ditolak.', 'success');
+          const done = { confirm: 'Pembayaran dikonfirmasi, akun aktif.', reject: 'Order ditolak.', delete: 'Catatan order dihapus.' };
+          if (done[action]) showAlert(done[action], 'success');
           loadPaymentOrders();
-          if (action !== 'group') loadUsers();
+          if (action === 'confirm') loadUsers();
         } else {
           showAlert('Gagal: ' + data.error, 'danger');
         }
@@ -20688,6 +20693,14 @@ app.post('/api/admin/payment-orders/action', express.json(), async (req, res) =>
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, String(id || ''))
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (action === 'delete') {
+      // Hanya catatan order + foto buktinya yang dihapus. Akun di Daftar User (gold:users)
+      // sengaja tidak disentuh: user yang sudah aktif tetap aktif sampai masa aktifnya habis.
+      await redis.hdel(REDIS_KEYS.PAYMENT_ORDERS, order.id)
+      await _ioredis.del(PAY_PROOF_PREFIX + order.id).catch(() => {})
+      pushLog(`Admin | Catatan order QRIS +${order.phone} (Rp${order.amount.toLocaleString('id-ID')}, ${order.status}) dihapus`)
+      return res.json({ success: true, deleted: true })
+    }
     if (action === 'group') {
       // Catatan admin saja: menandai user ini sudah dimasukkan ke grup WA (bisa dibatalkan)
       order.inGroup = !order.inGroup
