@@ -8497,7 +8497,9 @@ app.get('/login', async (req, res) => {
       cb.style.display = 'none';
       var hint = document.getElementById('payUploadHint');
       if (hint) hint.style.display = 'none';
-      st.textContent = 'Bukti terkirim. Menunggu konfirmasi admin, halaman ini lanjut otomatis. Boleh ditutup: pembayaran ini tetap tersimpan.';
+      st.textContent = proofStatus === 'checking'
+        ? 'Bukti terkirim dan sedang diperiksa. Tunggu sebentar, halaman ini lanjut otomatis.'
+        : 'Bukti terkirim. Menunggu konfirmasi admin, halaman ini lanjut otomatis. Boleh ditutup: pembayaran ini tetap tersimpan.';
       st.style.color = '#4ade80';
     }
 
@@ -8669,7 +8671,7 @@ app.get('/login', async (req, res) => {
         _payUploading = false;
         if (d.success) {
           _hideReject();
-          _showProofState('uploaded', false);
+          _showProofState('checking', false);
         } else {
           if (!_payRejectShown) _showProofState(null, false);
           cb.disabled = false;
@@ -9940,6 +9942,11 @@ ${authScript}
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
             <input type="checkbox" id="payWaFallback" style="width:18px;height:18px;cursor:pointer;">
             <span>Kalau QRIS dimatikan: arahkan nomor tidak terdaftar ke WhatsApp admin <span style="color:#6b7280;font-size:0.85em;">(kalau tidak dicentang, hanya muncul pesan "Nomor tidak terdaftar")</span></span>
+          </label>
+
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="payAutoVerify" style="width:18px;height:18px;cursor:pointer;">
+            <span>Cek bukti otomatis <span style="color:#6b7280;font-size:0.85em;">(server membaca screenshot: nominal, penerima, status, tanggal, dan bukti ganda. Cocok semua = ACC otomatis, jelas salah = tolak otomatis, ragu = menunggu ACC manual. Laporan tetap dikirim ke Telegram dan WA admin.)</span></span>
           </label>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
@@ -11309,6 +11316,7 @@ ${authScript}
           const s = data.settings;
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
+          document.getElementById('payAutoVerify').checked = s.autoVerify !== false;
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -11361,6 +11369,7 @@ ${authScript}
         body: JSON.stringify({
           enabled: document.getElementById('payEnabled').checked,
           waFallback: document.getElementById('payWaFallback').checked,
+          autoVerify: document.getElementById('payAutoVerify').checked,
           price: document.getElementById('payPrice').value,
           days: document.getElementById('payDays').value,
           qrisStatic: document.getElementById('payQris').value,
@@ -20532,7 +20541,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -20828,7 +20837,7 @@ async function notifyAdminsTelegram(text, photo, opts) {
     .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
     .replace(/\+([0-9]{9,15})/g, '<code>+$1</code>')
   // Tombol ACC / Tolak langsung di Telegram (hanya untuk pesan bukti bayar)
-  const markup = opts && opts.orderId ? {
+  const markup = opts && opts.kb ? { inline_keyboard: opts.kb } : opts && opts.orderId ? {
     inline_keyboard: [[
       { text: 'ACC', callback_data: 'pay:acc:' + opts.orderId },
       { text: 'Tolak', callback_data: 'pay:rej:' + opts.orderId }
@@ -20962,6 +20971,10 @@ async function tgOrderDetail(id, fk) {
   let text = '<b>Order pembayaran</b>\n\nNomor: <code>+' + o.phone + '</code>\nNominal: <b>' + tgRp(o.amount) + '</b>\nStatus: <b>' + (TG_ORDER_STATUS[status] || status) + '</b>' +
     '\nDibuat: ' + tgDateTime(o.createdAt) + '\nBukti: ' + (proof ? 'sudah upload' + (o.proof.uploadedAt ? ' (' + tgDateTime(o.proof.uploadedAt) + ')' : '') : 'belum upload')
   if (status === 'rejected') text += '\nAlasan ditolak: <b>' + tgEsc(o.rejectReason || '-') + '</b>'
+  if (proof && o.proof.auto && o.proof.auto.checks && o.proof.auto.checks.length) {
+    const label = { accept: 'lolos', reject: 'ditolak', manual: 'perlu dicek manual' }[o.proof.auto.verdict] || '-'
+    text += '\n\nCek otomatis: <b>' + label + '</b>\n- ' + o.proof.auto.checks.map(tgEsc).join('\n- ')
+  }
   if (status === 'paid') {
     text += '\n\nDi-ACC: ' + (o.paidAt ? tgDateTime(o.paidAt) : '-') + (o.via ? '\nLewat: ' + tgEsc(o.via) : '') +
       '\nMasa aktif: sampai ' + (o.activeUntil ? tgDate(o.activeUntil) + ' (' + (tgDaysLeft(o.activeUntil) > 0 ? 'sisa ' + tgDaysLeft(o.activeUntil) + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
@@ -21184,12 +21197,14 @@ async function tgSettingsPage(note) {
     text: (note ? '<i>' + tgEsc(note) + '</i>\n\n' : '') + '<b>Pengaturan</b>\n\nPendaftaran lewat QRIS: <b>' + (s.enabled ? 'AKTIF' : 'MATI') + '</b>' +
       '\nHarga: <b>' + tgRp(s.price) + '</b>\nMasa aktif: <b>' + s.days + ' hari</b>' +
       '\nKalau QRIS mati, arahkan ke WA admin: <b>' + (s.waFallback !== false ? 'YA' : 'TIDAK') + '</b>' +
+      '\nCek bukti otomatis: <b>' + (s.autoVerify !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\nLog otomatis ke Telegram: <b>' + (tg.logPush !== false ? 'AKTIF' : 'MATI') + '</b>' +
       '\n\nString QRIS, nominal investasi, suara, dan pengaturan lain tetap lewat panel admin web.',
     kb: [
       [{ text: s.enabled ? 'Matikan QRIS' : 'Aktifkan QRIS', callback_data: 's:en' }],
       [{ text: 'Ubah harga', callback_data: 's:pr' }, { text: 'Ubah masa aktif', callback_data: 's:dy' }],
       [{ text: (s.waFallback !== false ? 'Jangan arahkan ke WA admin' : 'Arahkan ke WA admin'), callback_data: 's:wf' }],
+      [{ text: (s.autoVerify !== false ? 'Matikan cek bukti otomatis' : 'Aktifkan cek bukti otomatis'), callback_data: 's:av' }],
       [{ text: (tg.logPush !== false ? 'Matikan log otomatis' : 'Aktifkan log otomatis'), callback_data: 's:lg' }],
       TG_HOME_ROW
     ]
@@ -21249,7 +21264,7 @@ function tgLogHook(s) {
     (/^WA \|/.test(text) && /(connected|terhubung|tersambung|terputus|disconnect|logout|logged out|Kicked|repair|QR)/i.test(text))
   if (!important) return
   // Yang sudah punya pesan sendiri, atau baru saja dilakukan admin di Telegram, tidak diulang
-  if (/\(Telegram/.test(text) || /^PAY \| (Bukti bayar diunggah|Sudah di-ACC tapi belum|Semua yang sudah di-ACC)/.test(text)) return
+  if (/\((Telegram|otomatis)/.test(text) || /^PAY \| (Bukti bayar diunggah|Bukti .* perlu dicek manual|Sudah di-ACC tapi belum|Semua yang sudah di-ACC)/.test(text)) return
   if (_tgLogBuf.length < 60) _tgLogBuf.push({ t: Date.now(), s: text.replace(/\s+/g, ' ') })
 }
 
@@ -21328,6 +21343,16 @@ async function handleTelegramCallback(tg, cq) {
     else if (st === 'paid') await setButton('Sudah di-ACC')
     else await setButton('Order sudah dihapus')
     return toast(msg, true)
+  }
+  // Laporan "di-ACC otomatis": tandai sudah dimasukkan ke grup WA
+  if ((m = /^pg:([0-9a-f]{16})$/.exec(data))) {
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, m[1])
+    if (!raw) { await setButton('Order sudah dihapus'); return toast('Order tidak ditemukan.', true) }
+    const o = tgParse(raw)
+    if (o.status !== 'paid') return toast('Order ini belum lunas.', true)
+    if (!o.inGroup) { o.inGroup = true; o.inGroupAt = Date.now(); await savePaymentOrder(o) }
+    await setButton('Sudah masuk grup')
+    return toast('Ditandai sudah masuk grup.')
   }
   // Tombol ACC yang menempel di pesan foto bukti
   if ((m = /^pay:(acc):([0-9a-f]{16})$/.exec(data))) {
@@ -21457,6 +21482,12 @@ async function handleTelegramCallback(tg, cq) {
     const s = await getPaymentSettings()
     await tgSavePaymentSettings({ waFallback: s.waFallback === false })
     await show(await tgSettingsPage('Tersimpan.'))
+    return toast('')
+  }
+  if (data === 's:av') {
+    const s = await getPaymentSettings()
+    await tgSavePaymentSettings({ autoVerify: s.autoVerify === false })
+    await show(await tgSettingsPage(s.autoVerify === false ? 'Cek bukti otomatis diaktifkan.' : 'Cek bukti otomatis dimatikan: semua bukti menunggu ACC manual.'))
     return toast('')
   }
   if (data === 's:lg') {
@@ -21696,6 +21727,226 @@ function scheduleNotInGroupReport() {
   }, 60000)
 }
 
+// ---------- Pemeriksaan bukti otomatis (OCR) ----------
+// Teks di screenshot dibaca (Tesseract, berjalan di server sendiri) lalu diperiksa: nominal,
+// nama penerima, status transaksi, tanggal, dan apakah bukti/ID transaksinya pernah dipakai.
+// Hasilnya: 'accept' (ACC otomatis), 'reject' (tolak otomatis + alasan), atau 'manual'
+// (ragu / tidak terbaca: admin yang memutuskan lewat tombol di Telegram atau panel).
+// CATATAN: OCR hanya membaca tulisan. Screenshot yang diedit rapi tetap bisa lolos, jadi
+// laporan ke admin selalu menyertakan fotonya untuk dicek sekilas.
+const PAYMENT_PROOF_IDS_KEY = 'gold:payment_proof_ids'   // Hash: sidik bukti (ID transaksi / hash gambar) -> orderId
+let _ocrWorker = null
+let _ocrIdleTimer = null
+let _ocrQueue = Promise.resolve()
+
+// Satu worker dipakai bergantian (antri); dimatikan setelah 5 menit menganggur
+function ocrImageText(buffer) {
+  const job = _ocrQueue.then(async () => {
+    if (_ocrIdleTimer) { clearTimeout(_ocrIdleTimer); _ocrIdleTimer = null }
+    try {
+      if (!_ocrWorker) {
+        const mod = await import('tesseract.js')
+        const createWorker = mod.createWorker || mod.default.createWorker
+        _ocrWorker = await createWorker(['ind', 'eng'], 1, { cachePath: '/tmp' })
+      }
+      // Dibaca dua kali dengan cara ambang berbeda lalu digabung: cara adaptif menangkap tulisan
+      // terang di atas latar berwarna (judul "Pembayaran Berhasil"), cara biasa lebih stabil
+      // untuk tulisan gelap di latar putih.
+      let text = ''
+      for (const method of ['1', '0']) {
+        await _ocrWorker.setParameters({ thresholding_method: method })
+        const { data } = await _ocrWorker.recognize(buffer)
+        text += (data.text || '') + '\n'
+      }
+      return text
+    } catch (e) {
+      const w = _ocrWorker
+      _ocrWorker = null
+      if (w) w.terminate().catch(() => {})
+      throw e
+    } finally {
+      _ocrIdleTimer = setTimeout(() => {
+        const w = _ocrWorker
+        _ocrWorker = null
+        if (w) w.terminate().catch(() => {})
+      }, 5 * 60 * 1000)
+    }
+  })
+  _ocrQueue = job.catch(() => {})
+  return job
+}
+
+const PROOF_MONTHS = {
+  jan: 1, januari: 1, january: 1, feb: 2, februari: 2, february: 2, mar: 3, maret: 3, march: 3,
+  apr: 4, april: 4, mei: 5, may: 5, jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7,
+  agu: 8, agt: 8, ags: 8, agustus: 8, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
+  okt: 10, oktober: 10, oct: 10, october: 10, nov: 11, november: 11, nop: 11, des: 12, desember: 12, dec: 12, december: 12
+}
+
+// Semua tanggal yang tertulis di teks, sebagai 'YYYY-MM-DD'
+function extractProofDates(text) {
+  const out = new Set()
+  const add = (y, m, d) => {
+    y = Number(y); m = Number(m); d = Number(d)
+    if (y < 100) y += 2000
+    if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return
+    out.add(y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'))
+  }
+  let m
+  const named = /(^|[^0-9])([0-9]{1,2})[ .\-\/]{1,3}([A-Za-z]{3,9})[ .,\-\/]{1,3}((?:20)?[0-9]{2})(?![0-9])/g
+  while ((m = named.exec(text))) { const mon = PROOF_MONTHS[m[3].toLowerCase()]; if (mon) add(m[4], mon, m[2]) }
+  const dmy = /(^|[^0-9])([0-9]{1,2})[\/\-.]([0-9]{1,2})[\/\-.](20[0-9]{2}|[0-9]{2})(?![0-9])/g
+  while ((m = dmy.exec(text))) add(m[4], m[3], m[2])
+  const ymd = /(^|[^0-9])(20[0-9]{2})[\/\-.]([0-9]{1,2})[\/\-.]([0-9]{1,2})(?![0-9])/g
+  while ((m = ymd.exec(text))) add(m[2], m[3], m[4])
+  return [...out]
+}
+
+// Angka rupiah di teks. explicit = yang diawali Rp / IDR (pasti nominal, bukan nomor lain)
+function extractProofAmounts(text) {
+  const all = new Set(), explicit = new Set()
+  const re = /(rp|idr)?[ .:]{0,3}([0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]{4,9})(?:[.,]([0-9]{2}))?(?![0-9])/gi
+  let m
+  while ((m = re.exec(text))) {
+    const n = parseInt(m[2].replace(/[.,]/g, ''), 10)
+    if (!n || n > 100000000) continue
+    all.add(n)
+    if (m[1]) explicit.add(n)
+  }
+  return { all: [...all], explicit: [...explicit] }
+}
+
+const wibDateStr = t => new Date(t + 7 * 3600 * 1000).toISOString().substring(0, 10)
+
+// Periksa teks hasil baca terhadap order. Fungsi murni (tanpa Redis) supaya mudah diuji.
+function analyzeProofText(text, order, merchantName, now) {
+  const lower = text.toLowerCase()
+  const squash = lower.replace(/[^a-z0-9]/g, '')
+  const checks = []
+  const rp = n => 'Rp' + Number(n).toLocaleString('id-ID')
+  const readable = squash.length >= 25
+
+  // 1. Nominal
+  const amounts = extractProofAmounts(text)
+  const amountOk = amounts.all.includes(order.amount)
+  const otherExplicit = amounts.explicit.filter(n => n !== order.amount)
+  const amountWrong = !amountOk && otherExplicit.length > 0
+  checks.push('Nominal: ' + (amountOk ? 'cocok (' + rp(order.amount) + ')' : amountWrong ? 'TIDAK cocok, terbaca ' + otherExplicit.slice(0, 3).map(rp).join(', ') : 'tidak terbaca'))
+
+  // 2. Status transaksi
+  const successOk = /(berhasil|sukses|success|selesai|completed|lunas|terkirim)/.test(lower)
+  const failed = !successOk && /(gagal|failed|dibatalkan|cancel|ditolak|expired|kedaluwarsa)/.test(lower)
+  checks.push('Status: ' + (successOk ? 'berhasil' : failed ? 'GAGAL / dibatalkan' : 'tidak terbaca'))
+
+  // 3. Nama penerima (nama merchant di QRIS)
+  let merchantOk = false
+  const mName = String(merchantName || '').trim()
+  if (mName) {
+    const mSquash = mName.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const words = mName.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 4)
+    merchantOk = (mSquash.length >= 4 && squash.includes(mSquash)) || (words.length > 0 && words.every(w => lower.includes(w)))
+  }
+  checks.push('Penerima: ' + (mName ? (merchantOk ? 'cocok (' + mName + ')' : 'tidak terbaca') : 'tidak dicek'))
+
+  // 4. Tanggal: harus antara tanggal order dibuat dan hari ini (WIB)
+  const dates = extractProofDates(text)
+  const from = wibDateStr(order.createdAt), to = wibDateStr(now)
+  const dateOk = dates.some(d => d >= from && d <= to)
+  const dateWrong = !dateOk && dates.length > 0
+  const tampil = d => d.substring(8, 10) + '/' + d.substring(5, 7) + '/' + d.substring(0, 4)
+  checks.push('Tanggal: ' + (dateOk ? 'cocok (' + tampil(dates.find(d => d >= from && d <= to)) + ')' : dateWrong ? 'TIDAK cocok, terbaca ' + dates.slice(0, 2).map(tampil).join(', ') : 'tidak terbaca'))
+
+  // 5. ID / nomor referensi transaksi: deret angka panjang (15+ digit, supaya nomor HP tidak ikut)
+  const ids = [...new Set(text.replace(/[ \t]/g, '').match(/[0-9]{15,}/g) || [])].slice(0, 5)
+  checks.push('ID transaksi: ' + (ids.length ? ids[0].substring(0, 10) + '...' : 'tidak terbaca'))
+
+  let verdict = 'manual', reason = ''
+  if (readable && amountWrong && (successOk || dates.length > 0)) {
+    verdict = 'reject'; reason = 'Nominal di bukti (' + otherExplicit.slice(0, 2).map(rp).join(', ') + ') tidak sama dengan ' + rp(order.amount)
+  } else if (readable && dateWrong && amounts.all.length > 0) {
+    verdict = 'reject'; reason = 'Tanggal di bukti (' + dates.slice(0, 2).map(tampil).join(', ') + ') bukan tanggal pembayaran order ini'
+  } else if (readable && failed && amounts.all.length > 0) {
+    verdict = 'reject'; reason = 'Status transaksi di bukti bukan berhasil'
+  } else if (amountOk && successOk && dateOk && (merchantOk || !mName)) {
+    verdict = 'accept'
+  }
+  return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
+}
+
+function qrisMerchantName(qrisStatic) {
+  try {
+    const f = parseQrisTlv(String(qrisStatic || '')).find(([tag]) => tag === '59')
+    return f ? f[1] : ''
+  } catch (e) { return '' }
+}
+
+// Dijalankan setelah bukti tersimpan. Memutuskan ACC / tolak / manual lalu melapor ke admin.
+async function processPaymentProof(orderId, buffer, mime, ctx) {
+  const settings = await getPaymentSettings()
+  const rp = n => 'Rp' + Number(n).toLocaleString('id-ID')
+  const reload = async () => {
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, orderId)
+    return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+  }
+  let order = await reload()
+  if (!order) return
+  const photo = { buffer, mime }
+  const ulang = ctx && ctx.wasRejected ? '\nBukti BARU setelah ditolak' + (ctx.prevReason ? ' (alasan lama: ' + ctx.prevReason + ')' : '') : ''
+  const kepala = 'Nomor: +' + order.phone + '\nNominal order: *' + rp(order.amount) + '*' + ulang
+  const manualKb = { orderId: order.id }
+
+  if (settings.autoVerify === false) {
+    order.proof = { ...order.proof, status: 'uploaded' }
+    await savePaymentOrder(order)
+    pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${rp(order.amount)} - menunggu ACC admin`)
+    return notifyAdminsWa('*BUKTI BAYAR MENUNGGU ACC*\n\n' + kepala + '\n\nCek otomatis sedang dimatikan. ACC / Tolak lewat tombol di Telegram atau panel admin.', photo, manualKb)
+  }
+
+  let result = null
+  let dupReason = ''
+  const imgKey = 'img:' + crypto.createHash('sha256').update(buffer).digest('hex')
+  try {
+    // Gambar yang persis sama pernah dipakai order lain?
+    const imgOwner = await redis.hget(PAYMENT_PROOF_IDS_KEY, imgKey)
+    if (imgOwner && imgOwner !== order.id) dupReason = 'Foto bukti ini sudah pernah dipakai untuk pembayaran lain'
+    const text = await ocrImageText(buffer)
+    result = analyzeProofText(text, order, qrisMerchantName(settings.qrisStatic), Date.now())
+    if (!dupReason) {
+      for (const id of result.ids) {
+        const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, id)
+        if (owner && owner !== order.id) { dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break }
+      }
+    }
+  } catch (e) {
+    pushLog('PAY | Cek otomatis gagal membaca bukti +' + order.phone + ': ' + (e && e.message ? e.message : e))
+  }
+
+  order = await reload()
+  if (!order || order.status !== 'pending') return   // sudah diputuskan admin selagi dibaca
+  const hasil = result ? '\n\nHasil cek otomatis:\n- ' + result.checks.join('\n- ') : '\n\nCek otomatis gagal membaca gambar.'
+  let verdict = result ? result.verdict : 'manual'
+  let reason = result ? result.reason : ''
+  if (dupReason) { verdict = 'reject'; reason = dupReason }
+  order.proof = { ...order.proof, status: 'uploaded', auto: { verdict, reason, checks: result ? result.checks : [], at: Date.now() } }
+
+  if (verdict === 'accept') {
+    await redis.hset(PAYMENT_PROOF_IDS_KEY, { [imgKey]: order.id })
+    for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
+    const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
+    const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
+    return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.', photo,
+      { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
+  }
+  if (verdict === 'reject') {
+    await rejectPaymentOrder(order, reason, 'otomatis')
+    return notifyAdminsWa('*DITOLAK OTOMATIS*\n\n' + kepala + '\nAlasan: ' + reason + hasil + '\n\nOrangnya melihat alasan ini dan bisa upload bukti baru. Kalau penolakan ini keliru, tekan ACC.', photo,
+      { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }]] })
+  }
+  await savePaymentOrder(order)
+  pushLog(`PAY | Bukti +${order.phone} ${rp(order.amount)} perlu dicek manual`)
+  return notifyAdminsWa('*BUKTI PERLU DICEK MANUAL*\n\n' + kepala + hasil + '\n\nCek otomatis tidak cukup yakin. Lihat fotonya lalu tekan ACC atau Tolak.', photo, manualKb)
+}
+
 // Publik: unggah screenshot bukti bayar untuk sebuah order
 app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }), async (req, res) => {
   try {
@@ -21723,12 +21974,10 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
 
     await _ioredis.set(PAY_PROOF_PREFIX + id, mime + ';' + buf.toString('base64'), 'EX', PAY_PROOF_TTL_SEC)
     order.claimedAt = order.claimedAt || Date.now()
-    order.proof = { status: 'uploaded', count: count + 1, uploadedAt: Date.now() }
+    order.proof = { status: 'checking', count: count + 1, uploadedAt: Date.now() }
     await savePaymentOrder(order)
     res.json({ success: true })
-    const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
-    pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`*BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*${wasRejected ? '\n\nBukti BARU setelah ditolak' + (prevReason ? ' (alasan: ' + prevReason + ')' : '') : ''}\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime }, { orderId: order.id })
+    processPaymentProof(id, buf, mime, { wasRejected, prevReason }).catch(e => pushLog('PAY | Proses bukti error: ' + (e && e.message ? e.message : e)))
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
@@ -21876,7 +22125,7 @@ app.get('/api/admin/payment-settings', async (req, res) => {
 })
 
 app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
-  const { password, enabled, qrisStatic, price, days, waFallback, regenerateSecret } = req.body
+  const { password, enabled, qrisStatic, price, days, waFallback, autoVerify, regenerateSecret } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
@@ -21899,6 +22148,7 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       price: p,
       days: d,
       waFallback: waFallback !== false,
+      autoVerify: autoVerify === undefined ? current.autoVerify !== false : !!autoVerify,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
