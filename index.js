@@ -11514,9 +11514,10 @@ ${authScript}
           tbody.innerHTML = orders.map(o => {
             const waktu = tglPendek(o.createdAt) + ' ' + jam(o.createdAt);
             const via = o.status === 'paid' && o.via ? 'Lunas lewat: ' + o.via
-              : (o.status === 'rejected' && o.rejectReason ? 'Alasan: ' + _escHtml(o.rejectReason) : '');
-            const alasan = o.status === 'rejected' && o.rejectReason
-              ? ' <small style="color:#9ca3af;">' + _escHtml(o.rejectReason.length > 22 ? o.rejectReason.substring(0, 20) + '...' : o.rejectReason) + '</small>' : '';
+              : (o.status === 'rejected' && (o.rejectDetail || o.rejectReason) ? 'Alasan: ' + _escHtml(o.rejectDetail || o.rejectReason) : '');
+            const alasanTeks = o.rejectDetail || o.rejectReason || '';
+            const alasan = o.status === 'rejected' && alasanTeks
+              ? ' <small style="color:#9ca3af;">' + _escHtml(alasanTeks.length > 22 ? alasanTeks.substring(0, 20) + '...' : alasanTeks) + '</small>' : '';
             const adaBukti = !!(o.proof && o.proof.status);
             let bukti = '<span style="color:' + (o.status === 'pending' ? '#f59e0b' : '#6b7280') + ';">' + (o.status === 'pending' ? 'belum upload' : '-') + '</span>';
             if (adaBukti) {
@@ -20759,14 +20760,16 @@ async function completePaymentOrder(order, via) {
 
 // Tolak order dengan alasan. Saat orangnya login lagi, halaman bayar menampilkan alasannya
 // bersama foto bukti yang ia kirim, dan ia boleh mengunggah bukti baru (order kembali menunggu ACC).
-async function rejectPaymentOrder(order, reason, via) {
+// reason = yang TAMPIL KE USER. detail = alasan rinci, hanya untuk admin (boleh kosong).
+async function rejectPaymentOrder(order, reason, via, detail) {
   order.status = 'rejected'
   order.rejectReason = String(reason || '').replace(/\s+/g, ' ').trim().substring(0, 200)
+  order.rejectDetail = String(detail || '').replace(/\s+/g, ' ').trim().substring(0, 300)
   order.rejectedAt = Date.now()
   // Penolakan tetap tampil ke orangnya minimal 24 jam sejak ditolak
   order.expiresAt = Math.max(order.expiresAt || 0, order.rejectedAt + PAYMENT_ORDER_TTL_MS)
   await savePaymentOrder(order)
-  pushLog(`${via === 'otomatis' ? 'AUTO | Tolak otomatis' : 'Admin | Tolak manual' + (via ? ' (' + via + ')' : '')} +${order.phone} Rp${order.amount.toLocaleString('id-ID')}: ${order.rejectReason || 'tanpa alasan'}`)
+  pushLog(`${via === 'otomatis' ? 'AUTO | Tolak otomatis' : 'Admin | Tolak manual' + (via ? ' (' + via + ')' : '')} +${order.phone} Rp${order.amount.toLocaleString('id-ID')}: ${order.rejectDetail || order.rejectReason || 'tanpa alasan'}`)
   return order
 }
 
@@ -21101,7 +21104,7 @@ async function tgOrderDetail(id, fk) {
   const proof = tgHasProof(o)
   let text = '<b>Order pembayaran</b>\n\nNomor: <code>+' + o.phone + '</code>\nNominal: <b>' + tgRp(o.amount) + '</b>\nStatus: <b>' + (TG_ORDER_STATUS[status] || status) + '</b>' +
     '\nDibuat: ' + tgDateTime(o.createdAt) + '\nBukti: ' + (proof ? 'sudah upload' + (o.proof.uploadedAt ? ' (' + tgDateTime(o.proof.uploadedAt) + ')' : '') : 'belum upload')
-  if (status === 'rejected') text += '\nAlasan ditolak: <b>' + tgEsc(o.rejectReason || '-') + '</b>'
+  if (status === 'rejected') text += '\nAlasan ditolak: <b>' + tgEsc(o.rejectDetail || o.rejectReason || '-') + '</b>' + (o.rejectDetail ? '\nYang tampil ke user: ' + tgEsc(o.rejectReason || '-') : '')
   if (proof && o.proof.auto && o.proof.auto.checks && o.proof.auto.checks.length) {
     const label = { accept: 'lolos', reject: 'ditolak', manual: 'perlu dicek manual' }[o.proof.auto.verdict] || '-'
     text += '\n\nCek otomatis: <b>' + label + '</b>\n- ' + o.proof.auto.checks.map(tgEsc).join('\n- ')
@@ -22159,6 +22162,7 @@ function scheduleNotInGroupReport() {
 // Admin selalu bisa mengubah keputusan: ACC yang ditolak, atau hapus / blokir yang sudah di-ACC.
 // CATATAN: OCR hanya membaca tulisan. Screenshot yang diedit rapi tetap bisa lolos, jadi
 // laporan ke admin selalu menyertakan fotonya untuk dicek sekilas.
+const PROOF_REJECT_PUBLIC = 'Bukti tidak valid'   // satu-satunya alasan penolakan otomatis yang dilihat user
 const PAYMENT_PROOF_IDS_KEY = 'gold:payment_proof_ids'   // Hash: sidik bukti (ID transaksi / hash gambar) -> orderId
 let _ocrWorker = null
 let _ocrIdleTimer = null
@@ -22382,8 +22386,9 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'pg:' + order.id }]] })
   }
   if (verdict === 'reject') {
-    await rejectPaymentOrder(order, reason, 'otomatis')
-    return notifyAdminsWa('*DITOLAK OTOMATIS*\n\n' + kepala + '\nAlasan: ' + reason + hasil + '\n\nOrangnya melihat alasan ini dan bisa upload bukti baru. Kalau penolakan ini keliru, tekan ACC.', photo,
+    // Ke user hanya "Bukti tidak valid"; rinciannya (reason) hanya untuk admin
+    await rejectPaymentOrder(order, PROOF_REJECT_PUBLIC, 'otomatis', reason)
+    return notifyAdminsWa('*DITOLAK OTOMATIS*\n\n' + kepala + '\nAlasan: ' + reason + hasil + '\n\nYang tampil ke orangnya hanya: "' + PROOF_REJECT_PUBLIC + '". Ia bisa upload bukti baru. Kalau penolakan ini keliru, tekan ACC.', photo,
       { kb: [[{ text: 'ACC (batalkan penolakan)', callback_data: 'pay:acc:' + order.id }], [{ text: 'Lihat order', callback_data: 'o:v:' + order.id + ':x' }]] })
   }
   await savePaymentOrder(order)
@@ -22408,10 +22413,11 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     // Selama masih menunggu ACC, bukti tidak bisa diganti. Upload lagi hanya setelah ditolak.
     if (!wasRejected && count >= 1) return res.json({ success: false, error: 'Bukti sudah terkirim dan sedang menunggu dicek admin.' })
     if (count >= PAY_PROOF_MAX_UPLOADS) return res.json({ success: false, error: 'Batas unggah bukti tercapai. Hubungi admin.' })
-    const prevReason = wasRejected ? (order.rejectReason || '') : ''
+    const prevReason = wasRejected ? (order.rejectDetail || order.rejectReason || '') : ''
     if (wasRejected) {
       order.status = 'pending'
       delete order.rejectReason
+      delete order.rejectDetail
       delete order.rejectedAt
     }
 
