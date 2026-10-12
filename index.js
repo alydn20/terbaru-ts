@@ -3298,7 +3298,7 @@ async function fastPoll() {
                   statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
                 }
               }
-              const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+              const replyText = [`*HARGA SOUNDHOREG*`, timeStr, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
               await sock.sendMessage(target, { text: replyText }, { quoted: pendingMsg })
               pushLog(`CMD | emas (antrian→terkirim) ke ${target.substring(0, 20)}`)
             } catch (e) {
@@ -22297,7 +22297,7 @@ async function start() {
           continue
         }
         
-        if (!/\bemas\b/.test(text)) continue
+        if (!/\bhoreg\b/.test(text)) continue
 
         const now = Date.now()
         const lastReply = lastReplyAtPerChat.get(sendTarget) || 0
@@ -22823,9 +22823,9 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
     }
   })
 
-  // ==================== USER COMMANDS (cekoon, emas) ====================
+  // ==================== USER COMMANDS (cekoon, horeg) ====================
   // cekoon  : subscribe broadcast promo ON/OFF + harga (admin grup atau owner DM)
-  // emas    : cek harga real-time (semua anggota grup bisa, DM hanya owner)
+  // horeg   : cek harga real-time (semua anggota grup bisa, DM hanya owner)
   sock.ev.on('messages.upsert', async (ev) => {
     if (!isReady || ev.type !== 'notify') return
 
@@ -22867,29 +22867,29 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
-        if (/\b(cekoon|cekoonnonaktif|emas)\b/.test(text)) {
+        if (/\b(cekoon|cekoonnonaktif|horeg)\b/.test(text)) {
           pushLog(`WA | Pesan command diterima dari ${sendTarget.substring(0, 20)}: "${text.substring(0, 30)}"`)
         }
         const senderJid = msg.key.participant || msg.key.remoteJid
 
         // Daftar command yang dikenali
-        const isUserCommand = /\b(cekoon|cekoonnonaktif|emas)\b/.test(text)
+        const isUserCommand = /\b(cekoon|cekoonnonaktif|horeg)\b/.test(text)
         if (!isUserCommand) continue
 
         const OWNER_JIDS = ADMIN_PHONES.map(p => `${p}@s.whatsapp.net`)
         const normalizedSender = senderJid.replace(/:[0-9]+@/, '@')
         const isOwner = OWNER_JIDS.includes(normalizedSender) || ADMIN_PHONES.some(p => normalizedSender.includes(p))
-        const isEmasCommand = /\bemas\b/.test(text)
+        const isEmasCommand = /\bhoreg\b/.test(text)
 
         if (isGroup) {
-          // emas: semua anggota grup boleh pakai
+          // horeg: semua anggota grup boleh pakai
           // cekoon/cekoonnonaktif: hanya admin grup
           if (!isEmasCommand) {
             const senderIsAdmin = await isGroupAdmin(sock, sendTarget, senderJid)
             if (!senderIsAdmin) continue
           }
         } else {
-          // Di DM: emas boleh siapa saja, cekoon/cekoonnonaktif hanya owner
+          // Di DM: horeg boleh siapa saja, cekoon/cekoonnonaktif hanya owner
           if (!isEmasCommand && !isOwner) continue
         }
 
@@ -22921,8 +22921,8 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
           continue
         }
 
-        // Command: emas (cek harga) — gunakan cache jika segar, atau antri ke update berikutnya
-        if (/\bemas\b/.test(text)) {
+        // Command: horeg (cek harga) — gunakan cache jika segar, atau antri ke update berikutnya
+        if (/\bhoreg\b/.test(text)) {
           const now = Date.now()
           const cacheAge = now - lastSuccessfulFetch
 
@@ -22950,13 +22950,13 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
                 statusLine = `Status : *${diff > 0 ? 'MARKUP' : 'MARKDOWN'}* ${diff > 0 ? '+' : ''}Rp${formatRupiah(Math.abs(diff))}`
               }
             }
-            const replyText = [`*HARGA EMAS TREASURY*`, timeStr, ``, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
+            const replyText = [`*HARGA SOUNDHOREG*`, timeStr, `Beli   : Rp${formatRupiah(buy)}/gr`, `Jual   : Rp${formatRupiah(sell)}/gr`, `Spread : ${spreadPercent}%`, statusLine].filter(Boolean).join('\n')
             await sock.sendMessage(sendTarget, { text: replyText }, { quoted: msg })
             pushLog(`CMD | emas (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
           } else {
             // Cache lama atau belum ada — antri ke update Treasury berikutnya
             pendingEmasReplies.set(sendTarget, { pendingMsg: msg, requestTime: now })
-            await sock.sendMessage(sendTarget, { text: '⏳ Menunggu harga terbaru Treasury...' }, { quoted: msg })
+            await sock.sendMessage(sendTarget, { text: '⏳ Menunggu harga terbaru...' }, { quoted: msg })
             pushLog(`CMD | emas antri (cache ${Math.round(cacheAge/1000)}s) dari ${sendTarget.substring(0, 20)}`)
           }
           continue
