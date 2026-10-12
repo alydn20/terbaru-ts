@@ -8095,13 +8095,23 @@ app.get('/login', async (req, res) => {
       <div id="payForm" style="display:none;text-align:center;">
         <div style="font-weight:700;font-size:1.05em;margin-bottom:4px;">Nomor belum terdaftar</div>
         <div id="payDesc" style="color:#9ca3af;font-size:0.85em;margin-bottom:14px;"></div>
-        <img id="payQr" alt="QRIS" style="width:240px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
-        <div style="margin:12px 0 2px;color:#9ca3af;font-size:0.8em;">Bayar TEPAT sejumlah</div>
-        <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;"></div>
-        <div style="color:#9ca3af;font-size:0.75em;margin:4px 0 12px;">Nominal sudah termasuk 3 angka terakhir nomor Anda sebagai tanda pengenal. Jangan dibulatkan.</div>
-        <div id="payStatus" style="font-size:0.85em;margin-bottom:12px;"></div>
-        <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
-        <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="margin-bottom:8px;">Upload bukti pembayaran</button>
+        <div style="text-align:left;font-weight:700;font-size:0.85em;margin-bottom:6px;"><span style="color:#f7931a;">Langkah 1.</span> Scan QRIS, bayar TEPAT <span id="payAmountStep" style="color:#f7931a;"></span></div>
+        <img id="payQr" alt="QRIS" style="width:200px;max-width:100%;background:#fff;padding:8px;border-radius:12px;">
+        <div style="margin-top:4px;font-size:0.78em;"><a href="#" id="payQrSave" download="qris-pembayaran.png" style="color:#f7931a;">Simpan gambar QRIS</a> <span style="color:#9ca3af;">(kalau bayar dari HP ini)</span></div>
+        <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;margin-top:6px;"></div>
+        <div style="color:#9ca3af;font-size:0.75em;margin:2px 0 14px;">Jangan dibulatkan. 3 angka terakhir adalah tanda pengenal nomor Anda.</div>
+        <style>
+          @keyframes payPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.7); } 50% { box-shadow: 0 0 0 12px rgba(34,197,94,0); } }
+          #payClaimBtn { animation: payPulse 1.6s infinite; }
+          #payClaimBtn:disabled { animation: none; opacity: 0.6; }
+        </style>
+        <div id="payUploadBox" style="border:2px solid #22c55e;border-radius:14px;padding:14px;margin-bottom:10px;background:rgba(34,197,94,0.12);">
+          <div style="font-weight:800;font-size:1em;color:#22c55e;margin-bottom:4px;">Langkah 2. SUDAH BAYAR?</div>
+          <div style="font-size:0.88em;margin-bottom:10px;">Tekan tombol hijau di bawah, lalu pilih foto / screenshot bukti bayar dari galeri.</div>
+          <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
+          <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="display:block;width:100%;background:#22c55e;color:#fff;font-size:1.1em;font-weight:800;padding:16px;margin-bottom:10px;border:none;">&#128228; UPLOAD BUKTI PEMBAYARAN</button>
+          <div id="payStatus" style="font-size:0.85em;font-weight:600;"></div>
+        </div>
         <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
 
@@ -8464,8 +8474,9 @@ app.get('/login', async (req, res) => {
       st.style.color = '';
       cb.disabled = false;
       if (!proofStatus) {
-        cb.textContent = 'Upload bukti pembayaran';
-        st.textContent = 'Setelah membayar, WAJIB upload screenshot bukti pembayaran. Tanpa bukti, pembayaran tidak diproses.';
+        cb.textContent = String.fromCodePoint(128228) + ' UPLOAD BUKTI PEMBAYARAN';
+        st.textContent = 'WAJIB. Tanpa upload bukti, pembayaran Anda tidak diproses admin.';
+        st.style.color = '#fbbf24';
         return;
       }
       cb.textContent = 'Upload ulang bukti';
@@ -8500,13 +8511,18 @@ app.get('/login', async (req, res) => {
         try { localStorage.setItem('pay_order', JSON.stringify({ phone: phone, id: data.order.id })); } catch (e) {}
         document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
         document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
+        document.getElementById('payAmountStep').textContent = _rupiah(data.order.amount);
         var img = document.getElementById('payQr');
-        if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; }
-        else { img.style.display = 'none'; }
+        var save = document.getElementById('payQrSave');
+        if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; save.href = data.order.qrDataUrl; save.parentNode.style.display = ''; }
+        else { img.style.display = 'none'; save.parentNode.style.display = 'none'; }
         _showProofState(data.order.proofStatus, data.order.proofReused);
         hideMessage();
         document.getElementById('phoneForm').style.display = 'none';
         document.getElementById('payForm').style.display = 'block';
+        if (data.order.existing && !data.order.proofStatus) {
+          try { document.getElementById('payUploadBox').scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+        }
         _pollPayment();
         return 'pay';
       } catch (e) {
@@ -9880,6 +9896,18 @@ ${authScript}
 
           <button class="btn btn-primary" style="width:100%;" onclick="savePaymentSettings(false)">Simpan Pengaturan QRIS</button>
 
+          <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(56,189,248,0.05);border:1px solid rgba(56,189,248,0.2);">
+            <label style="color:#38bdf8;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">Cadangan notifikasi ke Telegram</label>
+            <p style="color:#6b7280;font-size:0.8em;margin-bottom:8px;">Notifikasi admin (bukti bayar beserta fotonya, daftar belum masuk grup) dikirim juga ke Telegram, jadi tetap terbaca walau pesan WA muncul sebagai "Menunggu pesan ini". Caranya: 1) tempel token bot dari @BotFather, 2) buka bot-nya di Telegram lalu tekan Start, 3) tekan Deteksi chat.</p>
+            <div id="tgStatus" style="font-size:0.82em;margin-bottom:8px;color:#9ca3af;">Memuat...</div>
+            <input type="password" id="tgToken" autocomplete="off" placeholder="Token bot (kosongkan kalau tidak diganti)" style="width:100%;font-family:monospace;font-size:0.78em;margin-bottom:8px;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              <button class="btn btn-primary btn-sm" type="button" onclick="telegramAction('detect')">Simpan &amp; Deteksi chat</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="telegramAction('test')">Tes kirim</button>
+              <button class="btn btn-secondary btn-sm" type="button" onclick="telegramAction('clear')">Putuskan</button>
+            </div>
+          </div>
+
           <div style="margin-top:18px;padding:14px;border-radius:12px;background:rgba(247,147,26,0.05);border:1px solid rgba(247,147,26,0.15);">
             <label style="color:#f7931a;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">Opsional: ACC otomatis (penerus notifikasi)</label>
             <p style="color:#6b7280;font-size:0.8em;margin-bottom:8px;">Tidak wajib. Kalau suatu saat mau tanpa ACC manual: pasang aplikasi penerus notifikasi di HP yang menerima notifikasi pembayaran, lalu arahkan ke alamat ini (metode POST, isi = teks notifikasi). Jangan bagikan alamat ini.</p>
@@ -9925,6 +9953,7 @@ ${authScript}
               <option value="no">Belum masuk</option>
             </select>
             <button class="btn btn-secondary btn-sm" type="button" onclick="resetPaymentFilters()">Reset</button>
+            <button class="btn btn-secondary btn-sm" type="button" title="Kirim ke WA admin daftar nomor yang sudah di-ACC tapi belum masuk grup WA" onclick="sendNotInGroupReport()">Kirim daftar belum masuk grup ke WA</button>
           </div>
           <div class="pay-table-wrap">
             <table class="user-table pay-table">
@@ -11219,6 +11248,40 @@ ${authScript}
             : '(simpan pengaturan dulu untuk membuat alamat)';
         });
       loadPaymentOrders();
+      adminFetch('/api/admin/telegram-settings').then(r => r.json()).then(data => { if (data.success) showTelegramStatus(data.telegram); });
+    }
+
+    function showTelegramStatus(tg) {
+      const el = document.getElementById('tgStatus');
+      if (!el || !tg) return;
+      if (tg.hasToken && tg.chatId) {
+        el.style.color = '#22c55e';
+        el.textContent = 'Terhubung ke chat: ' + (tg.chatName || tg.chatId) + ' (bot ' + tg.tokenMasked + ')';
+      } else if (tg.hasToken) {
+        el.style.color = '#f59e0b';
+        el.textContent = 'Token tersimpan (' + tg.tokenMasked + '), chat belum terhubung. Tekan Start di bot lalu Deteksi chat.';
+      } else {
+        el.style.color = '#9ca3af';
+        el.textContent = 'Belum diatur.';
+      }
+    }
+
+    function telegramAction(action) {
+      const input = document.getElementById('tgToken');
+      adminFetch('/api/admin/telegram-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, token: action === 'clear' ? '' : input.value })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.telegram) showTelegramStatus(data.telegram);
+        if (!data.success) { showAlert(data.error || 'Gagal', 'warning'); return; }
+        input.value = '';
+        const done = { detect: 'Telegram terhubung. Cek pesan dari bot.', test: 'Pesan tes terkirim ke Telegram.', clear: 'Telegram diputuskan.' };
+        showAlert(done[action] || 'Tersimpan.', 'success');
+      })
+      .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
     }
 
     function savePaymentSettings(regenerateSecret) {
@@ -11400,6 +11463,21 @@ ${authScript}
           }).join('');
         }
       }
+    }
+
+    // Kirim ke WA admin daftar nomor yang sudah di-ACC tapi belum ditandai masuk grup WA
+    function sendNotInGroupReport() {
+      adminFetch('/api/admin/payment-orders/remind-group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data.success) { showAlert(data.error || 'Gagal mengirim', 'warning'); return; }
+        showAlert(data.count ? 'Daftar ' + data.count + ' nomor dikirim ke WA admin.' : 'Semua yang sudah di-ACC sudah masuk grup.', 'success');
+      })
+      .catch(e => showAlert('Gagal mengirim: ' + e.message, 'danger'));
     }
 
     // Buka gambar bukti di tab baru (diambil lewat adminFetch supaya ikut autentikasi admin)
@@ -20480,6 +20558,7 @@ async function completePaymentOrder(order, via) {
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
+  scheduleNotInGroupReport()
   return order
 }
 
@@ -20560,7 +20639,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
@@ -20592,12 +20671,107 @@ function detectImageMime(buf) {
   return null
 }
 
-// Pesan WA fitur pembayaran HANYA ke nomor admin (tidak pernah ke nomor pembayar)
-async function notifyAdminsWa(text) {
+// ---------- Telegram: cadangan notifikasi admin ----------
+// Pesan WA ke admin kadang muncul sebagai "Menunggu pesan ini" (gagal didekripsi). Notifikasi yang
+// sama dikirim juga ke bot Telegram admin. Token TIDAK ditulis di kode (repo publik): disimpan di
+// Redis lewat panel admin, atau lewat env TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+const TELEGRAM_SETTINGS_KEY = 'gold:telegram_settings'
+let telegramSettingsCache = null
+
+async function getTelegramSettings() {
+  if (!telegramSettingsCache) {
+    let saved = {}
+    try {
+      const raw = await redis.get(TELEGRAM_SETTINGS_KEY)
+      saved = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+    } catch (e) {
+      return { token: process.env.TELEGRAM_BOT_TOKEN || '', chatId: process.env.TELEGRAM_CHAT_ID || '', chatName: '' }
+    }
+    telegramSettingsCache = {
+      token: saved.token || process.env.TELEGRAM_BOT_TOKEN || '',
+      chatId: String(saved.chatId || process.env.TELEGRAM_CHAT_ID || ''),
+      chatName: saved.chatName || ''
+    }
+  }
+  return telegramSettingsCache
+}
+
+async function telegramApi(token, method, body, isForm) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'POST',
+    headers: isForm ? undefined : { 'Content-Type': 'application/json' },
+    body: isForm ? body : JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(15000)
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!data.ok) throw new Error(data.description || ('HTTP ' + res.status))
+  return data.result
+}
+
+// Kirim teks (dan foto, kalau ada) ke Telegram admin. Mengembalikan true kalau terkirim.
+async function notifyAdminsTelegram(text, photo) {
+  const tg = await getTelegramSettings()
+  if (!tg.token || !tg.chatId) return false
+  const plain = String(text).replace(/\*/g, '')
+  try {
+    if (photo && photo.buffer) {
+      const form = new FormData()
+      form.append('chat_id', tg.chatId)
+      form.append('caption', plain.substring(0, 1000))
+      form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
+      await telegramApi(tg.token, 'sendPhoto', form, true)
+    } else {
+      await telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text: plain.substring(0, 4000) })
+    }
+    return true
+  } catch (e) {
+    // Jangan pernah mencatat token ke log
+    pushLog('TG | Gagal kirim ke Telegram: ' + String(e && e.message ? e.message : e).replace(tg.token, '***'))
+    return false
+  }
+}
+
+// Pesan fitur pembayaran HANYA ke admin (tidak pernah ke nomor pembayar): WA + cadangan Telegram
+async function notifyAdminsWa(text, photo) {
+  notifyAdminsTelegram(text, photo).catch(() => {})
   if (!sock || !isReady) return
   for (const admin of ADMIN_PHONES) {
     sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
   }
+}
+
+// Daftar order yang sudah di-ACC (lunas) tapi belum ditandai masuk grup WA → log + WA ke admin.
+// Mengembalikan jumlah nomornya, atau -1 kalau WA bot sedang tidak tersambung.
+async function sendNotInGroupReport() {
+  const list = (await loadPaymentOrders())
+    .filter(o => o.status === 'paid' && !o.inGroup)
+    .sort((a, b) => (a.paidAt || 0) - (b.paidAt || 0))
+  if (list.length === 0) {
+    pushLog('PAY | Semua yang sudah di-ACC sudah masuk grup WA')
+    return 0
+  }
+  pushLog(`PAY | Sudah di-ACC tapi belum masuk grup WA (${list.length}): ` + list.map(o => '+' + o.phone).join(', '))
+  const tgSet = await getTelegramSettings()
+  const waOn = !!(sock && isReady)
+  if (!waOn && !(tgSet.token && tgSet.chatId)) return -1
+  const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone: 'Asia/Jakarta' })
+  // Dipotong 50 nomor per pesan supaya pesannya tidak terlalu panjang
+  const shown = list.slice(0, 50)
+  const lines = shown.map((o, i) => `${i + 1}. +${o.phone}${o.paidAt ? ' (ACC ' + tgl(o.paidAt) + ')' : ''}`)
+  const more = list.length > shown.length ? `\n...dan ${list.length - shown.length} nomor lagi (lihat di panel).` : ''
+  await notifyAdminsWa(`👥 *SUDAH ACC, BELUM MASUK GRUP WA* (${list.length})\n\n${lines.join('\n')}${more}\n\nSetelah dimasukkan ke grup, tandai "Masuk" di Panel Admin → Pengaturan → Semua order pembayaran.`)
+  return list.length
+}
+
+// Setelah ada ACC, kirim daftarnya sekali saja 1 menit setelah ACC terakhir
+// (meng-ACC banyak order berturut-turut tidak membanjiri WA admin).
+let _notInGroupTimer = null
+function scheduleNotInGroupReport() {
+  if (_notInGroupTimer) clearTimeout(_notInGroupTimer)
+  _notInGroupTimer = setTimeout(() => {
+    _notInGroupTimer = null
+    sendNotInGroupReport().catch(e => pushLog('PAY | Gagal kirim daftar belum masuk grup: ' + e.message))
+  }, 60000)
 }
 
 // Publik: unggah screenshot bukti bayar untuk sebuah order
@@ -20623,7 +20797,7 @@ app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/
     res.json({ success: true })
     const nominal = 'Rp' + order.amount.toLocaleString('id-ID')
     pushLog(`PAY | Bukti bayar diunggah +${order.phone} ${nominal} - menunggu ACC admin`)
-    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`)
+    notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${nominal}*\n\nLihat buktinya lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`, { buffer: buf, mime })
   } catch (e) {
     res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
@@ -20678,6 +20852,73 @@ app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () =>
     res.json({ success: true, matched: false, amounts: candidates })
   } catch (e) {
     res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: pengaturan Telegram (cadangan notifikasi). Token tidak pernah dikirim balik utuh.
+function telegramSettingsView(tg) {
+  return { hasToken: !!tg.token, tokenMasked: tg.token ? tg.token.split(':')[0] + ':****' : '', chatId: tg.chatId || '', chatName: tg.chatName || '' }
+}
+
+app.get('/api/admin/telegram-settings', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  res.json({ success: true, telegram: telegramSettingsView(await getTelegramSettings()) })
+})
+
+// action: 'save' (token/chatId), 'detect' (cari chat dari pesan terakhir ke bot), 'test', 'clear'
+app.post('/api/admin/telegram-settings', express.json(), async (req, res) => {
+  const { password, action, token, chatId } = req.body
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const cur = { ...(await getTelegramSettings()) }
+    const save = async () => {
+      telegramSettingsCache = cur
+      await redis.set(TELEGRAM_SETTINGS_KEY, JSON.stringify(cur))
+    }
+    if (action === 'clear') {
+      cur.token = ''; cur.chatId = ''; cur.chatName = ''
+      await save()
+      pushLog('Admin | Pengaturan Telegram dihapus')
+      return res.json({ success: true, telegram: telegramSettingsView(cur) })
+    }
+    const newToken = String(token || '').trim()
+    if (newToken) {
+      if (!/^[0-9]{6,12}:[A-Za-z0-9_-]{30,}$/.test(newToken)) return res.json({ success: false, error: 'Format token bot tidak valid' })
+      cur.token = newToken
+    }
+    if (!cur.token) return res.json({ success: false, error: 'Isi token bot dulu' })
+    if (action === 'detect') {
+      const updates = await telegramApi(cur.token, 'getUpdates', { limit: 100, allowed_updates: ['message'] })
+      const msgs = (updates || []).map(u => u.message).filter(m => m && m.chat)
+      if (msgs.length === 0) {
+        if (newToken) await save()
+        return res.json({ success: false, error: 'Belum ada pesan ke bot. Buka bot-nya di Telegram, tekan Start atau kirim pesan apa saja, lalu tekan Deteksi lagi.', telegram: telegramSettingsView(cur) })
+      }
+      const chat = msgs[msgs.length - 1].chat
+      cur.chatId = String(chat.id)
+      cur.chatName = String(chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username || '').substring(0, 60)
+      await save()
+      pushLog(`Admin | Telegram terhubung ke chat "${cur.chatName}" (${cur.chatId})`)
+      await notifyAdminsTelegram('✅ Bot terhubung. Notifikasi pembayaran Gold Monitor akan dikirim ke chat ini.')
+      return res.json({ success: true, telegram: telegramSettingsView(cur) })
+    }
+    if (action === 'test') {
+      if (!cur.chatId) return res.json({ success: false, error: 'Chat belum terhubung. Tekan Deteksi dulu.' })
+      const ok = await notifyAdminsTelegram('🔔 Tes notifikasi dari Panel Admin Gold Monitor.')
+      return res.json(ok ? { success: true, telegram: telegramSettingsView(cur) } : { success: false, error: 'Gagal mengirim. Lihat Logs untuk penyebabnya.' })
+    }
+    // save
+    if (chatId !== undefined) {
+      const c = String(chatId).trim()
+      if (c && !/^-?[0-9]{4,20}$/.test(c)) return res.json({ success: false, error: 'Chat ID harus berupa angka' })
+      if (c !== cur.chatId) cur.chatName = ''
+      cur.chatId = c
+    }
+    await save()
+    pushLog('Admin | Pengaturan Telegram disimpan')
+    res.json({ success: true, telegram: telegramSettingsView(cur) })
+  } catch (e) {
+    res.json({ success: false, error: 'Telegram: ' + e.message })
   }
 })
 
@@ -20739,6 +20980,18 @@ app.get('/api/admin/payment-notifs', async (req, res) => {
     const rows = await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, 0, -1) || []
     const notifs = rows.map(r => { try { return typeof r === 'string' ? JSON.parse(r) : r } catch (e) { return null } }).filter(Boolean).reverse()
     res.json({ success: true, notifs })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: kirim sekarang daftar "sudah ACC, belum masuk grup WA" ke WA admin
+app.post('/api/admin/payment-orders/remind-group', express.json(), async (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const count = await sendNotInGroupReport()
+    if (count === -1) return res.json({ success: false, error: 'WhatsApp bot sedang tidak tersambung dan Telegram belum diatur. Daftarnya sudah dicatat di Logs.' })
+    res.json({ success: true, count })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
