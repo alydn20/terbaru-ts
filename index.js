@@ -463,7 +463,9 @@ const REDIS_KEYS = {
   SESSION_META: 'gold:session_meta',       // Hash: sessionId -> JSON {ip, ua, time}
   API_TOKENS: 'gold:api_tokens',           // Hash: apiKey -> JSON { name, enabled, createdAt } untuk API eksternal
   PAYMENT_SETTINGS: 'gold:payment_settings', // JSON: pengaturan pendaftaran via QRIS
-  PAYMENT_ORDERS: 'gold:payment_orders'      // Hash: orderId -> JSON order pembayaran QRIS
+  PAYMENT_ORDERS: 'gold:payment_orders',     // Hash: orderId -> JSON order pembayaran QRIS
+  PAYMENT_NOTIFS: 'gold:payment_notifs',     // List: notifikasi uang masuk yang diterima webhook (50 terakhir)
+  PAYMENT_PROOF_IDS: 'gold:payment_proof_ids' // Hash: ID transaksi di bukti bayar -> orderId (cegah bukti dipakai ulang)
 }
 
 // Default token fresh bila Redis belum punya nilai. Naikkan angka di sini saat deploy
@@ -8099,8 +8101,9 @@ app.get('/login', async (req, res) => {
         <div id="payAmount" style="font-size:1.7em;font-weight:800;color:#f7931a;font-family:'JetBrains Mono',monospace;"></div>
         <div style="color:#9ca3af;font-size:0.75em;margin:4px 0 12px;">Nominal sudah termasuk 3 angka terakhir nomor Anda sebagai tanda pengenal. Jangan dibulatkan.</div>
         <div id="payStatus" style="font-size:0.85em;margin-bottom:12px;"></div>
-        <button class="btn btn-primary" id="payClaimBtn" onclick="claimPayment()" style="margin-bottom:8px;">Saya sudah bayar</button>
-        <button class="btn btn-secondary" onclick="cancelPayment()">Batal</button>
+        <input type="file" id="payProofFile" accept="image/*" style="display:none;" onchange="uploadPaymentProof(this)">
+        <button class="btn btn-primary" id="payClaimBtn" onclick="document.getElementById('payProofFile').click()" style="margin-bottom:8px;">Upload bukti pembayaran</button>
+        <div style="margin-top:6px;font-size:0.78em;color:#9ca3af;">Salah nomor? <a href="#" onclick="changePayNumber();return false;" style="color:#f7931a;">Ganti nomor</a></div>
       </div>
 
       <!-- Step 2: PIN Input -->
@@ -8450,6 +8453,41 @@ app.get('/login', async (req, res) => {
     var _payOrder = null;
     function _rupiah(n) { return 'Rp' + Number(n).toLocaleString('id-ID'); }
 
+    function _forgetPayOrder() {
+      try { localStorage.removeItem('pay_order'); } catch (e) {}
+    }
+
+    // Tampilkan keadaan bukti pembayaran (hasil pemeriksaan otomatis di server)
+    function _showProofState(proofStatus, reused) {
+      var cb = document.getElementById('payClaimBtn');
+      var st = document.getElementById('payStatus');
+      if (!cb || !st || !_payOrder) return;
+      st.style.color = '';
+      cb.disabled = false;
+      if (!proofStatus) {
+        cb.textContent = 'Upload bukti pembayaran';
+        st.textContent = 'Setelah membayar, upload screenshot bukti pembayarannya.';
+        return;
+      }
+      cb.textContent = 'Upload ulang bukti';
+      if (proofStatus === 'checking') {
+        cb.disabled = true;
+        st.textContent = 'Bukti diterima, sedang diperiksa...';
+      } else if (reused) {
+        st.textContent = 'Bukti ini sudah pernah dipakai. Upload bukti pembayaran yang baru.';
+        st.style.color = '#ef4444';
+      } else if (proofStatus === 'match') {
+        cb.disabled = true;
+        st.textContent = 'Nominal di bukti cocok. Menunggu konfirmasi, halaman ini lanjut otomatis. Boleh ditutup: pembayaran ini tetap tersimpan.';
+        st.style.color = '#4ade80';
+      } else if (proofStatus === 'mismatch') {
+        st.textContent = 'Nominal di bukti tidak cocok. Harus tepat ' + _rupiah(_payOrder.amount) + '. Upload bukti yang benar.';
+        st.style.color = '#ef4444';
+      } else {
+        st.textContent = 'Bukti diterima, tapi nominalnya tidak terbaca otomatis. Menunggu dicek admin. Boleh ditutup: pembayaran ini tetap tersimpan.';
+      }
+    }
+
     // Hasil: 'pay' (form QRIS tampil), 'redirect' (arahkan ke WA admin), 'none' (hanya pesan)
     async function startPaymentFlow(phone) {
       var cfg = null;
@@ -8469,21 +8507,18 @@ app.get('/login', async (req, res) => {
         });
         var data = await res.json();
         if (!data.success) {
-          showMessage(data.error || 'Gagal membuat pembayaran', 'error');
+          if (data.alreadyRegistered) showMessage('Nomor ini sudah aktif. Silakan masuk.', 'success');
+          else showMessage(data.error || 'Gagal membuat pembayaran', 'error');
           return 'none';
         }
         _payOrder = data.order;
+        try { localStorage.setItem('pay_order', JSON.stringify({ phone: phone, id: data.order.id })); } catch (e) {}
         document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
         document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
         var img = document.getElementById('payQr');
         if (data.order.qrDataUrl) { img.src = data.order.qrDataUrl; img.style.display = 'inline-block'; }
         else { img.style.display = 'none'; }
-        var st = document.getElementById('payStatus');
-        st.textContent = 'Setelah membayar, tekan "Saya sudah bayar".';
-        st.style.color = '';
-        var cb = document.getElementById('payClaimBtn');
-        cb.disabled = false;
-        cb.textContent = 'Saya sudah bayar';
+        _showProofState(data.order.proofStatus, data.order.proofReused);
         hideMessage();
         document.getElementById('phoneForm').style.display = 'none';
         document.getElementById('payForm').style.display = 'block';
@@ -8502,64 +8537,104 @@ app.get('/login', async (req, res) => {
     function _pollPayment() {
       _stopPayPolling();
       _payTimer = setInterval(async function() {
-        if (!_payOrder) return;
+        if (!_payOrder || document.hidden) return;
         var left = Math.max(0, Math.floor((_payOrder.expiresAt - Date.now()) / 1000));
-        if (document.hidden) return;
         var st = document.getElementById('payStatus');
-        var status = '';
-        try {
-          var d = await (await fetch('/api/payment/status?id=' + _payOrder.id)).json();
-          if (d.success) status = d.status;
-        } catch (e) {}
+        var d = null;
+        try { d = await (await fetch('/api/payment/status?id=' + _payOrder.id)).json(); } catch (e) {}
+        var status = d && d.success ? d.status : '';
         if (status === 'paid') { _paymentDone(); return; }
         if (status === 'expired' || status === 'rejected' || left === 0) {
           _stopPayPolling();
+          _forgetPayOrder();
           st.textContent = status === 'rejected'
             ? 'Pembayaran ditolak admin. Hubungi admin bila sudah membayar.'
-            : 'Order sudah tidak berlaku. Tekan Batal lalu coba lagi.';
+            : 'Order sudah tidak berlaku. Tekan "Ganti nomor" lalu masukkan nomor lagi.';
           st.style.color = '#ef4444';
+          document.getElementById('payClaimBtn').disabled = true;
           return;
         }
-      }, 5000);
+        if (d && d.success && !_payUploading) _showProofState(d.proofStatus, d.proofReused);
+      }, 4000);
     }
 
     function _paymentDone() {
       _stopPayPolling();
       _payOrder = null;
+      _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
       showMessage('Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
       setTimeout(function() { checkUser(); }, 1500);
     }
 
-    async function claimPayment() {
-      if (!_payOrder) return;
+    // Kecilkan gambar di perangkat sebelum diunggah (hemat kuota, tetap terbaca)
+    async function _shrinkImage(file) {
+      var bitmap = await createImageBitmap(file);
+      var scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+      var c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bitmap.width * scale));
+      c.height = Math.max(1, Math.round(bitmap.height * scale));
+      c.getContext('2d').drawImage(bitmap, 0, 0, c.width, c.height);
+      return await new Promise(function(resolve) { c.toBlob(resolve, 'image/jpeg', 0.75); });
+    }
+
+    var _payUploading = false;
+    async function uploadPaymentProof(input) {
+      var file = input.files && input.files[0];
+      input.value = '';
+      if (!file || !_payOrder) return;
       var cb = document.getElementById('payClaimBtn');
       var st = document.getElementById('payStatus');
+      _payUploading = true;
       cb.disabled = true;
+      cb.textContent = 'Mengunggah...';
+      st.style.color = '';
+      st.textContent = 'Mengunggah bukti...';
       try {
-        var d = await (await fetch('/api/payment/claim', {
+        var blob = null;
+        try { blob = await _shrinkImage(file); } catch (e) {}
+        if (!blob) blob = file;
+        var res = await fetch('/api/payment/proof?id=' + _payOrder.id, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: _payOrder.id })
-        })).json();
+          headers: { 'Content-Type': blob.type || 'image/jpeg' },
+          body: blob
+        });
+        var d = await res.json();
+        _payUploading = false;
         if (d.success) {
-          cb.textContent = 'Menunggu konfirmasi admin...';
-          st.textContent = 'Admin sudah diberi tahu. Halaman ini lanjut otomatis setelah pembayaran dikonfirmasi. Boleh ditutup, lalu login lagi nanti.';
-          st.style.color = '';
+          _showProofState('checking', false);
         } else {
-          cb.disabled = false;
-          st.textContent = d.error || 'Gagal mengirim. Coba lagi.';
+          _showProofState(null, false);
+          st.textContent = d.error || 'Gagal mengunggah. Coba lagi.';
           st.style.color = '#ef4444';
         }
       } catch (e) {
-        cb.disabled = false;
+        _payUploading = false;
+        _showProofState(null, false);
+        st.textContent = 'Gagal mengunggah. Periksa koneksi lalu coba lagi.';
+        st.style.color = '#ef4444';
       }
     }
 
-    function cancelPayment() {
+    // Tab tertutup / halaman dimuat ulang: tampilkan lagi pembayaran yang masih menunggu
+    async function restorePendingPayment() {
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem('pay_order') || 'null'); } catch (e) {}
+      if (!saved || !saved.phone) return;
+      var input = document.getElementById('phoneInput');
+      if (input && !input.value) input.value = saved.phone;
+      var result = await startPaymentFlow(saved.phone);
+      if (result !== 'pay') _forgetPayOrder();
+    }
+    document.addEventListener('DOMContentLoaded', function() { restorePendingPayment(); });
+
+    // Kembali ke form nomor. Order di server TIDAK dihapus: memasukkan nomor yang sama
+    // lagi akan menampilkan pembayaran yang sama.
+    function changePayNumber() {
       _stopPayPolling();
       _payOrder = null;
+      _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
       hideMessage();
@@ -9784,6 +9859,11 @@ ${authScript}
             <span>Kalau QRIS dimatikan: arahkan nomor tidak terdaftar ke WhatsApp admin <span style="color:#6b7280;font-size:0.85em;">(kalau tidak dicentang, hanya muncul pesan "Nomor tidak terdaftar")</span></span>
           </label>
 
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="payAutoApprove" style="width:18px;height:18px;cursor:pointer;">
+            <span>ACC otomatis kalau nominal di bukti bayar cocok <span style="color:#6b7280;font-size:0.85em;">(kalau tidak dicentang, semua menunggu ACC manual. Notif WA ke admin tetap dikirim di kedua mode.)</span></span>
+          </label>
+
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
             <div class="form-group" style="margin:0;">
               <label>Harga (Rp)</label>
@@ -9814,17 +9894,32 @@ ${authScript}
             <button class="btn btn-secondary btn-sm" type="button" style="margin-top:8px;" onclick="savePaymentSettings(true)">Ganti secret</button>
           </div>
 
-          <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;">
-            <label style="font-weight:600;">Order pembayaran (100 terbaru)</label>
-            <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
+          <div style="margin:20px 0 8px;">
+            <label style="font-weight:600;">Uang masuk terdeteksi (dari penerus notifikasi)</label>
+            <p style="color:#6b7280;font-size:0.78em;margin-top:2px;">Bukti bahwa pembayaran benar-benar masuk. Kosong berarti penerus notifikasi belum dipasang atau belum ada pembayaran.</p>
           </div>
           <div style="overflow-x:auto;">
             <table class="user-table">
               <thead>
-                <tr><th>Waktu</th><th>Nomor</th><th>Nominal</th><th>Status</th><th>Aksi</th></tr>
+                <tr><th>Waktu</th><th>Nominal terbaca</th><th>Hasil</th><th>Teks notifikasi</th></tr>
+              </thead>
+              <tbody id="payNotifsBody">
+                <tr><td colspan="4" style="text-align:center;color:#6b7280;">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 8px;">
+            <label style="font-weight:600;">Semua order pembayaran <span id="payOrdersCount" style="color:#6b7280;font-weight:400;"></span></label>
+            <button class="btn btn-secondary btn-sm" type="button" onclick="loadPaymentOrders()">Refresh</button>
+          </div>
+          <div style="overflow:auto;max-height:520px;">
+            <table class="user-table">
+              <thead>
+                <tr><th>Waktu</th><th>Nomor</th><th>Nominal</th><th>Status</th><th>Bukti</th><th>Aksi</th></tr>
               </thead>
               <tbody id="payOrdersBody">
-                <tr><td colspan="5" style="text-align:center;color:#6b7280;">Loading...</td></tr>
+                <tr><td colspan="6" style="text-align:center;color:#6b7280;">Loading...</td></tr>
               </tbody>
             </table>
           </div>
@@ -11103,6 +11198,7 @@ ${authScript}
           const s = data.settings;
           document.getElementById('payEnabled').checked = !!s.enabled;
           document.getElementById('payWaFallback').checked = s.waFallback !== false;
+          document.getElementById('payAutoApprove').checked = !!s.autoApprove;
           document.getElementById('payPrice').value = s.price;
           document.getElementById('payDays').value = s.days;
           document.getElementById('payQris').value = s.qrisStatic || '';
@@ -11121,6 +11217,7 @@ ${authScript}
         body: JSON.stringify({
           enabled: document.getElementById('payEnabled').checked,
           waFallback: document.getElementById('payWaFallback').checked,
+          autoApprove: document.getElementById('payAutoApprove').checked,
           price: document.getElementById('payPrice').value,
           days: document.getElementById('payDays').value,
           qrisStatic: document.getElementById('payQris').value,
@@ -11164,7 +11261,37 @@ ${authScript}
       }
     }
 
+    function _escHtml(t) {
+      const d = document.createElement('div');
+      d.textContent = String(t == null ? '' : t);
+      return d.innerHTML;
+    }
+
+    function loadPaymentNotifs() {
+      const tbody = document.getElementById('payNotifsBody');
+      if (!tbody) return;
+      adminFetch('/api/admin/payment-notifs')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          if (!data.notifs.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#6b7280;">Belum ada notifikasi uang masuk</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.notifs.slice(0, 30).map(n => {
+            const waktu = new Date(n.time).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+            const nominal = (n.amounts || []).map(a => 'Rp' + Number(a).toLocaleString('id-ID')).join(', ') || 'tidak terbaca';
+            const hasil = n.matchedPhone
+              ? '<span style="color:#22c55e;font-weight:600;">Cocok: +' + _escHtml(n.matchedPhone) + '</span>'
+              : '<span style="color:#f59e0b;font-weight:600;">Tidak ada order yang cocok</span>';
+            return '<tr><td>' + waktu + '</td><td>' + _escHtml(nominal) + '</td><td>' + hasil + '</td>' +
+              '<td style="font-size:0.8em;color:#9ca3af;max-width:260px;white-space:normal;">' + _escHtml(n.text) + '</td></tr>';
+          }).join('');
+        });
+    }
+
     function loadPaymentOrders() {
+      loadPaymentNotifs();
       const tbody = document.getElementById('payOrdersBody');
       if (!tbody) return;
       adminFetch('/api/admin/payment-orders')
@@ -11172,15 +11299,28 @@ ${authScript}
         .then(data => {
           if (!data.success) return;
           if (!data.orders.length) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Belum ada order</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#6b7280;">Belum ada order</td></tr>';
             return;
           }
+          const countEl = document.getElementById('payOrdersCount');
+          if (countEl) countEl.textContent = '(' + data.orders.length + ')';
+          const proofLabels = { checking: 'Diperiksa...', match: 'Nominal cocok', mismatch: 'Nominal TIDAK cocok', unreadable: 'Tidak terbaca', error: 'Gagal dibaca' };
+          const proofColors = { checking: '#6b7280', match: '#22c55e', mismatch: '#ef4444', unreadable: '#f59e0b', error: '#f59e0b' };
           const labels = { pending: 'Menunggu', paid: 'Lunas', expired: 'Kedaluwarsa', rejected: 'Ditolak' };
           const colors = { pending: '#f59e0b', paid: '#22c55e', expired: '#6b7280', rejected: '#ef4444' };
           tbody.innerHTML = data.orders.map(o => {
             const waktu = new Date(o.createdAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
             let ket = o.status === 'paid' && o.via ? ' <small style="color:#6b7280;">(' + o.via + ')</small>' : '';
-            if (o.status === 'pending' && o.claimedAt) ket = ' <small style="color:#22c55e;font-weight:600;">mengaku sudah bayar</small>';
+            if (o.status === 'paid' && o.via === 'notifikasi otomatis') ket = ' <small style="color:#22c55e;font-weight:600;">(uang masuk terverifikasi)</small>';
+            let bukti = '<span style="color:#6b7280;">belum ada</span>';
+            if (o.proof && o.proof.status) {
+              bukti = '<span style="color:' + (o.proof.reused ? '#ef4444' : proofColors[o.proof.status]) + ';font-weight:600;">' +
+                (o.proof.reused ? 'Bukti pernah dipakai' : (proofLabels[o.proof.status] || o.proof.status)) + '</span>';
+              if (o.proof.status === 'mismatch' && o.proof.amountsFound && o.proof.amountsFound.length) {
+                bukti += '<br><small style="color:#9ca3af;">terbaca: ' + o.proof.amountsFound.map(a => 'Rp' + Number(a).toLocaleString('id-ID')).join(', ') + '</small>';
+              }
+              bukti += '<br><button class="action-btn" style="background:#3b82f6;margin-top:4px;" onclick="viewPaymentProof(&apos;' + o.id + '&apos;)">Lihat</button>';
+            }
             const aksi = o.status === 'paid' ? '-' :
               '<button class="action-btn" style="background:#22c55e;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;confirm&apos;)">ACC</button>' +
               (o.status === 'pending' ? ' <button class="action-btn" style="background:#ef4444;" onclick="paymentOrderAction(&apos;' + o.id + '&apos;, &apos;reject&apos;)">Tolak</button>' : '');
@@ -11189,10 +11329,30 @@ ${authScript}
               '<td class="phone">+' + o.phone + '</td>' +
               '<td>Rp' + Number(o.amount).toLocaleString('id-ID') + '</td>' +
               '<td><span style="color:' + colors[o.status] + ';font-weight:600;">' + (labels[o.status] || o.status) + '</span>' + ket + '</td>' +
+              '<td>' + bukti + '</td>' +
               '<td>' + aksi + '</td>' +
             '</tr>';
           }).join('');
         });
+    }
+
+    // Buka gambar bukti di tab baru (diambil lewat adminFetch supaya ikut autentikasi admin)
+    async function viewPaymentProof(id) {
+      try {
+        const res = await adminFetch('/api/admin/payment-proof?id=' + id);
+        if (!res.ok) {
+          let msg = 'Gambar bukti tidak tersedia';
+          try { msg = (await res.json()).error || msg; } catch (e) {}
+          showAlert(msg, 'warning');
+          return;
+        }
+        const url = URL.createObjectURL(await res.blob());
+        const w = window.open(url, '_blank');
+        if (!w) showAlert('Popup diblokir browser. Izinkan popup untuk melihat bukti.', 'warning');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (e) {
+        showAlert('Gagal membuka bukti: ' + e.message, 'danger');
+      }
     }
 
     async function paymentOrderAction(id, action) {
@@ -20131,7 +20291,7 @@ app.get('/monitoring/api', async (req, res) => {
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
-const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, notifySecret: '' }
+const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoApprove: false, notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
 let paymentSettingsCache = null
 
@@ -20206,8 +20366,6 @@ async function loadPaymentOrders() {
   for (const [id, raw] of Object.entries(all)) {
     try {
       const o = typeof raw === 'string' ? JSON.parse(raw) : raw
-      // Buang riwayat lama (> 60 hari) supaya hash tidak membengkak
-      if (now - o.createdAt > 60 * 24 * 3600 * 1000) { redis.hdel(REDIS_KEYS.PAYMENT_ORDERS, id).catch(() => {}); continue }
       if (o.status === 'pending' && o.expiresAt < now) o.status = 'expired'
       orders.push(o)
     } catch (e) {}
@@ -20340,7 +20498,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
@@ -20355,40 +20513,176 @@ app.get('/api/payment/status', rateLimit(90, 60000), async (req, res) => {
   if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
   const o = typeof raw === 'string' ? JSON.parse(raw) : raw
   const status = o.status === 'pending' && o.expiresAt < Date.now() ? 'expired' : o.status
-  res.json({ success: true, status, activeUntil: o.activeUntil || null })
+  res.json({ success: true, status, activeUntil: o.activeUntil || null, proofStatus: (o.proof && o.proof.status) || null, proofReused: !!(o.proof && o.proof.reused) })
 })
 
-// Publik: user menekan "Saya sudah bayar" -> tandai order dan kabari admin lewat WA (sekali)
-app.post('/api/payment/claim', rateLimit(6, 60000), express.json(), async (req, res) => {
+// ---------- Bukti pembayaran (screenshot) + pembacaan nominal otomatis ----------
+// User mengunggah screenshot bukti bayar. Server membaca teksnya (OCR Tesseract, berjalan di
+// server sendiri) dan mencocokkan nominalnya dengan order. Hasilnya dikirim ke WA admin.
+// Mode ACC otomatis (pengaturan admin): kalau nominal cocok dan buktinya belum pernah dipakai,
+// akun langsung aktif; selain itu menunggu ACC manual.
+// CATATAN: screenshot bisa dipalsukan — OCR hanya memeriksa angka, bukan keaslian gambar.
+const PAY_PROOF_PREFIX = 'gold:payproof:'   // String base64 per order (kedaluwarsa sendiri)
+const PAY_PROOF_TTL_SEC = 7 * 24 * 3600
+const PAY_PROOF_MAX_UPLOADS = 5
+let _ocrWorker = null
+let _ocrIdleTimer = null
+let _ocrQueue = Promise.resolve()
+
+// Satu worker dipakai bergantian (antri) supaya memori tidak membengkak; dimatikan saat menganggur
+function ocrImageText(buffer) {
+  const job = _ocrQueue.then(async () => {
+    if (_ocrIdleTimer) { clearTimeout(_ocrIdleTimer); _ocrIdleTimer = null }
+    try {
+      if (!_ocrWorker) {
+        const mod = await import('tesseract.js')
+        const createWorker = mod.createWorker || mod.default.createWorker
+        _ocrWorker = await createWorker('eng', 1, { cachePath: '/tmp' })
+      }
+      const { data } = await _ocrWorker.recognize(buffer)
+      return data.text || ''
+    } catch (e) {
+      const w = _ocrWorker
+      _ocrWorker = null
+      if (w) w.terminate().catch(() => {})
+      throw e
+    } finally {
+      _ocrIdleTimer = setTimeout(() => {
+        const w = _ocrWorker
+        _ocrWorker = null
+        if (w) w.terminate().catch(() => {})
+      }, 120000)
+    }
+  })
+  _ocrQueue = job.catch(() => {})
+  return job
+}
+
+// Bandingkan teks hasil baca dengan nominal order
+function checkProofAmount(text, amount) {
+  const found = extractRupiahAmounts(text)
+  // Nominal tanpa awalan "Rp" (mis. "5.252" / "5,252" / "5252") yang berdiri sendiri
+  const str = String(amount)
+  const head = str.slice(0, -3)
+  const tail = str.slice(-3)
+  const loose = head ? new RegExp('(^|[^0-9.,])' + head + '[.,]?' + tail + '($|[^0-9])') : null
+  if (found.includes(amount) || (loose && loose.test(text))) return { status: 'match', found }
+  if (found.length > 0) return { status: 'mismatch', found }
+  return { status: 'unreadable', found }
+}
+
+function detectImageMime(buf) {
+  if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
+  if (buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png'
+  if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
+  return null
+}
+
+async function notifyAdminsWa(text) {
+  if (!sock || !isReady) return
+  for (const admin of ADMIN_PHONES) {
+    sock.sendMessage(admin + '@s.whatsapp.net', { text }).catch(() => {})
+  }
+}
+
+async function processPaymentProof(orderId, buffer) {
+  let result = { status: 'error', found: [] }
+  let ids = []
   try {
-    const id = String(req.body?.id || '')
+    const text = await ocrImageText(buffer)
+    const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, orderId)
+    if (!raw) return
+    const peek = typeof raw === 'string' ? JSON.parse(raw) : raw
+    result = checkProofAmount(text, peek.amount)
+    // Deret angka panjang = ID/nomor referensi transaksi → sidik jari bukti
+    ids = [...new Set(text.match(/[0-9]{12,}/g) || [])].slice(0, 5)
+  } catch (e) {
+    pushLog('PAY | Gagal membaca bukti: ' + (e && e.message ? e.message : e))
+  }
+
+  const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, orderId)
+  if (!raw) return
+  const order = typeof raw === 'string' ? JSON.parse(raw) : raw
+  if (order.status !== 'pending') return
+
+  // Bukti yang sama (ID transaksi sama) pernah dipakai order lain?
+  let reused = false
+  for (const id of ids) {
+    const owner = await redis.hget(REDIS_KEYS.PAYMENT_PROOF_IDS, id)
+    if (owner && owner !== order.id) reused = true
+  }
+  if (!reused && result.status === 'match') {
+    for (const id of ids) await redis.hset(REDIS_KEYS.PAYMENT_PROOF_IDS, { [id]: order.id })
+  }
+
+  order.proof = { ...(order.proof || {}), status: result.status, amountsFound: result.found.slice(0, 5), reused, hasTxId: ids.length > 0, checkedAt: Date.now() }
+  await savePaymentOrder(order)
+
+  const settings = await getPaymentSettings()
+  const rp = (n) => 'Rp' + Number(n).toLocaleString('id-ID')
+  const hasil = reused ? '⚠️ BUKTI INI SUDAH PERNAH DIPAKAI'
+    : result.status === 'match' ? '✅ Nominal COCOK'
+    : result.status === 'mismatch' ? `❌ Nominal TIDAK COCOK (terbaca: ${result.found.map(rp).join(', ')})`
+    : '❔ Nominal tidak terbaca otomatis'
+  const autoOk = settings.autoApprove && result.status === 'match' && !reused && ids.length > 0
+  pushLog(`PAY | Bukti +${order.phone} ${rp(order.amount)}: ${hasil}${autoOk ? ' → aktif otomatis' : ''}`)
+
+  if (autoOk) {
+    await completePaymentOrder(order, 'otomatis (bukti cocok)')
+    await notifyAdminsWa(`💳 *PEMBAYARAN AKTIF OTOMATIS*\n\nNomor: +${order.phone}\nNominal: *${rp(order.amount)}*\nHasil cek bukti: ${hasil}\n\nAkun sudah aktif. Bukti bisa dilihat di Panel Admin → Pengaturan.`)
+  } else {
+    const alasan = settings.autoApprove && result.status === 'match' && !reused ? '\n(ID transaksi tidak terbaca, jadi tidak diaktifkan otomatis.)' : ''
+    await notifyAdminsWa(`💳 *BUKTI BAYAR MENUNGGU ACC*\n\nNomor: +${order.phone}\nNominal order: *${rp(order.amount)}*\nHasil cek bukti: ${hasil}${alasan}\n\nLihat bukti lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`)
+  }
+}
+
+// Publik: unggah screenshot bukti bayar untuk sebuah order
+app.post('/api/payment/proof', rateLimit(6, 60000), express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '3mb' }), async (req, res) => {
+  try {
+    const id = String(req.query.id || '')
     if (!/^[0-9a-f]{16}$/.test(id)) return res.json({ success: false, error: 'Order tidak valid' })
+    const buf = req.body
+    if (!Buffer.isBuffer(buf) || buf.length < 2000) return res.json({ success: false, error: 'Gambar tidak valid' })
+    const mime = detectImageMime(buf)
+    if (!mime) return res.json({ success: false, error: 'File harus berupa gambar (JPG/PNG/WEBP)' })
     const raw = await redis.hget(REDIS_KEYS.PAYMENT_ORDERS, id)
     if (!raw) return res.json({ success: false, error: 'Order tidak ditemukan' })
     const order = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (order.status !== 'pending' || order.expiresAt < Date.now()) return res.json({ success: false, error: 'Order sudah tidak berlaku' })
-    if (!order.claimedAt) {
-      order.claimedAt = Date.now()
-      await savePaymentOrder(order)
-      pushLog(`PAY | +${order.phone} mengaku sudah bayar Rp${order.amount.toLocaleString('id-ID')} - menunggu ACC admin`)
-      if (sock && isReady) {
-        for (const admin of ADMIN_PHONES) {
-          sock.sendMessage(admin + '@s.whatsapp.net', {
-            text: `💳 *PEMBAYARAN MENUNGGU ACC*
+    const count = (order.proof && order.proof.count) || 0
+    if (count >= PAY_PROOF_MAX_UPLOADS) return res.json({ success: false, error: 'Batas unggah bukti tercapai. Hubungi admin.' })
 
-Nomor: +${order.phone}
-Nominal: *Rp${order.amount.toLocaleString('id-ID')}*
-
-Cek mutasi, lalu ACC di Panel Admin → Pengaturan → Pendaftaran Otomatis via QRIS.`
-          }).catch(() => {})
-        }
-      }
-    }
+    await _ioredis.set(PAY_PROOF_PREFIX + id, mime + ';' + buf.toString('base64'), 'EX', PAY_PROOF_TTL_SEC)
+    order.claimedAt = order.claimedAt || Date.now()
+    order.proof = { status: 'checking', count: count + 1, uploadedAt: Date.now() }
+    await savePaymentOrder(order)
     res.json({ success: true })
+    processPaymentProof(id, buf).catch(e => pushLog('PAY | Proses bukti error: ' + e.message))
   } catch (e) {
-    res.json({ success: false, error: e.message })
+    res.json({ success: false, error: 'Gagal mengunggah bukti. Coba lagi.' })
   }
 })
+
+// Admin: lihat gambar bukti sebuah order
+app.get('/api/admin/payment-proof', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.status(403).json({ success: false, error: 'Unauthorized' })
+  const id = String(req.query.id || '')
+  if (!/^[0-9a-f]{16}$/.test(id)) return res.status(400).json({ success: false, error: 'Order tidak valid' })
+  const val = await _ioredis.get(PAY_PROOF_PREFIX + id)
+  if (!val) return res.status(404).json({ success: false, error: 'Gambar bukti sudah tidak tersimpan (disimpan 7 hari)' })
+  const sep = val.indexOf(';')
+  res.setHeader('Content-Type', val.substring(0, sep))
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.send(Buffer.from(val.substring(sep + 1), 'base64'))
+})
+
+// Catat notifikasi uang masuk (cocok maupun tidak) sebagai bukti untuk admin
+async function recordPaymentNotif(entry) {
+  try {
+    await redis.rpush(REDIS_KEYS.PAYMENT_NOTIFS, JSON.stringify({ time: Date.now(), ...entry }))
+    await redis.ltrim(REDIS_KEYS.PAYMENT_NOTIFS, -50, -1)
+  } catch (e) {}
+}
 
 // Webhook: penerus notifikasi pembayaran (aplikasi di HP admin meneruskan teks notifikasi
 // "Pembayaran diterima Rp5.037" ke sini). Dilindungi secret; teks bebas, nominal dicari otomatis.
@@ -20405,10 +20699,15 @@ app.all('/api/payment/notify', rateLimit(120, 60000), express.text({ type: () =>
     const candidates = extractRupiahAmounts(text)
     const direct = parseInt(String(req.query.amount || '').replace(/[^0-9]/g, ''), 10)
     if (direct > 0) candidates.unshift(direct)
+    const snippet = text.replace(/\s+/g, ' ').trim().substring(0, 200)
     for (const amount of candidates) {
       const order = await confirmPaymentByAmount(amount, 'notifikasi otomatis')
-      if (order) return res.json({ success: true, matched: true, phone: order.phone, amount })
+      if (order) {
+        await recordPaymentNotif({ amounts: candidates, text: snippet, matchedPhone: order.phone, matchedAmount: amount })
+        return res.json({ success: true, matched: true, phone: order.phone, amount })
+      }
     }
+    await recordPaymentNotif({ amounts: candidates, text: snippet, matchedPhone: null, matchedAmount: null })
     pushLog(`PAY | Notifikasi masuk tapi tidak ada order yang cocok (nominal: ${candidates.join(', ') || 'tidak terbaca'})`)
     res.json({ success: true, matched: false, amounts: candidates })
   } catch (e) {
@@ -20423,7 +20722,7 @@ app.get('/api/admin/payment-settings', async (req, res) => {
 })
 
 app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
-  const { password, enabled, qrisStatic, price, days, waFallback, regenerateSecret } = req.body
+  const { password, enabled, qrisStatic, price, days, waFallback, autoApprove, regenerateSecret } = req.body
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
     const current = await getPaymentSettings()
@@ -20446,6 +20745,7 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
       price: p,
       days: d,
       waFallback: waFallback !== false,
+      autoApprove: !!autoApprove,
       notifySecret: (regenerateSecret || !current.notifySecret) ? crypto.randomBytes(18).toString('hex') : current.notifySecret
     }
     await redis.set(REDIS_KEYS.PAYMENT_SETTINGS, JSON.stringify(paymentSettingsCache))
@@ -20456,12 +20756,24 @@ app.post('/api/admin/payment-settings', express.json(), async (req, res) => {
   }
 })
 
-// Admin: daftar order (100 terbaru)
+// Admin: daftar SEMUA order (tersimpan permanen di Redis, tidak hilang saat redeploy)
 app.get('/api/admin/payment-orders', async (req, res) => {
   if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
-    const orders = (await loadPaymentOrders()).sort((a, b) => b.createdAt - a.createdAt).slice(0, 100)
-    res.json({ success: true, orders })
+    const orders = (await loadPaymentOrders()).sort((a, b) => b.createdAt - a.createdAt)
+    res.json({ success: true, orders, webhookActive: !!(await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, -1, -1) || []).length })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Admin: notifikasi uang masuk yang diterima webhook (terbaru dulu)
+app.get('/api/admin/payment-notifs', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const rows = await redis.lrange(REDIS_KEYS.PAYMENT_NOTIFS, 0, -1) || []
+    const notifs = rows.map(r => { try { return typeof r === 'string' ? JSON.parse(r) : r } catch (e) { return null } }).filter(Boolean).reverse()
+    res.json({ success: true, notifs })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
