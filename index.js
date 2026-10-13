@@ -22933,7 +22933,13 @@ function analyzeProofText(text, order, merchantName, now) {
   } else {
     reason = 'Nominal ' + rp(order.amount) + ' tidak terbaca di bukti. Upload bukti pembayaran yang jelas dan utuh'
   }
-  return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
+  // Jam yang tertulis di bukti (mis. 23:10, 20.04, 09:41:22)
+  const times = [...new Set((text.match(/(^|[^0-9])([01]?[0-9]|2[0-3])[:.]([0-5][0-9])(?![0-9])/g) || [])
+    .map(x => { const m = /([0-9]{1,2})[:.]([0-9]{2})$/.exec(x); return m ? m[1].padStart(2, '0') + ':' + m[2] : '' })
+    .filter(Boolean))].slice(0, 6)
+  const stamps = []
+  if (amountOk) for (const d of dates.slice(0, 3)) for (const t of times) stamps.push('ts:' + order.amount + ':' + d + ':' + t)
+  return { verdict, reason, checks, ids, stamps, amountOk, successOk, merchantOk, dateOk }
 }
 
 function qrisMerchantName(qrisStatic) {
@@ -22980,6 +22986,13 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
         if (owner && owner !== order.id) { dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break }
       }
     }
+    // Bukti yang sama difoto / dipotong ulang: gambarnya beda, tetapi nominal + tanggal + jam sama
+    if (!dupReason) {
+      for (const st of result.stamps) {
+        const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, st)
+        if (owner && owner !== order.id) { dupReason = 'Bukti dengan nominal, tanggal, dan jam yang sama sudah pernah dipakai untuk pembayaran lain'; break }
+      }
+    }
   } catch (e) {
     pushLog('PAY | Cek otomatis gagal membaca bukti +' + order.phone + ': ' + (e && e.message ? e.message : e))
   }
@@ -22997,6 +23010,7 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   if (verdict === 'accept') {
     await redis.hset(PAYMENT_PROOF_IDS_KEY, { [imgKey]: order.id })
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
+    for (const st of result.stamps) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [st]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
     return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.', photo,
