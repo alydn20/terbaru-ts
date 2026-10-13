@@ -22130,10 +22130,15 @@ async function setGroupMember(phone, inGroup) {
 
 // Nomor dari teks tempelan (mis. "+62 856-2007-091, +62 877-3290-0096, ... , Anda")
 function parseMemberList(text) {
+  // Hanya ambil yang BERBENTUK nomor HP: diawali +62 / 62 / 0 lalu angka 8 (nomor seluler
+  // Indonesia), boleh berspasi atau berstrip. Teks tempelan dari WhatsApp Web sering membawa
+  // kode HTML (class="x1iyjqo2 x6ikm8r ..."); dulu angka di dalamnya ikut terbaca sebagai nomor.
   const out = new Set()
-  for (const part of String(text || '').split(/[,;\n]/)) {
-    const digits = part.replace(/[^0-9]/g, '')
-    if (digits.length < 9 || digits.length > 15) continue
+  const re = /(?:^|[^0-9A-Za-z])((?:\+?62|0)[ -]?8[0-9](?:[ -]?[0-9]){6,11})(?![0-9])/g
+  let m
+  while ((m = re.exec(String(text || '')))) {
+    const digits = m[1].replace(/[^0-9]/g, '')
+    if (digits.length < 10 || digits.length > 15) continue
     out.add(normalizePhone(digits))
   }
   return [...out]
