@@ -6236,6 +6236,8 @@ app.get('/api/admin/users', async (req, res) => {
     ])
     const pushSubSet = new Set(pushSubPhones)
     const grpMembers = await getGroupMembers()
+    const grpPrefs = (await redis.hgetall(GROUP_PREF_KEY).catch(() => ({}))) || {}
+    const prefOf = (ph) => { try { const r = grpPrefs[ph]; return r ? (typeof r === 'string' ? JSON.parse(r) : r) : null } catch (e) { return null } }
     // Status grup WA: dari daftar anggota yang disinkron admin; kalau belum pernah, dari order lunas terbaru: 'belum' / 'masuk'. Tanpa order lunas = tidak diketahui.
     const groupByPhone = {}
     for (const raw of Object.values(payOrders || {})) {
@@ -6268,7 +6270,9 @@ app.get('/api/admin/users', async (req, res) => {
         hasPushSubscription: !!hasPushSub,
         isBlocked,
         pinChanged,
-        groupStatus: grpMembers.at ? (grpMembers.phones.has(phone) ? 'masuk' : 'belum') : (groupByPhone[phone] ? groupByPhone[phone].status : null)
+        groupStatus: grpMembers.at ? groupStatusOf(phone, grpMembers, prefOf(phone)) : (groupByPhone[phone] ? groupByPhone[phone].status : null),
+        groupAskAgainAt: (prefOf(phone) || {}).askAgainAt || 0,
+        groupNote: ((prefOf(phone) || {}).adminMark || {}).reason || ''
       })
     }
 
@@ -9729,7 +9733,9 @@ ${authScript}
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
               <option value="masuk">Di grup</option>
-              <option value="belum">Belum masuk grup</option>
+              <option value="mau">Mau masuk grup, belum masuk</option>
+              <option value="tidak_mau">Tidak mau masuk grup</option>
+              <option value="belum">Belum menjawab</option>
             </select>
           </div>
           <div class="user-table-wrapper">
@@ -12577,6 +12583,22 @@ ${authScript}
       .catch(e => { box.textContent = 'Gagal: ' + e.message; });
     }
 
+    // Lencana status grup WA di tabel user
+    function groupBadge(u) {
+      const map = {
+        masuk: ['Di grup', '34,197,94', '#22c55e', 'Ada di daftar anggota grup WA'],
+        mau: ['Mau masuk grup, belum masuk', '245,158,11', '#f59e0b', 'Menjawab YA, ingin masuk grup, tetapi belum ada di daftar anggota'],
+        tidak_mau: ['Tidak mau', '107,114,128', '#9ca3af', 'Menjawab TIDAK mau masuk grup'],
+        belum: ['Belum menjawab', '59,130,246', '#60a5fa', 'Belum di grup dan belum menjawab pertanyaan']
+      };
+      const b = map[u.groupStatus];
+      if (!b) return '';
+      let tip = b[3];
+      if (u.groupStatus === 'tidak_mau') tip += u.groupAskAgainAt ? '. Ditanya lagi ' + new Date(u.groupAskAgainAt).toLocaleDateString('id-ID') : '. Jangan ditanya lagi';
+      if (u.groupNote && u.groupStatus !== 'masuk') tip += '. Catatan admin: ' + u.groupNote;
+      return ' <span title="' + _escHtml(tip) + '" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(' + b[1] + ',0.14);color:' + b[2] + ';white-space:nowrap;">' + b[0] + '</span>';
+    }
+
     function loadUsers() {
       loadGroupCompare();
       adminFetch('/api/admin/users')
@@ -12631,8 +12653,7 @@ ${authScript}
               '<td class="phone">+' + u.phone + '</td>' +
               '<td>' + _escHtml(u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
-                (u.groupStatus === 'belum' ? ' <span title="Sudah lunas, belum ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(245,158,11,0.15);color:#f59e0b;white-space:nowrap;">Belum masuk grup</span>'
-                  : u.groupStatus === 'masuk' ? ' <span title="Sudah ditandai masuk grup WA" style="display:inline-block;margin-top:3px;padding:2px 7px;border-radius:999px;font-size:0.72em;font-weight:600;background:rgba(34,197,94,0.12);color:#22c55e;white-space:nowrap;">Di grup</span>' : '') +
+                groupBadge(u) +
               '</td>' +
               '<td><span class="push-badge ' + (u.hasPushSubscription ? 'push-yes' : 'push-no') + '"></span></td>' +
               '<td>' + pinStatus + '</td>' +
@@ -19218,87 +19239,102 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
-    // Gabung grup WA, dua langkah: (1) buka link grup dan minta bergabung, (2) kabari admin lewat
-    // chat WhatsApp dengan pesan yang sudah terisi nomor yang sedang login.
-    async function joinWaGroup(silent) {
-      var d = null;
+    // Gabung grup WA: user cukup menjawab "Ya"; admin diberi tahu dan memasukkannya ke grup.
+    // (Tidak ada link grup di halaman, karena orang yang pernah dikeluarkan tidak bisa masuk
+    // lewat link dan link mudah tersebar.)
+    async function _groupInfo() {
       try {
-        d = await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
-      } catch (e) {}
-      // Menu ditampilkan untuk semua user; ajakan otomatis hanya untuk yang belum masuk grup
+        return await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
+      } catch (e) { return null; }
+    }
+    function _saveGroupPref(choice, days) {
+      try {
+        return fetch('/api/group-pref', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '', choice: choice, days: days || 0 }) }).catch(function() {});
+      } catch (e) { return Promise.resolve(); }
+    }
+
+    // silent = dipanggil otomatis saat halaman dibuka; tanpa silent = user menekan menu
+    async function joinWaGroup(silent) {
+      var d = await _groupInfo();
+      // Menu hanya untuk yang BELUM di grup (yang sudah di grup tidak melihat apa pun)
       var menuBtn = document.getElementById('joinGroupBtn');
-      if (menuBtn) menuBtn.style.display = (d && d.success) ? '' : 'none';
+      if (menuBtn) menuBtn.style.display = (d && d.success && d.show) ? '' : 'none';
       if (!d || !d.success) {
         if (!silent) await showConfirm((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'Gabung Grup WA');
         return;
       }
+      if (!d.show) return;
       if (silent) {
-        // Ajakan otomatis: hanya untuk yang belum masuk grup, sekali sehari
-        if (!d.suggest) return;
-        var today = new Date().toISOString().substring(0, 10);
-        try { if (localStorage.getItem('join_group_asked') === today) return; localStorage.setItem('join_group_asked', today); } catch (e) {}
+        // Server yang menentukan kapan user perlu ditanya (belum menjawab / waktunya ditanya lagi)
+        if (d.ask) _askJoinGroup();
+        return;
       }
+      // Menekan menu = memang ingin bergabung. Cukup dicatat dan admin diberi tahu;
+      // admin yang memasukkan nomornya ke grup.
+      if (!d.wants) _saveGroupPref('yes', 0);
+      await showConfirm(d.wants
+        ? 'Permintaan Anda sudah tercatat. Admin akan memasukkan Anda ke grup WhatsApp.'
+        : 'Permintaan terkirim. Admin akan memasukkan Anda ke grup WhatsApp.', 'Gabung Grup WA');
+    }
+
+    // Pertanyaan saat masuk: ingin bergabung grup WA? Kalau tidak, pilih kapan ditanya lagi.
+    function _askJoinGroup() {
       var old = document.getElementById('joinGroupModal');
       if (old) old.remove();
-      var nomor = /^[0-9]+$/.test(String(d.phone || '')) ? '+' + d.phone : '';
-      var pesan = 'Halo admin, saya' + (nomor ? ' (' + nomor + ')' : '') + ' mau gabung grup harga';
       var wrap = document.createElement('div');
       wrap.id = 'joinGroupModal';
-      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;';
       var box = document.createElement('div');
-      box.style.cssText = 'width:100%;max-width:380px;background:#111418;border:1px solid rgba(247,147,26,0.35);border-radius:14px;padding:20px;color:#e7e9ea;font-size:14px;line-height:1.5;';
+      box.style.cssText = 'width:100%;max-width:360px;background:#111418;border:1px solid rgba(247,147,26,0.35);border-radius:14px;padding:22px;color:#e7e9ea;font-size:14px;line-height:1.5;text-align:center;';
       var mk = function(tag, text, css) { var el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
-      var btnCss = 'display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;border-radius:10px;padding:12px;margin:8px 0 14px;';
-      box.appendChild(mk('div', 'Gabung Grup WA', 'font-weight:800;font-size:17px;margin-bottom:12px;'));
-      // Urutan dibalik: chat admin DULU. Tombol grup baru bisa ditekan setelah tombol chat ditekan,
-      // karena banyak yang langsung masuk grup tanpa mengabari admin.
-      box.appendChild(mk('div', 'Langkah 1. Kabari admin dulu. Pesannya sudah terisi, tinggal tekan kirim di WhatsApp.', 'font-weight:600;'));
-      var a2 = mk('a', 'Chat Admin', btnCss + 'background:#f7931a;color:#000;');
-      a2.href = 'https://wa.me/6285156260393?text=' + encodeURIComponent(pesan); a2.target = '_blank'; a2.rel = 'noopener';
-      box.appendChild(a2);
-      box.appendChild(mk('div', 'Langkah 2. Setelah pesan terkirim, buka grup lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
-      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#374151;color:#9ca3af;');
-      a1.href = '#';
-      var hint = mk('div', 'Tombol grup aktif setelah Anda menekan Chat Admin.', 'font-size:12px;color:#9ca3af;margin:-8px 0 14px;');
-      var unlocked = false;
-      var lapor = function(action) {
-        try {
-          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '', action: action }) });
-        } catch (e) {}
+      var btn = 'display:block;width:100%;font-weight:700;border-radius:10px;padding:12px;margin-top:10px;cursor:pointer;border:none;font-size:14px;';
+      var render1 = function() {
+        box.textContent = '';
+        box.appendChild(mk('div', 'Grup Notifikasi WhatsApp', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
+        box.appendChild(mk('div', 'Ingin bergabung ke grup notifikasi harga di WhatsApp?', 'color:#9ca3af;margin-bottom:8px;'));
+        var ya = mk('button', 'Ya, gabung', btn + 'background:#22c55e;color:#fff;');
+        ya.onclick = function() {
+          // Cukup satu klik: admin langsung diberi tahu dan akan memasukkan nomornya ke grup
+          _saveGroupPref('yes', 0);
+          box.textContent = '';
+          box.appendChild(mk('div', 'Permintaan terkirim', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
+          box.appendChild(mk('div', 'Admin akan memasukkan Anda ke grup WhatsApp.', 'color:#9ca3af;margin-bottom:8px;'));
+          var ok = mk('button', 'OK', btn + 'background:#f7931a;color:#000;');
+          ok.onclick = function() { wrap.remove(); };
+          box.appendChild(ok);
+        };
+        var tidak = mk('button', 'Tidak', btn + 'background:rgba(255,255,255,0.08);color:#e7e9ea;');
+        tidak.onclick = render2;
+        box.appendChild(ya); box.appendChild(tidak);
       };
-      a2.onclick = function() {
-        lapor('chat');
-        unlocked = true;
-        a1.href = '/go/grup/' + d.ticket; a1.target = '_blank'; a1.rel = 'noopener noreferrer';
-        a1.style.background = '#22c55e'; a1.style.color = '#fff';
-        hint.textContent = 'Kirim dulu pesannya di WhatsApp, lalu kembali ke sini dan tekan Buka Grup WhatsApp.';
+      var render2 = function() {
+        box.textContent = '';
+        box.appendChild(mk('div', 'Tanya lagi nanti?', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
+        box.appendChild(mk('div', 'Tanya lagi setelah berapa hari?', 'color:#9ca3af;margin-bottom:10px;'));
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;';
+        var stepCss = 'width:42px;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#e7e9ea;font-size:20px;cursor:pointer;';
+        var minus = mk('button', '-', stepCss);
+        var plus = mk('button', '+', stepCss);
+        var inp = document.createElement('input');
+        inp.type = 'number'; inp.min = '1'; inp.max = '365'; inp.value = '1';
+        inp.style.cssText = 'width:80px;height:42px;text-align:center;font-size:18px;font-weight:700;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:#0b0e12;color:#fff;';
+        var val = function() { var n = parseInt(inp.value, 10); if (isNaN(n) || n < 1) n = 1; if (n > 365) n = 365; return n; };
+        minus.onclick = function() { inp.value = Math.max(1, val() - 1); };
+        plus.onclick = function() { inp.value = Math.min(365, val() + 1); };
+        row.appendChild(minus); row.appendChild(inp); row.appendChild(mk('span', 'hari', 'color:#9ca3af;')); row.appendChild(plus);
+        box.appendChild(row);
+        var simpan = mk('button', 'Tanya lagi nanti', btn + 'background:#f7931a;color:#000;');
+        simpan.onclick = function() { _saveGroupPref('no', val()); wrap.remove(); };
+        var never = mk('button', 'Jangan tanya lagi', btn + 'background:rgba(255,255,255,0.08);color:#e7e9ea;');
+        never.onclick = function() { _saveGroupPref('no', 0); wrap.remove(); };
+        var back = mk('button', 'Kembali', btn + 'background:transparent;color:#9ca3af;');
+        back.onclick = render1;
+        box.appendChild(simpan); box.appendChild(never); box.appendChild(back);
       };
-      a1.onclick = function(ev) {
-        if (!unlocked) {
-          ev.preventDefault();
-          hint.textContent = 'Tekan Chat Admin dulu dan kirim pesannya.';
-          hint.style.color = '#ef4444';
-          return;
-        }
-        // Tiket hanya berlaku sekali, jadi kotak ditutup setelah tombol ditekan.
-        // (Klik ini dicatat dan dilaporkan ke admin oleh server saat tiketnya dibuka.)
-        setTimeout(function() { wrap.remove(); }, 400);
-      };
-      // Tekan lama / klik kanan pada tombol tidak menampilkan menu "salin tautan"
-      a1.oncontextmenu = function(ev) { ev.preventDefault(); };
-      a1.style.webkitTouchCallout = 'none';
-      a1.style.userSelect = 'none';
-      a2.oncontextmenu = function(ev) { ev.preventDefault(); };
-      a2.style.webkitTouchCallout = 'none';
-      a2.style.userSelect = 'none';
-      box.appendChild(a1);
-      box.appendChild(hint);
-      var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
-      tutup.onclick = function() { wrap.remove(); };
-      box.appendChild(tutup);
+      render1();
       wrap.appendChild(box);
-      wrap.onclick = function(ev) { if (ev.target === wrap) wrap.remove(); };
       document.body.appendChild(wrap);
     }
 
@@ -21109,14 +21145,14 @@ async function telegramApi(token, method, body, isForm) {
 const TG_TITLE_EMOJI = [
   [/^DI-ACC OTOMATIS/, '✅'], [/^DITOLAK OTOMATIS/, '❌'], [/^BUKTI PERLU DICEK MANUAL/, '⚠️'],
   [/^BUKTI BAYAR MENUNGGU ACC/, '💳'], [/^PERMINTAAN GABUNG GRUP/, '👥'], [/^MEMBUKA LINK GRUP/, '🔗'],
-  [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'],
+  [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'], [/^INGIN GABUNG GRUP WA/, '🙋'],
   [/^Habis dalam 3 hari/, '⏳'], [/^BOT WHATSAPP TER-LOGOUT/, '🚨']
 ]
 const TG_LINE_EMOJI = [
   [/^Nomor di website:/, '🌐'], [/^Nomor WA pengirim:/, '📱'], [/^Nomor:/, '📱'], [/^Nominal order:/, '💰'],
   [/^Aktif sampai:/, '📆'], [/^Alasan:/, '📝'], [/^Status akun:/, '👤'], [/^Minta gabung grup:/, '👥'],
   [/^Chat ke admin:/, '💬'], [/^Jam:/, '🕐'], [/^Hasil cek otomatis:/, '🔎'], [/^User terdaftar:/, '👤'],
-  [/^Menunggu ACC:/, '🧾'], [/^Belum upload bukti:/, '⚪'], [/^Sudah ACC, belum masuk grup:/, '👥'],
+  [/^Menunggu ACC:/, '🧾'], [/^Belum upload bukti:/, '⚪'], [/^Sudah ACC, belum masuk grup:/, '👥'], [/^Mau masuk grup, belum masuk:/, '🙋'],
   [/^Bot terhubung/, '✅'], [/^Tes notifikasi/, '🔔'], [/^Bukti BARU setelah ditolak/, '🔁']
 ]
 function tgDecorate(text) {
@@ -21198,6 +21234,23 @@ const tgDaysLeft = t => Math.ceil((t - Date.now()) / 86400000)
 const TG_HOME_ROW = [{ text: 'Menu utama', callback_data: 'm:home' }]
 const tgSetAwait = (mode, orderId) => { _tgAwait = { mode, until: mode ? Date.now() + 5 * 60 * 1000 : 0, orderId: orderId || '' } }
 // Alasan penolakan siap pakai (tombol). Selain ini admin bisa menulis alasan sendiri.
+// Alasan "tidak dimasukkan ke grup" siap pakai
+const TG_GROUP_OUT_REASONS = ['Belum chat admin', 'Nomor WA berbeda dengan nomor web', 'Pernah dikeluarkan dari grup', 'Tidak merespons', 'Keluar sendiri']
+async function tgMarkGroup(phone, inGroup, reason) {
+  await setGroupMember(phone, inGroup)
+  const pref = (await getGroupPref(phone)) || {}
+  if (inGroup) {
+    delete pref.adminMark
+    await saveGroupPref(phone, pref)
+    await markOrderInGroupByPhone(phone, 'ditandai admin').catch(() => {})
+    pushLog(`Admin | Grup: +${phone} ditandai sudah masuk grup (Telegram)`)
+    return 'Ditandai sudah masuk grup.'
+  }
+  pref.adminMark = { inGroup: false, reason: String(reason || '').replace(/\s+/g, ' ').trim().substring(0, 120), at: Date.now() }
+  await saveGroupPref(phone, pref)
+  pushLog(`Admin | Grup: +${phone} ditandai TIDAK di grup (Telegram): ${pref.adminMark.reason || 'tanpa alasan'}`)
+  return 'Ditandai tidak di grup. Alasan: ' + (pref.adminMark.reason || '-')
+}
 const TG_REJECT_REASONS = ['Nominal tidak sesuai', 'Bukti tidak jelas / terpotong', 'Uang belum masuk', 'Bukti tidak valid']
 const tgParse = raw => (typeof raw === 'string' ? JSON.parse(raw) : raw)
 
@@ -21229,6 +21282,7 @@ function tgHomePage() {
     text: '<b>Panel Admin Gold Monitor</b>\nPilih menu:',
     kb: [
       [{ text: 'Order pembayaran', callback_data: 'm:ord' }, { text: 'User', callback_data: 'm:usr' }],
+      [{ text: 'Mau masuk grup', callback_data: 'm:want' }],
       [{ text: 'Mau expired', callback_data: 'm:exp' }, { text: 'Online', callback_data: 'm:on' }],
       [{ text: 'WhatsApp', callback_data: 'm:wa' }, { text: 'Pengaturan', callback_data: 'm:set' }],
       [{ text: 'Logs', callback_data: 'l:a' }, { text: 'Ringkasan', callback_data: 'm:stats' }]
@@ -21393,17 +21447,23 @@ async function tgUserCard(phone, note) {
   }
   const u = tgParse(raw)
   const grupList = await getGroupMembers()
-  const grupOrder = (await loadPaymentOrders()).filter(o => o.phone === phone && o.status === 'paid').sort((a, b) => (b.paidAt || 0) - (a.paidAt || 0))[0]
+  const grupPref = (await getGroupPref(phone)) || {}
+  const grupStatus = groupStatusOf(phone, grupList, grupPref)
   let pinChanged = false
   try { pinChanged = !!(pinRaw && tgParse(pinRaw).pinChanged) } catch (e) {}
   const left = u.expired ? tgDaysLeft(u.expired) : null
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
     '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'masih bawaan (000000)') +
-    (grupList.at ? '\nGrup WA: ' + (grupList.phones.has(phone) ? 'sudah masuk' : 'BELUM masuk') : grupOrder ? '\nGrup WA: ' + (grupOrder.inGroup ? 'sudah masuk' : 'BELUM masuk') : '') +
+    '\nGrup WA: ' + GROUP_STATUS_LABEL[grupStatus] +
+    (grupStatus === 'tidak_mau' ? (grupPref.askAgainAt > 0 ? ' (ditanya lagi ' + tgDate(grupPref.askAgainAt) + ')' : ' (jangan ditanya lagi)') : '') +
+    (grupStatus !== 'masuk' && grupPref.adminMark && grupPref.adminMark.reason ? '\nCatatan admin: tidak dimasukkan - ' + tgEsc(grupPref.adminMark.reason) : '') +
     (blockedRaw ? '\nStatus: diblokir' : '')
   kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
   kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
+  kb.push(grupStatus === 'masuk'
+    ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
+    : [{ text: 'Tandai masuk grup', callback_data: 'g:in:' + phone }, { text: 'Tidak dimasukkan', callback_data: 'g:out:' + phone }])
   kb.push([{ text: 'Hapus user', callback_data: 'u:dq:' + phone }])
   kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
   return { text, kb }
@@ -21460,6 +21520,20 @@ async function tgUserAction(act, phone) {
     return kicked ? 'Dikeluarkan dari grup WA dan dihapus dari Daftar User.' : 'Dihapus dari Daftar User. Gagal mengeluarkan dari grup WA (WA terputus, bot bukan admin grup, atau orangnya tidak di grup).'
   }
   return ''
+}
+
+// User yang menjawab "Ya, gabung" tetapi belum ada di grup. Tekan nomor -> kartu user untuk menandai.
+async function tgWantGroupPage() {
+  const list = await listWantGroupUsers()
+  const shown = list.slice(0, 25)
+  const lines = shown.map((u, i) => (i + 1) + '. <code>+' + u.phone + '</code>  sejak ' + tgDateTime(u.at) + (u.note ? '\n    catatan: ' + tgEsc(u.note) : ''))
+  const kb = shown.map(u => [{ text: '+' + u.phone, callback_data: 'u:v:' + u.phone }])
+  kb.push([{ text: 'Muat ulang', callback_data: 'm:want' }, TG_HOME_ROW[0]])
+  return {
+    text: '<b>Mau masuk grup, belum masuk</b> (' + list.length + ')\n\n' + (lines.length ? lines.join('\n') + '\n\nKetuk nomor untuk menyalin. Setelah dimasukkan ke grup, tekan tombol nomornya di bawah lalu "Tandai masuk grup".' : 'Tidak ada. Semua yang ingin masuk sudah di grup.') +
+      (list.length > shown.length ? '\n...dan ' + (list.length - shown.length) + ' lagi' : ''),
+    kb
+  }
 }
 
 async function tgExpiringPage() {
@@ -21750,6 +21824,7 @@ async function handleTelegramCallback(tg, cq) {
   if (data === 'm:home' || data.startsWith('menu:') || data.startsWith('grp:')) { tgSetAwait(''); await show(tgHomePage()); return toast('') }
   if (data === 'm:ord') { await show(await tgOrdersMenu()); return toast('') }
   if (data === 'm:usr') { tgSetAwait(''); await show(await tgUsersPage()); return toast('') }
+  if (data === 'm:want') { await show(await tgWantGroupPage()); return toast('') }
   if (data === 'm:exp') { await show(await tgExpiringPage()); return toast('') }
   if (data === 'm:on') { await show(tgOnlinePage()); return toast('') }
   if (data === 'm:wa') { await show(tgWaPage()); return toast('') }
@@ -21842,6 +21917,30 @@ async function handleTelegramCallback(tg, cq) {
     const note = await tgUserAction(m[1], m[2])
     await show(await tgUserCard(m[2], note))
     return toast(note)
+  }
+
+  // --- status grup satu user (dari kartu user atau dari laporan "ingin gabung") ---
+  if ((m = /^g:in:(62[0-9]{8,13})$/.exec(data))) {
+    const note = await tgMarkGroup(m[1], true)
+    await show(await tgUserCard(m[1], note))
+    return toast(note)
+  }
+  if ((m = /^g:out:(62[0-9]{8,13})$/.exec(data))) {
+    const kb = TG_GROUP_OUT_REASONS.map((r, i) => [{ text: r, callback_data: 'g:or:' + m[1] + ':' + i }])
+    kb.push([{ text: 'Tulis alasan sendiri', callback_data: 'g:oc:' + m[1] }])
+    kb.push([{ text: '« Batal', callback_data: 'u:v:' + m[1] }])
+    await show({ text: '<b>Tidak dimasukkan ke grup</b>\n\n<code>+' + m[1] + '</code>\n\nPilih alasannya (catatan untuk admin, tidak tampil ke user):', kb })
+    return toast('')
+  }
+  if ((m = /^g:or:(62[0-9]{8,13}):([0-9])$/.exec(data))) {
+    const note = await tgMarkGroup(m[1], false, TG_GROUP_OUT_REASONS[parseInt(m[2], 10)])
+    await show(await tgUserCard(m[1], note))
+    return toast(note)
+  }
+  if ((m = /^g:oc:(62[0-9]{8,13})$/.exec(data))) {
+    tgSetAwait('gnote', m[1])
+    await show({ text: '<b>Alasan tidak dimasukkan</b>\n\n<code>+' + m[1] + '</code>\n\nKirim alasannya sebagai pesan teks sekarang.', kb: [[{ text: '« Batal', callback_data: 'u:v:' + m[1] }]] })
+    return toast('')
   }
 
   // --- pengaturan ---
@@ -21938,6 +22037,13 @@ async function handleTelegramMessage(tg, msg) {
     const out = []
     for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
+  }
+
+  if (awaiting === 'gnote' && !text.startsWith('/')) {
+    const ph = _tgAwait.orderId
+    tgSetAwait('')
+    const note = await tgMarkGroup(ph, false, text)
+    return send(await tgUserCard(ph, note))
   }
 
   if (awaiting === 'pair' && !text.startsWith('/')) {
@@ -22062,6 +22168,7 @@ async function sendDailyUserReport() {
     '\n\nMenunggu ACC: ' + orders.filter(TG_ORDER_FILTERS.w.test).length +
     '\nBelum upload bukti: ' + orders.filter(TG_ORDER_FILTERS.n.test).length +
     '\nSudah ACC, belum masuk grup: ' + orders.filter(TG_ORDER_FILTERS.g.test).length +
+    '\nMau masuk grup, belum masuk: ' + (await listWantGroupUsers().catch(() => [])).length +
     '\n\nUser yang habis otomatis kehilangan akses website; dari grup WA dikeluarkan manual. Kalau login lagi, ia melihat QRIS untuk bayar.'
   pushLog(`Laporan harian | user ${list.length}, habis dalam 3 hari ${soon.length}`)
   await notifyAdminsWa(text)
@@ -22128,13 +22235,63 @@ async function setGroupMember(phone, inGroup) {
   await saveGroupMembers(g.phones, g.at)
 }
 
+// ---------- Pilihan user soal grup WA ----------
+// Tiap user yang belum di grup ditanya saat membuka /monitoring: mau bergabung atau tidak.
+//   choice 'yes' -> ingin masuk (admin diberi tahu); 'no' -> tidak mau, ditanya lagi pada
+//   askAgainAt (0 = jangan pernah ditanya lagi). adminMark = catatan admin "tidak dimasukkan"
+//   beserta alasannya. Disimpan per nomor di Redis.
+const GROUP_PREF_KEY = 'gold:group_pref'
+
+async function getGroupPref(phone) {
+  try {
+    const raw = await redis.hget(GROUP_PREF_KEY, phone)
+    return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null
+  } catch (e) { return null }
+}
+
+async function saveGroupPref(phone, pref) {
+  await redis.hset(GROUP_PREF_KEY, { [phone]: JSON.stringify(pref) })
+}
+
+// Status grup satu user: 'masuk' | 'mau' (ingin masuk, belum masuk) | 'tidak_mau' | 'belum' (belum menjawab)
+function groupStatusOf(phone, grp, pref) {
+  if (grp.phones.has(phone)) return 'masuk'
+  if (pref && pref.choice === 'yes') return 'mau'
+  if (pref && pref.choice === 'no') return 'tidak_mau'
+  return 'belum'
+}
+// Semua user aktif yang menjawab "Ya" tetapi belum ada di daftar anggota grup (terlama dulu)
+async function listWantGroupUsers() {
+  const [users, prefs, grp] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), redis.hgetall(GROUP_PREF_KEY).catch(() => ({})), getGroupMembers()])
+  const now = Date.now()
+  const out = []
+  for (const [phone, raw] of Object.entries(prefs || {})) {
+    let pref, user
+    try { pref = typeof raw === 'string' ? JSON.parse(raw) : raw } catch (e) { continue }
+    if (!pref || pref.choice !== 'yes' || grp.phones.has(phone) || !users || !users[phone]) continue
+    try { user = typeof users[phone] === 'string' ? JSON.parse(users[phone]) : users[phone] } catch (e) { continue }
+    if (user.expired && user.expired < now) continue
+    out.push({ phone, name: user.name || '', expired: user.expired || null, at: pref.at || 0, note: (pref.adminMark || {}).reason || '' })
+  }
+  return out.sort((a, b) => a.at - b.at)
+}
+const GROUP_STATUS_LABEL = { masuk: 'di grup', mau: 'MAU masuk, belum masuk', tidak_mau: 'tidak mau masuk', belum: 'belum menjawab' }
+
 // Nomor dari teks tempelan (mis. "+62 856-2007-091, +62 877-3290-0096, ... , Anda")
 function parseMemberList(text) {
+  // Ambil semua yang BERBENTUK nomor telepon, dari negara mana pun:
+  //   - internasional: diawali "+" lalu kode negara, mis. "+62 856-2007-091", "+60 12-345 6789"
+  //   - lokal Indonesia: diawali "0", mis. "0856-2007-091" (dijadikan 62...)
+  // Tanda "+" atau "0" di depan itulah pembedanya. Teks tempelan dari WhatsApp Web sering membawa
+  // kode HTML (class="x1iyjqo2 x6ikm8r ..."); dulu angka di dalamnya ikut terbaca sebagai nomor.
   const out = new Set()
-  for (const part of String(text || '').split(/[,;\n]/)) {
-    const digits = part.replace(/[^0-9]/g, '')
+  const re = /(?:^|[^0-9A-Za-z+])(\+[1-9](?:[ ().-]{0,2}[0-9]){7,14}|0(?:[ .-]?[0-9]){8,13})(?![0-9])/g
+  let m
+  while ((m = re.exec(String(text || '')))) {
+    const digits = m[1].replace(/[^0-9]/g, '')
     if (digits.length < 9 || digits.length > 15) continue
-    out.add(normalizePhone(digits))
+    // "+..." sudah lengkap dengan kode negaranya; "0..." adalah nomor lokal Indonesia
+    out.add(m[1].charAt(0) === '+' ? digits : normalizePhone(digits))
   }
   return [...out]
 }
@@ -22337,6 +22494,40 @@ app.get('/api/admin/group-members', async (req, res) => {
 //  - "Buka Grup WhatsApp": 90 detik kemudian admin mendapat laporan lengkap, baik orangnya sudah
 //    chat admin maupun belum, beserta ada/tidaknya permintaan bergabung di grup.
 const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
+// User menjawab pertanyaan "ingin bergabung grup WA?".
+//   choice 'yes'              -> dicatat ingin masuk, admin diberi tahu (WA + Telegram)
+//   choice 'no', days N (>=1) -> ditanya lagi setelah N hari
+//   choice 'no', days 0       -> tidak ditanya lagi (masih bisa berubah pikiran lewat menu)
+const _groupWantNotified = new Map()   // nomor -> waktu notifikasi terakhir (cegah dobel)
+app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, res) => {
+  try {
+    const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
+    if (!phone || phone === 'admin') return res.json({ success: false, error: 'Sesi tidak valid' })
+    const check = await isUserValid(phone)
+    if (!check.valid) return res.json({ success: false, error: 'Sesi tidak valid' })
+    const choice = req.body.choice === 'yes' ? 'yes' : 'no'
+    const days = Math.max(0, Math.min(3650, parseInt(req.body.days, 10) || 0))
+    const now = Date.now()
+    const old = (await getGroupPref(phone)) || {}
+    const pref = { ...old, choice, at: now, askAgainAt: choice === 'no' && days > 0 ? now + days * 86400000 : 0, days: choice === 'no' ? days : 0 }
+    await saveGroupPref(phone, pref)
+    res.json({ success: true })
+    if (choice === 'no') {
+      pushLog(`AUTO | Grup: +${phone} menjawab TIDAK mau masuk grup WA (${days > 0 ? 'ditanya lagi ' + days + ' hari lagi' : 'jangan ditanya lagi'})`)
+      return
+    }
+    pushLog(`AUTO | Grup: +${phone} menjawab YA, ingin masuk grup WA`)
+    if (_groupWantNotified.has(phone) && now - _groupWantNotified.get(phone) < 6 * 3600000) return
+    _groupWantNotified.set(phone, now)
+    const u = check.user || {}
+    const akun = 'aktif' + (u.expired ? ' sampai ' + new Date(u.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : ' (Lifetime)')
+    notifyAdminsWa('*INGIN GABUNG GRUP WA*\n\nNomor: +' + phone + '\nStatus akun: ' + akun + '\n\nIa memilih "Ya, gabung" di website. Masukkan nomornya ke grup WA, lalu tekan tombol di bawah.', null,
+      { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'g:in:' + phone }], [{ text: 'Tidak dimasukkan (beri alasan)', callback_data: 'g:out:' + phone }]] }).catch(() => {})
+  } catch (e) {
+    try { res.json({ success: false, error: 'Gagal menyimpan' }) } catch (_) {}
+  }
+})
+
 const _groupTickets = new Map()   // tiket sekali pakai -> { phone, until }
 
 // Tombol "Buka Grup WhatsApp" mengarah ke sini, bukan langsung ke link grup. Tiket hanya berlaku
@@ -22438,19 +22629,21 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
     if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
-    const s = await getPaymentSettings()
-    if (!s.groupLink) return res.json({ success: false, error: 'Link grup belum diatur. Hubungi admin.' })
     const grp = await getGroupMembers()
-    // Belum masuk grup = tidak ada di daftar anggota (kalau daftar pernah disinkron), atau punya
-    // order lunas yang belum ditandai masuk
-    const pending = !grp.phones.has(phone) && (grp.at > 0 || (await loadPaymentOrders()).some(o => o.phone === phone && o.status === 'paid' && !o.inGroup))
+    // Sudah di grup (ada di daftar anggota) -> menu dan pertanyaan tidak ditampilkan sama sekali
+    if (grp.phones.has(phone)) return res.json({ success: true, inGroup: true, show: false, ask: false })
+    const pref = await getGroupPref(phone)
+    const nowTs = Date.now()
+    // Ditanya kalau belum pernah menjawab, atau menjawab "tidak" dan waktu tanya-lagi sudah tiba
+    const ask = !pref || !pref.choice || (pref.choice === 'no' && pref.askAgainAt > 0 && nowTs >= pref.askAgainAt)
+    const pending = true
     // Link grup tidak pernah dikirim ke halaman. Yang dikirim hanya tiket sekali pakai (10 menit)
     // untuk alamat /go/grup/<tiket>; link aslinya baru dipakai di server saat tiket itu dibuka.
     const ticket = crypto.randomBytes(12).toString('hex')
     const now = Date.now()
     for (const [k, v] of _groupTickets) if (v.until < now) _groupTickets.delete(k)
     _groupTickets.set(ticket, { phone, until: now + 10 * 60 * 1000 })
-    res.json({ success: true, ticket, phone, suggest: pending })
+    res.json({ success: true, inGroup: false, show: true, ask, wants: !!(pref && pref.choice === 'yes'), ticket, phone, suggest: pending })
   } catch (e) {
     res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
   }
