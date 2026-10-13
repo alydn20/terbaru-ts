@@ -19239,8 +19239,9 @@ app.get('/monitoring', async (req, res) => {
       else window.addEventListener('DOMContentLoaded', freshCheck);
     })();
 
-    // Gabung grup WA, dua langkah: (1) buka link grup dan minta bergabung, (2) kabari admin lewat
-    // chat WhatsApp dengan pesan yang sudah terisi nomor yang sedang login.
+    // Gabung grup WA: user cukup menjawab "Ya"; admin diberi tahu dan memasukkannya ke grup.
+    // (Tidak ada link grup di halaman, karena orang yang pernah dikeluarkan tidak bisa masuk
+    // lewat link dan link mudah tersebar.)
     async function _groupInfo() {
       try {
         return await (await fetch('/api/group-link?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session') || ''))).json();
@@ -19269,9 +19270,12 @@ app.get('/monitoring', async (req, res) => {
         if (d.ask) _askJoinGroup();
         return;
       }
-      // Menekan menu = memang ingin bergabung
-      _saveGroupPref('yes', 0);
-      _showJoinSteps(d);
+      // Menekan menu = memang ingin bergabung. Cukup dicatat dan admin diberi tahu;
+      // admin yang memasukkan nomornya ke grup.
+      if (!d.wants) _saveGroupPref('yes', 0);
+      await showConfirm(d.wants
+        ? 'Permintaan Anda sudah tercatat. Admin akan memasukkan Anda ke grup WhatsApp.'
+        : 'Permintaan terkirim. Admin akan memasukkan Anda ke grup WhatsApp.', 'Gabung Grup WA');
     }
 
     // Pertanyaan saat masuk: ingin bergabung grup WA? Kalau tidak, pilih kapan ditanya lagi.
@@ -19290,12 +19294,15 @@ app.get('/monitoring', async (req, res) => {
         box.appendChild(mk('div', 'Grup Notifikasi WhatsApp', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
         box.appendChild(mk('div', 'Ingin bergabung ke grup notifikasi harga di WhatsApp?', 'color:#9ca3af;margin-bottom:8px;'));
         var ya = mk('button', 'Ya, gabung', btn + 'background:#22c55e;color:#fff;');
-        ya.onclick = async function() {
-          ya.disabled = true;
+        ya.onclick = function() {
+          // Cukup satu klik: admin langsung diberi tahu dan akan memasukkan nomornya ke grup
           _saveGroupPref('yes', 0);
-          var fresh = await _groupInfo();
-          wrap.remove();
-          if (fresh && fresh.success && fresh.show) _showJoinSteps(fresh);
+          box.textContent = '';
+          box.appendChild(mk('div', 'Permintaan terkirim', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
+          box.appendChild(mk('div', 'Admin akan memasukkan Anda ke grup WhatsApp.', 'color:#9ca3af;margin-bottom:8px;'));
+          var ok = mk('button', 'OK', btn + 'background:#f7931a;color:#000;');
+          ok.onclick = function() { wrap.remove(); };
+          box.appendChild(ok);
         };
         var tidak = mk('button', 'Tidak', btn + 'background:rgba(255,255,255,0.08);color:#e7e9ea;');
         tidak.onclick = render2;
@@ -19328,72 +19335,6 @@ app.get('/monitoring', async (req, res) => {
       };
       render1();
       wrap.appendChild(box);
-      document.body.appendChild(wrap);
-    }
-
-    // Dua langkah bergabung: chat admin dulu, lalu buka grup
-    function _showJoinSteps(d) {
-      var old = document.getElementById('joinGroupModal');
-      if (old) old.remove();
-      var nomor = /^[0-9]+$/.test(String(d.phone || '')) ? '+' + d.phone : '';
-      var pesan = 'Halo admin, saya' + (nomor ? ' (' + nomor + ')' : '') + ' mau gabung grup harga';
-      var wrap = document.createElement('div');
-      wrap.id = 'joinGroupModal';
-      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;';
-      var box = document.createElement('div');
-      box.style.cssText = 'width:100%;max-width:380px;background:#111418;border:1px solid rgba(247,147,26,0.35);border-radius:14px;padding:20px;color:#e7e9ea;font-size:14px;line-height:1.5;';
-      var mk = function(tag, text, css) { var el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
-      var btnCss = 'display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;border-radius:10px;padding:12px;margin:8px 0 14px;';
-      box.appendChild(mk('div', 'Gabung Grup WA', 'font-weight:800;font-size:17px;margin-bottom:12px;'));
-      // Urutan dibalik: chat admin DULU. Tombol grup baru bisa ditekan setelah tombol chat ditekan,
-      // karena banyak yang langsung masuk grup tanpa mengabari admin.
-      box.appendChild(mk('div', 'Langkah 1. Kabari admin dulu. Pesannya sudah terisi, tinggal tekan kirim di WhatsApp.', 'font-weight:600;'));
-      var a2 = mk('a', 'Chat Admin', btnCss + 'background:#f7931a;color:#000;');
-      a2.href = 'https://wa.me/6285156260393?text=' + encodeURIComponent(pesan); a2.target = '_blank'; a2.rel = 'noopener';
-      box.appendChild(a2);
-      box.appendChild(mk('div', 'Langkah 2. Setelah pesan terkirim, buka grup lalu tekan Gabung / Minta bergabung.', 'font-weight:600;'));
-      var a1 = mk('a', 'Buka Grup WhatsApp', btnCss + 'background:#374151;color:#9ca3af;');
-      a1.href = '#';
-      var hint = mk('div', 'Tombol grup aktif setelah Anda menekan Chat Admin.', 'font-size:12px;color:#9ca3af;margin:-8px 0 14px;');
-      var unlocked = false;
-      var lapor = function(action) {
-        try {
-          fetch('/api/group-link/opened', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: localStorage.getItem('goldmonitor_session') || '', action: action }) });
-        } catch (e) {}
-      };
-      a2.onclick = function() {
-        lapor('chat');
-        unlocked = true;
-        a1.href = '/go/grup/' + d.ticket; a1.target = '_blank'; a1.rel = 'noopener noreferrer';
-        a1.style.background = '#22c55e'; a1.style.color = '#fff';
-        hint.textContent = 'Kirim dulu pesannya di WhatsApp, lalu kembali ke sini dan tekan Buka Grup WhatsApp.';
-      };
-      a1.onclick = function(ev) {
-        if (!unlocked) {
-          ev.preventDefault();
-          hint.textContent = 'Tekan Chat Admin dulu dan kirim pesannya.';
-          hint.style.color = '#ef4444';
-          return;
-        }
-        // Tiket hanya berlaku sekali, jadi kotak ditutup setelah tombol ditekan.
-        // (Klik ini dicatat dan dilaporkan ke admin oleh server saat tiketnya dibuka.)
-        setTimeout(function() { wrap.remove(); }, 400);
-      };
-      // Tekan lama / klik kanan pada tombol tidak menampilkan menu "salin tautan"
-      a1.oncontextmenu = function(ev) { ev.preventDefault(); };
-      a1.style.webkitTouchCallout = 'none';
-      a1.style.userSelect = 'none';
-      a2.oncontextmenu = function(ev) { ev.preventDefault(); };
-      a2.style.webkitTouchCallout = 'none';
-      a2.style.userSelect = 'none';
-      box.appendChild(a1);
-      box.appendChild(hint);
-      var tutup = mk('button', 'Tutup', 'display:block;width:100%;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
-      tutup.onclick = function() { wrap.remove(); };
-      box.appendChild(tutup);
-      wrap.appendChild(box);
-      wrap.onclick = function(ev) { if (ev.target === wrap) wrap.remove(); };
       document.body.appendChild(wrap);
     }
 
@@ -22548,7 +22489,7 @@ app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, re
     _groupWantNotified.set(phone, now)
     const u = check.user || {}
     const akun = 'aktif' + (u.expired ? ' sampai ' + new Date(u.expired).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : ' (Lifetime)')
-    notifyAdminsWa('*INGIN GABUNG GRUP WA*\n\nNomor: +' + phone + '\nStatus akun: ' + akun + '\n\nIa memilih "Ya, gabung" di website. Tunggu chatnya, lalu masukkan / setujui di WhatsApp.', null,
+    notifyAdminsWa('*INGIN GABUNG GRUP WA*\n\nNomor: +' + phone + '\nStatus akun: ' + akun + '\n\nIa memilih "Ya, gabung" di website. Masukkan nomornya ke grup WA, lalu tekan tombol di bawah.', null,
       { kb: [[{ text: 'Tandai sudah masuk grup', callback_data: 'g:in:' + phone }], [{ text: 'Tidak dimasukkan (beri alasan)', callback_data: 'g:out:' + phone }]] }).catch(() => {})
   } catch (e) {
     try { res.json({ success: false, error: 'Gagal menyimpan' }) } catch (_) {}
@@ -22656,8 +22597,6 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
     if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
-    const s = await getPaymentSettings()
-    if (!s.groupLink) return res.json({ success: false, error: 'Link grup belum diatur. Hubungi admin.' })
     const grp = await getGroupMembers()
     // Sudah di grup (ada di daftar anggota) -> menu dan pertanyaan tidak ditampilkan sama sekali
     if (grp.phones.has(phone)) return res.json({ success: true, inGroup: true, show: false, ask: false })
