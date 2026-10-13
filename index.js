@@ -12583,6 +12583,57 @@ ${authScript}
       .catch(e => { box.textContent = 'Gagal: ' + e.message; });
     }
 
+    // Ubah status grup WA satu user secara manual
+    function editGroupStatus(phone, current) {
+      const old = document.getElementById('grpEditModal');
+      if (old) old.remove();
+      const wrap = document.createElement('div');
+      wrap.id = 'grpEditModal';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:20px;';
+      const box = document.createElement('div');
+      box.style.cssText = 'width:100%;max-width:380px;background:#111418;border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:20px;color:#e7e9ea;font-size:14px;';
+      const mk = (tag, text, css) => { const el = document.createElement(tag); el.textContent = text; if (css) el.style.cssText = css; return el; };
+      box.appendChild(mk('div', 'Status grup WA', 'font-weight:800;font-size:17px;margin-bottom:4px;'));
+      box.appendChild(mk('div', '+' + phone, 'font-family:monospace;color:#9ca3af;margin-bottom:12px;'));
+      const note = document.createElement('input');
+      note.type = 'text';
+      note.maxLength = 120;
+      note.placeholder = 'Catatan / alasan (opsional, hanya untuk admin)';
+      note.style.cssText = 'width:100%;margin-bottom:10px;padding:9px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:#0b0e12;color:#fff;font-size:13px;';
+      box.appendChild(note);
+      const opts = [
+        ['masuk', 'Di grup', '#16a34a'],
+        ['mau', 'Mau masuk grup, belum masuk', '#d97706'],
+        ['tidak_mau', 'Tidak mau masuk grup', '#4b5563'],
+        ['belum', 'Belum menjawab (tanya lagi)', '#2563eb']
+      ];
+      opts.forEach(o => {
+        const b = mk('button', (o[0] === current ? String.fromCharCode(10003) + ' ' : '') + o[1], 'display:block;width:100%;text-align:left;font-weight:600;border-radius:10px;padding:11px 12px;margin-top:8px;cursor:pointer;border:none;color:#fff;background:' + o[2] + ';');
+        b.onclick = () => {
+          b.disabled = true;
+          adminFetch('/api/admin/users/group', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phone, status: o[0], note: note.value })
+          })
+          .then(r => r.json())
+          .then(d => {
+            wrap.remove();
+            if (d.success) { showAlert('Status grup +' + phone + ' diubah: ' + o[1], 'success'); loadUsers(); loadPaymentOrders(); }
+            else showAlert('Gagal: ' + (d.error || ''), 'danger');
+          })
+          .catch(e => { wrap.remove(); showAlert('Gagal: ' + e.message, 'danger'); });
+        };
+        box.appendChild(b);
+      });
+      const batal = mk('button', 'Batal', 'display:block;width:100%;margin-top:12px;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;');
+      batal.onclick = () => wrap.remove();
+      box.appendChild(batal);
+      wrap.appendChild(box);
+      wrap.onclick = ev => { if (ev.target === wrap) wrap.remove(); };
+      document.body.appendChild(wrap);
+    }
+
     // Lencana status grup WA di tabel user
     function groupBadge(u) {
       const map = {
@@ -12663,6 +12714,7 @@ ${authScript}
                   '<button class="action-btn edit" data-phone="' + u.phone + '" data-name="' + (u.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" onclick="editUserBtn(this)">Edit</button>' +
                   '<button class="action-btn push" onclick="openPushModal(&apos;' + u.phone + '&apos;)">Push</button>' +
                   '<button class="action-btn pin" onclick="resetPin(&apos;' + u.phone + '&apos;)">Reset PIN</button>' +
+                  '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
                   blockBtn +
                   '<button class="action-btn delete" onclick="deleteUser(&apos;' + u.phone + '&apos;)">Hapus</button>' +
                   '<button class="action-btn kick" onclick="kickUser(&apos;' + u.phone + '&apos;)">Kick</button>' +
@@ -22478,6 +22530,39 @@ app.post('/api/admin/group-members/sync', express.json({ limit: '1mb' }), async 
   }
 })
 
+// Admin: ubah status grup satu user secara manual
+//   masuk     -> dimasukkan ke daftar anggota grup
+//   mau       -> dicatat ingin masuk, belum masuk
+//   tidak_mau -> dicatat tidak mau masuk (tidak ditanya lagi)
+//   belum     -> dikosongkan; user akan ditanya lagi saat membuka monitoring
+app.post('/api/admin/users/group', express.json(), async (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const phone = normalizePhone(String(req.body.phone || ''))
+    const status = String(req.body.status || '')
+    if (!['masuk', 'mau', 'tidak_mau', 'belum'].includes(status)) return res.json({ success: false, error: 'Status tidak dikenal' })
+    if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return res.json({ success: false, error: 'User tidak ditemukan' })
+    const note = String(req.body.note || '').replace(/\s+/g, ' ').trim().substring(0, 120)
+    const pref = (await getGroupPref(phone)) || {}
+    const now = Date.now()
+    await setGroupMember(phone, status === 'masuk')
+    if (status === 'masuk') {
+      delete pref.adminMark
+      await markOrderInGroupByPhone(phone, 'ditandai admin').catch(() => {})
+    } else {
+      if (status === 'mau') { pref.choice = 'yes'; pref.at = pref.at || now; pref.askAgainAt = 0 }
+      if (status === 'tidak_mau') { pref.choice = 'no'; pref.at = now; pref.askAgainAt = 0; pref.days = 0 }
+      if (status === 'belum') { delete pref.choice; delete pref.askAgainAt; delete pref.days }
+      if (note) pref.adminMark = { inGroup: false, reason: note, at: now }; else delete pref.adminMark
+    }
+    await saveGroupPref(phone, pref)
+    pushLog(`Admin | Grup: status +${phone} diubah menjadi "${GROUP_STATUS_LABEL[status]}"${note ? ' - ' + note : ''} (panel admin)`)
+    res.json({ success: true })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
 app.get('/api/admin/group-members', async (req, res) => {
   if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
@@ -22848,7 +22933,13 @@ function analyzeProofText(text, order, merchantName, now) {
   } else {
     reason = 'Nominal ' + rp(order.amount) + ' tidak terbaca di bukti. Upload bukti pembayaran yang jelas dan utuh'
   }
-  return { verdict, reason, checks, ids, amountOk, successOk, merchantOk, dateOk }
+  // Jam yang tertulis di bukti (mis. 23:10, 20.04, 09:41:22)
+  const times = [...new Set((text.match(/(^|[^0-9])([01]?[0-9]|2[0-3])[:.]([0-5][0-9])(?![0-9])/g) || [])
+    .map(x => { const m = /([0-9]{1,2})[:.]([0-9]{2})$/.exec(x); return m ? m[1].padStart(2, '0') + ':' + m[2] : '' })
+    .filter(Boolean))].slice(0, 6)
+  const stamps = []
+  if (amountOk) for (const d of dates.slice(0, 3)) for (const t of times) stamps.push('ts:' + order.amount + ':' + d + ':' + t)
+  return { verdict, reason, checks, ids, stamps, amountOk, successOk, merchantOk, dateOk }
 }
 
 function qrisMerchantName(qrisStatic) {
@@ -22895,6 +22986,13 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
         if (owner && owner !== order.id) { dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break }
       }
     }
+    // Bukti yang sama difoto / dipotong ulang: gambarnya beda, tetapi nominal + tanggal + jam sama
+    if (!dupReason) {
+      for (const st of result.stamps) {
+        const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, st)
+        if (owner && owner !== order.id) { dupReason = 'Bukti dengan nominal, tanggal, dan jam yang sama sudah pernah dipakai untuk pembayaran lain'; break }
+      }
+    }
   } catch (e) {
     pushLog('PAY | Cek otomatis gagal membaca bukti +' + order.phone + ': ' + (e && e.message ? e.message : e))
   }
@@ -22912,6 +23010,7 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   if (verdict === 'accept') {
     await redis.hset(PAYMENT_PROOF_IDS_KEY, { [imgKey]: order.id })
     for (const id of result.ids) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [id]: order.id })
+    for (const st of result.stamps) await redis.hset(PAYMENT_PROOF_IDS_KEY, { [st]: order.id })
     const done = await completePaymentOrder(order, 'otomatis (bukti cocok)')
     const until = done.activeUntil ? new Date(done.activeUntil).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' }) : 'Lifetime'
     return notifyAdminsWa('*DI-ACC OTOMATIS*\n\n' + kepala + '\nAktif sampai: ' + until + hasil + '\n\nMasukkan nomor ini ke grup WA, lalu tekan tombol di bawah.', photo,
