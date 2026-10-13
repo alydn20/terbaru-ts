@@ -22130,16 +22130,19 @@ async function setGroupMember(phone, inGroup) {
 
 // Nomor dari teks tempelan (mis. "+62 856-2007-091, +62 877-3290-0096, ... , Anda")
 function parseMemberList(text) {
-  // Hanya ambil yang BERBENTUK nomor HP: diawali +62 / 62 / 0 lalu angka 8 (nomor seluler
-  // Indonesia), boleh berspasi atau berstrip. Teks tempelan dari WhatsApp Web sering membawa
+  // Ambil semua yang BERBENTUK nomor telepon, dari negara mana pun:
+  //   - internasional: diawali "+" lalu kode negara, mis. "+62 856-2007-091", "+60 12-345 6789"
+  //   - lokal Indonesia: diawali "0", mis. "0856-2007-091" (dijadikan 62...)
+  // Tanda "+" atau "0" di depan itulah pembedanya. Teks tempelan dari WhatsApp Web sering membawa
   // kode HTML (class="x1iyjqo2 x6ikm8r ..."); dulu angka di dalamnya ikut terbaca sebagai nomor.
   const out = new Set()
-  const re = /(?:^|[^0-9A-Za-z])((?:\+?62|0)[ -]?8[0-9](?:[ -]?[0-9]){6,11})(?![0-9])/g
+  const re = /(?:^|[^0-9A-Za-z+])(\+[1-9](?:[ ().-]{0,2}[0-9]){7,14}|0(?:[ .-]?[0-9]){8,13})(?![0-9])/g
   let m
   while ((m = re.exec(String(text || '')))) {
     const digits = m[1].replace(/[^0-9]/g, '')
-    if (digits.length < 10 || digits.length > 15) continue
-    out.add(normalizePhone(digits))
+    if (digits.length < 9 || digits.length > 15) continue
+    // "+..." sudah lengkap dengan kode negaranya; "0..." adalah nomor lokal Indonesia
+    out.add(m[1].charAt(0) === '+' ? digits : normalizePhone(digits))
   }
   return [...out]
 }
