@@ -2834,7 +2834,7 @@ async function sendPushToAll(title, body, type = 'price') {
       icon: '/icon.png',
       badge: '/icon.png',
       type,
-      url: '/monitoring'
+      url: '/xauusd'
     })
 
     let sent = 0, failed = 0
@@ -3832,7 +3832,7 @@ app.get('/admin-login', (req, res) => {
 
         if (data.success) {
           localStorage.setItem('super_admin_token', data.token);
-          // Save monitoring session so admin can access /monitoring
+          // Save monitoring session so admin can access /xauusd
           if (data.monitoringSession) {
             localStorage.setItem('goldmonitor_session', data.monitoringSession);
             try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
@@ -4903,7 +4903,7 @@ app.get('/manifest.json', (req, res) => {
     name: 'Treasury Price',
     short_name: 'Treasury Price',
     description: 'Real-time Treasury Gold Price Monitor',
-    start_url: '/monitoring',
+    start_url: '/xauusd',
     display: 'standalone',
     background_color: '#0f1419',
     theme_color: '#f7931a',
@@ -4971,7 +4971,7 @@ app.get('/sw.js', (_req, res) => {
       if (url.includes('/sse')) return;
       // Jangan cache HTML dan API calls - selalu fetch fresh
       const noCache = e.request.mode === 'navigate'
-        || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
+        || url.includes('/xauusd') || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
         || url.includes('/price-history') || url.includes('/api/')
         || url.includes('/stats') || url.includes('/health');
       if (noCache) {
@@ -5015,7 +5015,7 @@ app.get('/sw.js', (_req, res) => {
         vibrate: [200, 100, 200],
         tag: data.type || 'notification',
         renotify: true,
-        data: { url: data.url || '/monitoring' }
+        data: { url: data.url || '/xauusd' }
       };
 
       e.waitUntil(
@@ -5027,13 +5027,13 @@ app.get('/sw.js', (_req, res) => {
     self.addEventListener('notificationclick', (e) => {
       e.notification.close();
 
-      const urlToOpen = e.notification.data?.url || '/monitoring';
+      const urlToOpen = e.notification.data?.url || '/xauusd';
 
       e.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
           // Check if there is already a window open
           for (let client of windowClients) {
-            if (client.url.includes('/monitoring') && 'focus' in client) {
+            if (client.url.includes('/xauusd') && 'focus' in client) {
               return client.focus();
             }
           }
@@ -6597,7 +6597,7 @@ app.post('/api/admin/push', express.json(), async (req, res) => {
     icon: '/icon.png',
     badge: '/icon.png',
     type,
-    url: '/monitoring'
+    url: '/xauusd'
   })
 
   let sent = 0
@@ -7771,7 +7771,7 @@ app.get('/login', async (req, res) => {
       const _phone = await redis.hget(REDIS_KEYS.SESSIONS, _sess)
       if (_phone) {
         const _chk = await isUserValid(_phone)
-        if (_chk.valid) return res.redirect('/monitoring')
+        if (_chk.valid) return res.redirect('/xauusd')
       }
     }
   } catch (e) {}
@@ -8322,7 +8322,7 @@ app.get('/login', async (req, res) => {
                   setupPinInputs(document.querySelectorAll('.confirm-pin'), () => saveNewPin());
                 } else {
                   // Sesi valid → langsung ke monitoring; overlay tetap tampil sampai pindah halaman
-                  window.location.replace('/monitoring');
+                  window.location.replace('/xauusd');
                 }
               })
               .catch(() => { clearTimeout(_authLoadingFallback); hideAuthLoading(); });
@@ -8844,7 +8844,7 @@ app.get('/login', async (req, res) => {
           } else {
             showMessage('Login berhasil! Mengalihkan...', 'success');
             setTimeout(() => {
-              window.location.replace('/monitoring');
+              window.location.replace('/xauusd');
             }, 500);
           }
         } else {
@@ -8902,7 +8902,7 @@ app.get('/login', async (req, res) => {
         if (data.success) {
           showMessage('PIN berhasil diubah! Mengalihkan...', 'success', 'changePinMessage');
           setTimeout(() => {
-            window.location.replace('/monitoring');
+            window.location.replace('/xauusd');
           }, 1000);
         } else {
           showMessage(data.error || 'Gagal mengubah PIN', 'error', 'changePinMessage');
@@ -9053,7 +9053,7 @@ app.get('/auth/:token', async (req, res) => {
 '    localStorage.setItem("goldmonitor_session", "' + sessionId + '");' +
 '    try { localStorage.setItem("gold_sess_ok_at", String(Date.now())); } catch(e) {}' +
 '    setTimeout(function() {' +
-'      window.location.replace("/monitoring");' +
+'      window.location.replace("/xauusd");' +
 '    }, 1500);' +
 '  </script>' +
 '</body>' +
@@ -9672,7 +9672,7 @@ ${authScript}
         </h1>
         <div class="header-actions">
           <a href="/admin/monitoring">Notifikasi</a>
-          <a href="/monitoring" class="action-monitoring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Ke Monitoring</a>
+          <a href="/xauusd" class="action-monitoring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Ke Monitoring</a>
           <a href="/admin/logout" style="color:#f87171;border-color:rgba(248,113,113,0.3);" onclick="return confirm('Yakin ingin logout?')">Logout</a>
         </div>
       </div>
@@ -13182,7 +13182,13 @@ ${authScript}
 })
 
 // MONITORING PAGE - Professional Gold Price Dashboard
-app.get('/monitoring', async (req, res) => {
+// Alamat lama: dialihkan ke /xauusd (bookmark, aplikasi yang sudah di-install, dan link lama tetap jalan)
+app.get('/monitoring', (req, res) => {
+  const q = req.originalUrl.indexOf('?')
+  res.redirect(301, '/xauusd' + (q >= 0 ? req.originalUrl.substring(q) : ''))
+})
+
+app.get('/xauusd', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.setHeader('Pragma', 'no-cache')
   res.setHeader('Pragma', 'no-cache')
@@ -22356,7 +22362,7 @@ async function setGroupMember(phone, inGroup) {
 }
 
 // ---------- Pilihan user soal grup WA ----------
-// Tiap user yang belum di grup ditanya saat membuka /monitoring: mau bergabung atau tidak.
+// Tiap user yang belum di grup ditanya saat membuka /xauusd: mau bergabung atau tidak.
 //   choice 'yes' -> ingin masuk (admin diberi tahu); 'no' -> tidak mau, ditanya lagi pada
 //   askAgainAt (0 = jangan pernah ditanya lagi). adminMark = catatan admin "tidak dimasukkan"
 //   beserta alasannya. Disimpan per nomor di Redis.
