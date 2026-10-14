@@ -6271,6 +6271,7 @@ app.get('/api/admin/users', async (req, res) => {
         isBlocked,
         pinChanged,
         groupStatus: grpMembers.at ? groupStatusOf(phone, grpMembers, prefOf(phone)) : (groupByPhone[phone] ? groupByPhone[phone].status : null),
+        groupChoice: ((prefOf(phone) || {}).choice) || null,
         groupAskAgainAt: (prefOf(phone) || {}).askAgainAt || 0,
         groupNote: ((prefOf(phone) || {}).adminMark || {}).reason || ''
       })
@@ -9701,6 +9702,7 @@ ${authScript}
       <!-- Section Tabs -->
       <div class="section-tabs">
         <div class="section-tab active" data-section="users">Daftar User</div>
+        <div class="section-tab" data-section="want-join">?? Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="online">Online <span id="onlineBadge" style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="add">Tambah User</div>
         <div class="section-tab" data-section="pending">Pending <span id="pendingBadge" style="background:#f7931a;color:#000;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
@@ -9754,6 +9756,37 @@ ${authScript}
               </thead>
               <tbody id="userList">
                 <tr><td colspan="7" class="empty-state">Memuat data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Ingin Gabung Grup WA -->
+      <div class="section-content" id="section-want-join">
+        <div class="card">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            🙋 Ingin Gabung Grup Notifikasi Harga
+          </h2>
+          <p style="color:#9ca3af;margin-bottom:12px;font-size:0.9em;">User yang memilih "Ya, gabung" di website dan belum ditambahkan ke grup WA. Setelah ditambahkan ke grup, tekan tombol "Sudah Ditambahkan".</p>
+          <div class="user-table-wrapper">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>No WA</th>
+                  <th>Nama</th>
+                  <th>Status Akun</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="wantJoinList">
+                <tr><td colspan="4" class="empty-state">Sedang muat...</td></tr>
               </tbody>
             </table>
           </div>
@@ -12692,9 +12725,15 @@ ${authScript}
           document.getElementById('pushUsers').textContent = push;
           document.getElementById('pinChangedUsers').textContent = pinChanged;
 
+          // Filter user yang ingin gabung grup tapi belum di grup
+          const wantJoinUsers = users.filter(u => u.groupChoice === 'yes' && u.groupStatus !== 'masuk');
+          document.getElementById('wantJoinBadge').textContent = wantJoinUsers.length;
+
           const tbody = document.getElementById('userList');
           if (users.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada user</td></tr>';
+            const wjList = document.getElementById('wantJoinList');
+            if (wjList) wjList.innerHTML = '<tr><td colspan="4" class="empty-state">Belum ada</td></tr>';
             return;
           }
 
@@ -12746,7 +12785,46 @@ ${authScript}
             '</tr>';
           }).join('');
           applyUserGroupFilter();
+
+          // Render want-join list
+          const wjList = document.getElementById('wantJoinList');
+          if (wjList) {
+            wjList.innerHTML = wantJoinUsers.length === 0
+              ? '<tr><td colspan="4" class="empty-state">Semua user sudah diproses</td></tr>'
+              : wantJoinUsers.map(u => {
+                  const status = u.expired ? (u.expired > now ? 'Aktif sampai ' + new Date(u.expired).toLocaleDateString('id-ID') : 'Expired') : 'Lifetime';
+                  return '<tr>' +
+                    '<td class="phone">+' + u.phone + '</td>' +
+                    '<td>' + _escHtml(u.name || '-') + '</td>' +
+                    '<td><span class="status-badge ' + (u.expired && u.expired <= now ? 'status-expired' : (u.expired ? 'status-active' : 'status-lifetime')) + '">' + status + '</span></td>' +
+                    '<td>' +
+                      '<button class="action-btn" style="background:#10b981;" onclick="approveWantJoin(' + "'" + u.phone + "'" + ')">✓ Sudah Ditambahkan</button>' +
+                    '</td>' +
+                    '</tr>';
+                }).join('');
+          }
         });
+    }
+
+    function approveWantJoin(phone) {
+      const confirmed = window.confirm('Tandai +' + phone + ' sebagai sudah ditambahkan ke grup WA?');
+      if (!confirmed) return;
+
+      adminFetch('/api/admin/users/group', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, status: 'masuk', note: 'Ditambahkan via menu ingin gabung' })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          showAlert('User +' + phone + ' ditambahkan ke grup', 'success');
+          loadUsers();
+        } else {
+          showAlert('Gagal: ' + (d.error || ''), 'danger');
+        }
+      })
+      .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
     }
 
     // Reset PIN user ke default (000000)
