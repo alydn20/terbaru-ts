@@ -2365,7 +2365,7 @@ async function doPromoBroadcast() {
         offBroadcastCount = 0
         offWaCount = 0
         offStartTime = null
-        sendBotMessage('Promo Treasury aktif. Cek tab Promo untuk melihat detail penawaran yang tersedia.')
+        sendBotMessage('Promo PemulaOLD aktif. Cek tab Promo untuk melihat detail penawaran yang tersedia.')
       }
       // ON: Kirim 1x per menit
       if (currentMinute !== lastPromoBroadcastMinute || isFirstCheck || statusChanged) {
@@ -4900,9 +4900,9 @@ app.get('/favicon.ico', (_req, res) => {
 app.get('/manifest.json', (req, res) => {
   const host = req.get('host') || 'xau.pemulaold.com'
   res.json({
-    name: 'Treasury Price',
-    short_name: 'Treasury Price',
-    description: 'Real-time Treasury Gold Price Monitor',
+    name: 'PemulaOLD Price',
+    short_name: 'PemulaOLD',
+    description: 'Real-time PemulaOLD Gold Price Monitor',
     start_url: '/monitoring',
     display: 'standalone',
     background_color: '#0f1419',
@@ -5136,7 +5136,7 @@ app.get('/admin/api-docs', (req, res) => {
 
     <div class="card">
       <h2>1. Pengantar</h2>
-      <p>API eksternal untuk mengambil data harga emas Treasury, riwayat harga, status promo, dan data pasar secara real-time dari luar aplikasi (bot, spreadsheet, aplikasi lain, dll).</p>
+      <p>API eksternal untuk mengambil data harga emas PemulaOLD, riwayat harga, status promo, dan data pasar secara real-time dari luar aplikasi (bot, spreadsheet, aplikasi lain, dll).</p>
       <h3>Base URL</h3>
       <pre>${baseUrl}</pre>
       <h3>Autentikasi</h3>
@@ -5153,7 +5153,7 @@ app.get('/admin/api-docs', (req, res) => {
       <h2>2. Endpoint</h2>
 
       <h3><span class="method">GET</span>/api/v1/price</h3>
-      <p>Harga emas Treasury terkini beserta spread, kurs, XAU, status promo, dan tertinggi/terendah hari ini.</p>
+      <p>Harga emas PemulaOLD terkini beserta spread, kurs, XAU, status promo, dan tertinggi/terendah hari ini.</p>
       <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/price</pre>
       <pre>{
   "success": true,
@@ -5191,7 +5191,7 @@ app.get('/admin/api-docs', (req, res) => {
 }</pre>
 
       <h3><span class="method">GET</span>/api/v1/promo-status</h3>
-      <p>Status promo Treasury saat ini.</p>
+      <p>Status promo PemulaOLD saat ini.</p>
       <pre>curl -H "X-API-Key: trs_xxxxx" ${baseUrl}/api/v1/promo-status</pre>
       <pre>{ "success": true, "data": { "status": "ON", "serverTime": "..." } }</pre>
 
@@ -8111,7 +8111,7 @@ app.get('/login', async (req, res) => {
         <div class="icon">
           <img src="/icon.png" alt="Gold Monitor">
         </div>
-        <h1><span>Treasury</span> Price Monitor</h1>
+        <h1><span>PemulaOLD</span> Price Monitor</h1>
         <p class="subtitle">Pantau harga emas real-time dengan akurat</p>
       </div>
 
@@ -8483,7 +8483,7 @@ app.get('/login', async (req, res) => {
           // ikuti pengaturan admin: arahkan ke WA admin atau cukup tampilkan pesan.
           const payResult = await startPaymentFlow(phone);
           if (payResult === 'redirect') {
-            const message = encodeURIComponent('Halo, saya ingin daftar grup harga Treasury.\\n\\nNomor WA saya: +62' + phone);
+            const message = encodeURIComponent('Halo, saya ingin daftar grup harga PemulaOLD.\\n\\nNomor WA saya: +62' + phone);
             window.location.href = 'https://wa.me/62895701692525?text=' + message;
             return;
           }
@@ -13209,7 +13209,7 @@ app.get('/monitoring', async (req, res) => {
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Treasury Price">
+  <meta name="apple-mobile-web-app-title" content="PemulaOLD">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icon.png">
@@ -16392,7 +16392,7 @@ app.get('/monitoring', async (req, res) => {
     <div class="promo-suggestions-modal">
       <h3>
         <i data-lucide="tag" style="width:15px;height:15px;color:#22c55e;"></i>
-        Promo Aktif Treasury
+        Promo Aktif PemulaOLD
         <button class="promo-modal-close" onclick="closePromoSuggestions()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </h3>
       <div id="promoSuggestionsList"><div class="promo-empty">Memuat...</div></div>
@@ -16564,7 +16564,7 @@ app.get('/monitoring', async (req, res) => {
 
   <div class="container">
     <div class="header">
-      <div class="header-logo" title="Treasury Realtime Price">
+      <div class="header-logo" title="PemulaOLD Realtime Price">
         <span style="position:relative;display:inline-flex;flex-shrink:0;align-items:center;">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" style="display:block;" aria-hidden="true">
             <rect x="7" y="1" width="16" height="16" rx="4" ry="4" fill="#f7931a"/>
@@ -16575,7 +16575,7 @@ app.get('/monitoring', async (req, res) => {
         <span id="trendIcon" style="display:none;"></span>
       </div>
 
-      <div class="header-title-text">Harga Treasury</div>
+      <div class="header-title-text">Harga PemulaOLD</div>
 
       <div class="header-right">
         <button class="nav-icon-btn" id="navIndicatorBtn" onclick="openIndicatorSettings()" title="Indikator">
@@ -19132,7 +19132,7 @@ app.get('/monitoring', async (req, res) => {
     (function(){
       var TOUR_KEY = 'onboardingDone_v3';
       var steps = [
-        { sel: '.header-logo', title: 'Treasury Price Monitor', body: 'Harga emas update tiap detik. Titik hijau berarti data live.', menu: false },
+        { sel: '.header-logo', title: 'PemulaOLD Price Monitor', body: 'Harga emas update tiap detik. Titik hijau berarti data live.', menu: false },
         { sel: '#navIndicatorBtn', title: 'Indikator', body: 'Atur indikator dan garis bantu di grafik.', menu: false },
         { sel: '#navNewsBtn', title: 'Berita', body: 'Berita terbaru. Titik merah berarti ada yang belum dibaca.', menu: false },
         { sel: '#promoBtnEl', title: 'Promo', body: 'Lihat promo yang sedang berjalan.', menu: false },
@@ -23054,7 +23054,7 @@ function analyzeProofText(text, order, merchantName, now) {
   // Status, nama penerima, tanggal, dan ID transaksi tidak wajib ada; tetapi kalau TERBACA dan
   // isinya bertentangan, bukti ditolak.
   // Halaman QRIS website ini sendiri juga memuat nominalnya: itu bukan bukti pembayaran.
-  const ownPage = /(scan qris|bayar tepat|upload bukti|nomor belum terdaftar|treasury price monitor|simpan gambar qris)/.test(lower)
+  const ownPage = /(scan qris|bayar tepat|upload bukti|nomor belum terdaftar|treasury price monitor|pemulaold price monitor|simpan gambar qris)/.test(lower)
   // Layar aplikasi SEBELUM membayar (konfirmasi / minta PIN) juga memuat nominal dan nama penerima
   const beforePay = !successOk && /(konfirmasi pembayaran|masukkan pin|bayar sekarang|lanjutkan pembayaran|geser untuk bayar|slide to pay|confirm payment|enter pin)/.test(lower)
   let verdict = 'reject', reason = ''
