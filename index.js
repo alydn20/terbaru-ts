@@ -8630,7 +8630,7 @@ app.get('/login', async (req, res) => {
     function contactAdminRejected() {
       var nomor = (document.getElementById('phoneInput') || {}).value || '';
       var pesan = 'Hallo saya' + (nomor ? ' (' + nomor + ')' : '') + ' bukti pembayaran saya ditolak, mohon dicek';
-      window.open('https://wa.me/6285156260393?text=' + encodeURIComponent(pesan), '_blank');
+      window.open('https://wa.me/62895701692525?text=' + encodeURIComponent(pesan), '_blank');
     }
     function _hideReject() {
       _payRejectShown = false;
@@ -16592,6 +16592,13 @@ app.get('/monitoring', async (req, res) => {
         <button class="nav-icon-btn" id="navCalcBtn" onclick="openGoldCalc()" title="Harga Beli dan Jual">
           <i data-lucide="scale" style="width:16px;height:16px;color:#fbbf24;"></i>
         </button>
+        <button class="nav-icon-btn" id="navContactBtn" onclick="contactAdmin()" title="Hubungi Admin lewat WhatsApp">
+          <!-- Logo WhatsApp bergaya garis (sama seperti ikon lain): gelembung chat + gagang telepon -->
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 21l1.65-4.9A8.5 8.5 0 1 1 8 19.3L3 21z"/>
+            <path d="M9 9.6c0 2.9 2.5 5.4 5.4 5.4l1.1-1.6-1.8-1.1-.8.7c-.9-.4-1.6-1.1-2-2l.7-.8-1.1-1.8L9 9.6z" stroke-width="1.5"/>
+          </svg>
+        </button>
         <button class="nav-icon-btn" onclick="openNavMenu(event)" title="Menu" id="navMenuBtn">
           <i data-lucide="align-justify" style="width:15px;height:15px;"></i>
         </button>
@@ -16627,10 +16634,6 @@ app.get('/monitoring', async (req, res) => {
       <button class="nav-menu-item" id="joinGroupBtn" style="display:none;" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
         <i data-lucide="users" style="width:14px;height:14px;"></i>
         Gabung Grup WA
-      </button>
-      <button class="nav-menu-item" id="contactAdminBtn" onclick="contactAdmin();closeNavMenu()" title="Hubungi Admin lewat WhatsApp">
-        <i data-lucide="message-circle" style="width:14px;height:14px;"></i>
-        Hubungi Admin
       </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
@@ -19417,7 +19420,7 @@ app.get('/monitoring', async (req, res) => {
     function contactAdmin() {
       var nomor = _myPhone && /^[0-9]+$/.test(_myPhone) ? ' (+' + _myPhone + ')' : '';
       var pesan = 'Hallo saya' + nomor + ' butuh bantuan';
-      window.open('https://wa.me/6285156260393?text=' + encodeURIComponent(pesan), '_blank');
+      window.open('https://wa.me/62895701692525?text=' + encodeURIComponent(pesan), '_blank');
     }
 
     // Logout function
