@@ -16593,7 +16593,11 @@ app.get('/monitoring', async (req, res) => {
           <i data-lucide="scale" style="width:16px;height:16px;color:#fbbf24;"></i>
         </button>
         <button class="nav-icon-btn" id="navContactBtn" onclick="contactAdmin()" title="Hubungi Admin lewat WhatsApp">
-          <i data-lucide="message-circle" style="width:16px;height:16px;color:#4ade80;"></i>
+          <!-- Logo WhatsApp bergaya garis (sama seperti ikon lain): gelembung chat + gagang telepon -->
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 21l1.65-4.9A8.5 8.5 0 1 1 8 19.3L3 21z"/>
+            <path d="M9 9.6c0 2.9 2.5 5.4 5.4 5.4l1.1-1.6-1.8-1.1-.8.7c-.9-.4-1.6-1.1-2-2l.7-.8-1.1-1.8L9 9.6z" stroke-width="1.5"/>
+          </svg>
         </button>
         <button class="nav-icon-btn" onclick="openNavMenu(event)" title="Menu" id="navMenuBtn">
           <i data-lucide="align-justify" style="width:15px;height:15px;"></i>
