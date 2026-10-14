@@ -2114,7 +2114,7 @@ ${marketSection}${promoInfoSection}
 
 ${nominalLines}
 ${calendarSection}${highLowLine}
-🌐 Via website: https://monitoring.pemulaold.com`
+🌐 Via website: https://xau.pemulaold.com`
 }
 async function fetchTreasury() {
   const res = await fetch(TREASURY_URL, {
@@ -2414,7 +2414,7 @@ async function doPromoBroadcast() {
         lastPromoWaMinute = currentMinute
         if (currentStatus === 'OFF') offWaCount++
         const waMsg = isOffToOn
-          ? `✅ ON\n\n🌐 Via website: https://monitoring.pemulaold.com`
+          ? `✅ ON\n\n🌐 Via website: https://xau.pemulaold.com`
           : currentStatus === 'ON' ? '✅ ON' : '❌ OFF'
         const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
 
@@ -2738,7 +2738,7 @@ function formatPromoWaMessage(promos) {
     if (p.end_to && p.end_to !== '-') tnc.push(`s/d ${p.end_to}`)
     if (tnc.length) msg += `   ${tnc.join(' • ')}\n`
   })
-  msg += `\n🌐 Via website: https://monitoring.pemulaold.com`
+  msg += `\n🌐 Via website: https://xau.pemulaold.com`
   return msg
 }
 
@@ -2834,7 +2834,7 @@ async function sendPushToAll(title, body, type = 'price') {
       icon: '/icon.png',
       badge: '/icon.png',
       type,
-      url: '/xauusd'
+      url: '/monitoring'
     })
 
     let sent = 0, failed = 0
@@ -3832,7 +3832,7 @@ app.get('/admin-login', (req, res) => {
 
         if (data.success) {
           localStorage.setItem('super_admin_token', data.token);
-          // Save monitoring session so admin can access /xauusd
+          // Save monitoring session so admin can access /monitoring
           if (data.monitoringSession) {
             localStorage.setItem('goldmonitor_session', data.monitoringSession);
             try { localStorage.setItem('gold_sess_ok_at', String(Date.now())); } catch(e) {}
@@ -4898,12 +4898,12 @@ app.get('/favicon.ico', (_req, res) => {
 
 // PWA Manifest
 app.get('/manifest.json', (req, res) => {
-  const host = req.get('host') || 'monitoring.pemulaold.com'
+  const host = req.get('host') || 'xau.pemulaold.com'
   res.json({
     name: 'Treasury Price',
     short_name: 'Treasury Price',
     description: 'Real-time Treasury Gold Price Monitor',
-    start_url: '/xauusd',
+    start_url: '/monitoring',
     display: 'standalone',
     background_color: '#0f1419',
     theme_color: '#f7931a',
@@ -4971,7 +4971,7 @@ app.get('/sw.js', (_req, res) => {
       if (url.includes('/sse')) return;
       // Jangan cache HTML dan API calls - selalu fetch fresh
       const noCache = e.request.mode === 'navigate'
-        || url.includes('/xauusd') || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
+        || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
         || url.includes('/price-history') || url.includes('/api/')
         || url.includes('/stats') || url.includes('/health');
       if (noCache) {
@@ -5015,7 +5015,7 @@ app.get('/sw.js', (_req, res) => {
         vibrate: [200, 100, 200],
         tag: data.type || 'notification',
         renotify: true,
-        data: { url: data.url || '/xauusd' }
+        data: { url: data.url || '/monitoring' }
       };
 
       e.waitUntil(
@@ -5027,13 +5027,13 @@ app.get('/sw.js', (_req, res) => {
     self.addEventListener('notificationclick', (e) => {
       e.notification.close();
 
-      const urlToOpen = e.notification.data?.url || '/xauusd';
+      const urlToOpen = e.notification.data?.url || '/monitoring';
 
       e.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
           // Check if there is already a window open
           for (let client of windowClients) {
-            if (client.url.includes('/xauusd') && 'focus' in client) {
+            if (client.url.includes('/monitoring') && 'focus' in client) {
               return client.focus();
             }
           }
@@ -5076,7 +5076,7 @@ app.get('/admin/api-docs', (req, res) => {
     return res.redirect('/admin-login?redirect=' + encodeURIComponent('/admin/api-docs'))
   }
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-  const baseUrl = 'https://' + (req.headers.host || 'monitoring.pemulaold.com')
+  const baseUrl = 'https://' + (req.headers.host || 'xau.pemulaold.com')
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -6597,7 +6597,7 @@ app.post('/api/admin/push', express.json(), async (req, res) => {
     icon: '/icon.png',
     badge: '/icon.png',
     type,
-    url: '/xauusd'
+    url: '/monitoring'
   })
 
   let sent = 0
@@ -6888,7 +6888,7 @@ app.post('/api/admin/promo-limit', express.json(), async (req, res) => {
 
     // Kirim pesan WA limit terbaru ke grup + subscriber (dgn nama website di bawah), seperti pesan ON
     if (numLimit !== oldLimit && sock && isReady && (broadcastGroupId || subscriptions.size > 0)) {
-      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://monitoring.pemulaold.com`
+      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://xau.pemulaold.com`
       const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
       for (const chatId of chatIds) {
         if (chatId.endsWith('@g.us')) {
@@ -7557,7 +7557,7 @@ app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
         try {
           const adminJid = adminPhone + '@s.whatsapp.net'
           await sock.sendMessage(adminJid, {
-            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://monitoring.pemulaold.com/admin/users`
+            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://xau.pemulaold.com/admin/users`
           })
           pushLog(`REGISTER | Notification sent to admin ${adminPhone} for ${normalizedPhone}`)
         } catch (e) {
@@ -7670,7 +7670,7 @@ app.post('/api/approve-registration', async (req, res) => {
       try {
         const userJid = phone + '@s.whatsapp.net'
         await sock.sendMessage(userJid, {
-          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://monitoring.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
+          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://xau.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
         })
       } catch (e) {}
     }
@@ -7771,7 +7771,7 @@ app.get('/login', async (req, res) => {
       const _phone = await redis.hget(REDIS_KEYS.SESSIONS, _sess)
       if (_phone) {
         const _chk = await isUserValid(_phone)
-        if (_chk.valid) return res.redirect('/xauusd')
+        if (_chk.valid) return res.redirect('/monitoring')
       }
     }
   } catch (e) {}
@@ -8322,7 +8322,7 @@ app.get('/login', async (req, res) => {
                   setupPinInputs(document.querySelectorAll('.confirm-pin'), () => saveNewPin());
                 } else {
                   // Sesi valid → langsung ke monitoring; overlay tetap tampil sampai pindah halaman
-                  window.location.replace('/xauusd');
+                  window.location.replace('/monitoring');
                 }
               })
               .catch(() => { clearTimeout(_authLoadingFallback); hideAuthLoading(); });
@@ -8844,7 +8844,7 @@ app.get('/login', async (req, res) => {
           } else {
             showMessage('Login berhasil! Mengalihkan...', 'success');
             setTimeout(() => {
-              window.location.replace('/xauusd');
+              window.location.replace('/monitoring');
             }, 500);
           }
         } else {
@@ -8902,7 +8902,7 @@ app.get('/login', async (req, res) => {
         if (data.success) {
           showMessage('PIN berhasil diubah! Mengalihkan...', 'success', 'changePinMessage');
           setTimeout(() => {
-            window.location.replace('/xauusd');
+            window.location.replace('/monitoring');
           }, 1000);
         } else {
           showMessage(data.error || 'Gagal mengubah PIN', 'error', 'changePinMessage');
@@ -9053,7 +9053,7 @@ app.get('/auth/:token', async (req, res) => {
 '    localStorage.setItem("goldmonitor_session", "' + sessionId + '");' +
 '    try { localStorage.setItem("gold_sess_ok_at", String(Date.now())); } catch(e) {}' +
 '    setTimeout(function() {' +
-'      window.location.replace("/xauusd");' +
+'      window.location.replace("/monitoring");' +
 '    }, 1500);' +
 '  </script>' +
 '</body>' +
@@ -9672,7 +9672,7 @@ ${authScript}
         </h1>
         <div class="header-actions">
           <a href="/admin/monitoring">Notifikasi</a>
-          <a href="/xauusd" class="action-monitoring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Ke Monitoring</a>
+          <a href="/monitoring" class="action-monitoring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:5px;"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Ke Monitoring</a>
           <a href="/admin/logout" style="color:#f87171;border-color:rgba(248,113,113,0.3);" onclick="return confirm('Yakin ingin logout?')">Logout</a>
         </div>
       </div>
@@ -13182,13 +13182,7 @@ ${authScript}
 })
 
 // MONITORING PAGE - Professional Gold Price Dashboard
-// Alamat lama: dialihkan ke /xauusd (bookmark, aplikasi yang sudah di-install, dan link lama tetap jalan)
-app.get('/monitoring', (req, res) => {
-  const q = req.originalUrl.indexOf('?')
-  res.redirect(301, '/xauusd' + (q >= 0 ? req.originalUrl.substring(q) : ''))
-})
-
-app.get('/xauusd', async (req, res) => {
+app.get('/monitoring', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.setHeader('Pragma', 'no-cache')
   res.setHeader('Pragma', 'no-cache')
@@ -22362,7 +22356,7 @@ async function setGroupMember(phone, inGroup) {
 }
 
 // ---------- Pilihan user soal grup WA ----------
-// Tiap user yang belum di grup ditanya saat membuka /xauusd: mau bergabung atau tidak.
+// Tiap user yang belum di grup ditanya saat membuka /monitoring: mau bergabung atau tidak.
 //   choice 'yes' -> ingin masuk (admin diberi tahu); 'no' -> tidak mau, ditanya lagi pada
 //   askAgainAt (0 = jangan pernah ditanya lagi). adminMark = catatan admin "tidak dimasukkan"
 //   beserta alasannya. Disimpan per nomor di Redis.
