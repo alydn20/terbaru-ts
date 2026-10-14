@@ -8696,8 +8696,9 @@ app.get('/login', async (req, res) => {
         var box = document.createElement('div');
         box.style.cssText = 'background:linear-gradient(180deg,rgba(25,32,42,0.98) 0%,rgba(18,24,32,0.98) 100%);border-radius:16px;padding:24px;width:90%;max-width:340px;text-align:center;border:1px solid rgba(255,255,255,0.1);box-shadow:0 25px 60px rgba(0,0,0,0.5);';
         var icon = document.createElement('div');
-        icon.style.cssText = 'width:56px;height:56px;border-radius:50%;background:rgba(251,191,36,0.15);color:#fbbf24;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:28px;font-weight:700;';
-        icon.textContent = '?';
+        icon.style.cssText = 'width:56px;height:56px;border-radius:50%;background:rgba(34,197,94,0.15);color:#22c55e;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;';
+        // Ikon unggah (panah ke atas dari baki), bergaya garis seperti ikon lain di website
+        icon.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
         var t = document.createElement('div');
         t.style.cssText = 'color:#fff;font-size:1.1em;font-weight:600;margin-bottom:8px;';
         t.textContent = title;
@@ -8713,7 +8714,7 @@ app.get('/login', async (req, res) => {
         no.textContent = 'Batal';
         var yes = document.createElement('button');
         yes.type = 'button';
-        yes.style.cssText = btnCss + 'background:linear-gradient(135deg,#f7931a 0%,#e8850f 100%);color:#fff;';
+        yes.style.cssText = btnCss + 'background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);color:#fff;';
         yes.textContent = okText || 'Ya';
         var done = function(v) { wrap.remove(); resolve(v); };
         no.onclick = function() { done(false); };
