@@ -1186,8 +1186,8 @@ setInterval(async () => {
 const adminSseClients = new Set()
 
 function pushLog(s) {
-  const now = new Date()
-  const time = now.toTimeString().substring(0, 8)
+  // Jam log selalu WIB (dihitung dari UTC), tidak bergantung pada zona waktu server
+  const time = new Date(Date.now() + 7 * 3600 * 1000).toISOString().substring(11, 19)
   const logMsg = `[${time}] ${s}`
   logs.push(logMsg)
   if (logs.length > 200) logs.shift()
@@ -12583,6 +12583,27 @@ ${authScript}
       .catch(e => { box.textContent = 'Gagal: ' + e.message; });
     }
 
+    // Ganti nomor HP satu user (semua datanya ikut pindah ke nomor baru)
+    async function changeUserPhone(phone) {
+      let baru = window.prompt('Nomor lama: +' + phone + '. Masukkan nomor BARU (format bebas: 0851..., +62851...):', '');
+      if (baru === null) return;
+      baru = baru.trim();
+      if (!baru) return;
+      const ok = await showConfirm('Ganti nomor +' + phone + ' menjadi ' + baru + '? Nama, masa aktif, PIN, status grup, dan catatan order ikut pindah. User harus login lagi dengan nomor baru.', { title: 'Ganti Nomor HP', type: 'warning' });
+      if (!ok) return;
+      adminFetch('/api/admin/users/change-phone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone, newPhone: baru })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) { showAlert('Nomor diganti: +' + d.oldPhone + ' menjadi +' + d.newPhone, 'success'); loadUsers(); loadPaymentOrders(); }
+        else showAlert('Gagal: ' + (d.error || ''), 'danger');
+      })
+      .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
+    }
+
     // Ubah status grup WA satu user secara manual
     function editGroupStatus(phone, current) {
       const old = document.getElementById('grpEditModal');
@@ -12714,6 +12735,7 @@ ${authScript}
                   '<button class="action-btn edit" data-phone="' + u.phone + '" data-name="' + (u.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" onclick="editUserBtn(this)">Edit</button>' +
                   '<button class="action-btn push" onclick="openPushModal(&apos;' + u.phone + '&apos;)">Push</button>' +
                   '<button class="action-btn pin" onclick="resetPin(&apos;' + u.phone + '&apos;)">Reset PIN</button>' +
+                  '<button class="action-btn" style="background:#7c3aed;" title="Ganti nomor HP user ini" onclick="changeUserPhone(&apos;' + u.phone + '&apos;)">Ganti No</button>' +
                   '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
                   blockBtn +
                   '<button class="action-btn delete" onclick="deleteUser(&apos;' + u.phone + '&apos;)">Hapus</button>' +
@@ -21516,7 +21538,7 @@ async function tgUserCard(phone, note) {
   kb.push(grupStatus === 'masuk'
     ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
     : [{ text: 'Tandai masuk grup', callback_data: 'g:in:' + phone }, { text: 'Tidak dimasukkan', callback_data: 'g:out:' + phone }])
-  kb.push([{ text: 'Hapus user', callback_data: 'u:dq:' + phone }])
+  kb.push([{ text: 'Ganti nomor HP', callback_data: 'u:cn:' + phone }, { text: 'Hapus user', callback_data: 'u:dq:' + phone }])
   kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
   return { text, kb }
 }
@@ -21703,11 +21725,10 @@ function tgPrettyLog(body) {
   return (isErr ? '[Error] ' : '') + clean(body)
 }
 
-// Jam di log memakai zona waktu server; tampilkan sebagai WIB
+// Jam di log sudah WIB
 function tgLogTimeWib(hhmmss) {
-  const h = parseInt(hhmmss.substring(0, 2), 10), mi = parseInt(hhmmss.substring(3, 5), 10)
-  const total = ((h * 60 + mi + new Date().getTimezoneOffset() + 420) % 1440 + 1440) % 1440
-  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0')
+  // pushLog sudah menulis jam dalam WIB
+  return hhmmss.substring(0, 5)
 }
 
 function tgLogsPage(cat) {
@@ -21971,6 +21992,19 @@ async function handleTelegramCallback(tg, cq) {
     return toast(note)
   }
 
+  // --- ganti nomor HP ---
+  if ((m = /^u:cn:(62[0-9]{8,13})$/.exec(data))) {
+    tgSetAwait('chg', m[1])
+    await show({ text: '<b>Ganti nomor HP</b>\n\nNomor lama: <code>+' + m[1] + '</code>\n\nKirim nomor BARU sekarang (format bebas: 0851..., +62851...).\nNama, masa aktif, PIN, status grup, dan catatan order ikut pindah. Ia harus login lagi dengan nomor baru.', kb: [[{ text: '« Batal', callback_data: 'u:v:' + m[1] }]] })
+    return toast('')
+  }
+  if ((m = /^u:cy:(62[0-9]{8,13}):(62[0-9]{8,13})$/.exec(data))) {
+    const r = await changeUserPhone(m[1], m[2], 'Telegram')
+    if (!r.ok) { await show(await tgUserCard(m[1], 'Gagal: ' + r.error)); return toast(r.error, true) }
+    await show(await tgUserCard(r.newPhone, 'Nomor diganti dari +' + r.oldPhone + ' ke +' + r.newPhone + '.'))
+    return toast('Nomor berhasil diganti.')
+  }
+
   // --- status grup satu user (dari kartu user atau dari laporan "ingin gabung") ---
   if ((m = /^g:in:(62[0-9]{8,13})$/.exec(data))) {
     const note = await tgMarkGroup(m[1], true)
@@ -22089,6 +22123,17 @@ async function handleTelegramMessage(tg, msg) {
     const out = []
     for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
+  }
+
+  if (awaiting === 'chg' && !text.startsWith('/')) {
+    const oldPhone = _tgAwait.orderId
+    const newPhone = tgParsePhones(text, 1)[0]
+    if (!newPhone) return say('Nomornya tidak terbaca. Kirim nomor baru, contoh: 085156260393')
+    tgSetAwait('')
+    return send({
+      text: '<b>Ganti nomor HP?</b>\n\nDari: <code>+' + oldPhone + '</code>\nMenjadi: <code>+' + newPhone + '</code>\n\nTidak bisa dibatalkan otomatis (bisa diganti balik dengan cara yang sama).',
+      kb: [[{ text: 'Ya, ganti', callback_data: 'u:cy:' + oldPhone + ':' + newPhone }, { text: 'Batal', callback_data: 'u:v:' + oldPhone }]]
+    })
   }
 
   if (awaiting === 'gnote' && !text.startsWith('/')) {
@@ -22525,6 +22570,73 @@ app.post('/api/admin/group-members/sync', express.json({ limit: '1mb' }), async 
     const cmp = await compareGroupWithUsers(phones)
     pushLog(`Admin | Grup: daftar anggota disinkron - ${cmp.groupTotal} anggota, ${cmp.groupOnly.length} tidak terdaftar di web, ${cmp.webOnly.length} user web belum di grup, ${marked} order ditandai masuk`)
     res.json({ success: true, marked, syncedAt: Date.now(), ...cmp })
+  } catch (e) {
+    res.json({ success: false, error: e.message })
+  }
+})
+
+// Pindahkan satu akun dari nomor lama ke nomor baru. Semua yang menempel pada nomor ikut pindah:
+// data user (nama, masa aktif), PIN, notifikasi push, status blokir, pilihan grup, keanggotaan
+// daftar grup, dan catatan order pembayaran. Sesi login lama diputus (harus login lagi dengan
+// nomor baru). Mengembalikan { ok, error }.
+async function changeUserPhone(oldRaw, newRaw, via) {
+  const oldPhone = normalizePhone(String(oldRaw || ''))
+  const newPhone = normalizePhone(String(newRaw || ''))
+  if (!/^62[0-9]{8,13}$/.test(newPhone)) return { ok: false, error: 'Nomor baru tidak valid' }
+  if (oldPhone === newPhone) return { ok: false, error: 'Nomor baru sama dengan nomor lama' }
+  if (oldPhone === ADMIN_PHONE || ADMIN_PHONES.includes(oldPhone)) return { ok: false, error: 'Nomor admin tidak bisa diganti dari sini' }
+  const userRaw = await redis.hget(REDIS_KEYS.USERS, oldPhone)
+  if (!userRaw) return { ok: false, error: 'User +' + oldPhone + ' tidak ditemukan' }
+  if (await redis.hget(REDIS_KEYS.USERS, newPhone)) return { ok: false, error: 'Nomor +' + newPhone + ' sudah terdaftar sebagai user lain' }
+  const asStr = v => (typeof v === 'string' ? v : JSON.stringify(v))
+
+  // data user: nama bawaan "Member <nomor lama>" ikut disesuaikan
+  const user = typeof userRaw === 'string' ? JSON.parse(userRaw) : userRaw
+  if (/^Member [0-9]+$/.test(String(user.name || ''))) user.name = 'Member ' + newPhone.substring(2)
+  user.phoneChangedFrom = oldPhone
+  user.phoneChangedAt = Date.now()
+  await redis.hset(REDIS_KEYS.USERS, { [newPhone]: JSON.stringify(user) })
+  await redis.hdel(REDIS_KEYS.USERS, oldPhone)
+
+  // PIN, push, blokir, pilihan grup: pindahkan apa adanya
+  for (const key of [REDIS_KEYS.USER_PINS, REDIS_KEYS.PUSH_SUBS, REDIS_KEYS.BLOCKED_USERS, GROUP_PREF_KEY]) {
+    try {
+      const v = await redis.hget(key, oldPhone)
+      if (v) { await redis.hset(key, { [newPhone]: asStr(v) }); await redis.hdel(key, oldPhone) }
+    } catch (e) {}
+  }
+  // sesi login lama diputus
+  try {
+    const sessions = await redis.hgetall(REDIS_KEYS.SESSIONS)
+    for (const [sid, ph] of Object.entries(sessions || {})) if (ph === oldPhone) await redis.hdel(REDIS_KEYS.SESSIONS, sid)
+  } catch (e) {}
+  // daftar anggota grup
+  try {
+    const g = await getGroupMembers()
+    if (g.phones.has(oldPhone)) { g.phones.delete(oldPhone); g.phones.add(newPhone); await saveGroupMembers(g.phones, g.at) }
+  } catch (e) {}
+  // catatan order pembayaran
+  let orders = 0
+  try {
+    for (const o of await loadPaymentOrders()) {
+      if (o.phone !== oldPhone) continue
+      const order = await readPaymentOrder(o.id)
+      if (!order) continue
+      order.phone = newPhone
+      order.phoneChangedFrom = oldPhone
+      await savePaymentOrder(order)
+      orders++
+    }
+  } catch (e) {}
+  pushLog(`Admin | Ganti nomor: +${oldPhone} -> +${newPhone} (${via || 'admin'})${orders ? ', ' + orders + ' order ikut dipindah' : ''}`)
+  return { ok: true, oldPhone, newPhone, orders }
+}
+
+app.post('/api/admin/users/change-phone', express.json(), async (req, res) => {
+  if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  try {
+    const r = await changeUserPhone(req.body.phone, req.body.newPhone, 'panel admin')
+    res.json(r.ok ? { success: true, ...r } : { success: false, error: r.error })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
