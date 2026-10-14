@@ -2114,7 +2114,7 @@ ${marketSection}${promoInfoSection}
 
 ${nominalLines}
 ${calendarSection}${highLowLine}
-🌐 Via website: https://monitoring.pemulaold.com`
+🌐 Via website: https://xau.pemulaold.com`
 }
 async function fetchTreasury() {
   const res = await fetch(TREASURY_URL, {
@@ -2414,7 +2414,7 @@ async function doPromoBroadcast() {
         lastPromoWaMinute = currentMinute
         if (currentStatus === 'OFF') offWaCount++
         const waMsg = isOffToOn
-          ? `✅ ON\n\n🌐 Via website: https://monitoring.pemulaold.com`
+          ? `✅ ON\n\n🌐 Via website: https://xau.pemulaold.com`
           : currentStatus === 'ON' ? '✅ ON' : '❌ OFF'
         const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
 
@@ -2738,7 +2738,7 @@ function formatPromoWaMessage(promos) {
     if (p.end_to && p.end_to !== '-') tnc.push(`s/d ${p.end_to}`)
     if (tnc.length) msg += `   ${tnc.join(' • ')}\n`
   })
-  msg += `\n🌐 Via website: https://monitoring.pemulaold.com`
+  msg += `\n🌐 Via website: https://xau.pemulaold.com`
   return msg
 }
 
@@ -4898,7 +4898,7 @@ app.get('/favicon.ico', (_req, res) => {
 
 // PWA Manifest
 app.get('/manifest.json', (req, res) => {
-  const host = req.get('host') || 'monitoring.pemulaold.com'
+  const host = req.get('host') || 'xau.pemulaold.com'
   res.json({
     name: 'Treasury Price',
     short_name: 'Treasury Price',
@@ -5076,7 +5076,7 @@ app.get('/admin/api-docs', (req, res) => {
     return res.redirect('/admin-login?redirect=' + encodeURIComponent('/admin/api-docs'))
   }
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
-  const baseUrl = 'https://' + (req.headers.host || 'monitoring.pemulaold.com')
+  const baseUrl = 'https://' + (req.headers.host || 'xau.pemulaold.com')
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -6888,7 +6888,7 @@ app.post('/api/admin/promo-limit', express.json(), async (req, res) => {
 
     // Kirim pesan WA limit terbaru ke grup + subscriber (dgn nama website di bawah), seperti pesan ON
     if (numLimit !== oldLimit && sock && isReady && (broadcastGroupId || subscriptions.size > 0)) {
-      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://monitoring.pemulaold.com`
+      const waMsg = `🏷️ *Limit Beli Promo Diperbarui*\n\nLimit sekarang: *${numLimit} beli/bln*\n\n🌐 Via website: https://xau.pemulaold.com`
       const chatIds = [broadcastGroupId, ...Array.from(subscriptions)].filter(Boolean)
       for (const chatId of chatIds) {
         if (chatId.endsWith('@g.us')) {
@@ -7557,7 +7557,7 @@ app.post('/api/register', rateLimit(5, 60000), async (req, res) => {
         try {
           const adminJid = adminPhone + '@s.whatsapp.net'
           await sock.sendMessage(adminJid, {
-            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://monitoring.pemulaold.com/admin/users`
+            text: `🔔 *PENDAFTARAN BARU*\n\nNama: *${name}*\nNo HP: ${normalizedPhone}\n\nSilakan ACC di menu admin:\nhttps://xau.pemulaold.com/admin/users`
           })
           pushLog(`REGISTER | Notification sent to admin ${adminPhone} for ${normalizedPhone}`)
         } catch (e) {
@@ -7670,7 +7670,7 @@ app.post('/api/approve-registration', async (req, res) => {
       try {
         const userJid = phone + '@s.whatsapp.net'
         await sock.sendMessage(userJid, {
-          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://monitoring.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
+          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://xau.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
         })
       } catch (e) {}
     }
@@ -21538,6 +21538,7 @@ async function tgUserCard(phone, note) {
   kb.push(grupStatus === 'masuk'
     ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
     : [{ text: 'Tandai masuk grup', callback_data: 'g:in:' + phone }, { text: 'Tidak dimasukkan', callback_data: 'g:out:' + phone }])
+  kb.push([{ text: 'Ubah status grup', callback_data: 'g:ed:' + phone }])
   kb.push([{ text: 'Ganti nomor HP', callback_data: 'u:cn:' + phone }, { text: 'Hapus user', callback_data: 'u:dq:' + phone }])
   kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
   return { text, kb }
@@ -22006,6 +22007,28 @@ async function handleTelegramCallback(tg, cq) {
   }
 
   // --- status grup satu user (dari kartu user atau dari laporan "ingin gabung") ---
+  if ((m = /^g:ed:(62[0-9]{8,13})$/.exec(data))) {
+    const cur = groupStatusOf(m[1], await getGroupMembers(), (await getGroupPref(m[1])) || {})
+    const opt = (code, st, label) => [{ text: (st === cur ? '> ' : '') + label, callback_data: 'g:st:' + m[1] + ':' + code }]
+    await show({
+      text: '<b>Ubah status grup WA</b>\n\n<code>+' + m[1] + '</code>\nSekarang: <b>' + GROUP_STATUS_LABEL[cur] + '</b>\n\nPilih status baru:',
+      kb: [
+        opt('m', 'masuk', 'Di grup'),
+        opt('w', 'mau', 'Mau masuk grup, belum masuk'),
+        opt('n', 'tidak_mau', 'Tidak mau masuk grup (jangan ditanya lagi)'),
+        opt('b', 'belum', 'Belum menjawab (tanya lagi saat ia masuk)'),
+        [{ text: '« Batal', callback_data: 'u:v:' + m[1] }]
+      ]
+    })
+    return toast('')
+  }
+  if ((m = /^g:st:(62[0-9]{8,13}):([mwnb])$/.exec(data))) {
+    const status = { m: 'masuk', w: 'mau', n: 'tidak_mau', b: 'belum' }[m[2]]
+    const r = await setUserGroupStatus(m[1], status, '', 'Telegram')
+    const note = r.ok ? 'Status grup diubah: ' + GROUP_STATUS_LABEL[status] + (status === 'belum' ? '. Ia akan ditanya lagi saat membuka website.' : '.') : 'Gagal: ' + r.error
+    await show(await tgUserCard(m[1], note))
+    return toast(note)
+  }
   if ((m = /^g:in:(62[0-9]{8,13})$/.exec(data))) {
     const note = await tgMarkGroup(m[1], true)
     await show(await tgUserCard(m[1], note))
@@ -22647,29 +22670,33 @@ app.post('/api/admin/users/change-phone', express.json(), async (req, res) => {
 //   mau       -> dicatat ingin masuk, belum masuk
 //   tidak_mau -> dicatat tidak mau masuk (tidak ditanya lagi)
 //   belum     -> dikosongkan; user akan ditanya lagi saat membuka monitoring
+async function setUserGroupStatus(phoneRaw, status, noteRaw, via) {
+  const phone = normalizePhone(String(phoneRaw || ''))
+  if (!['masuk', 'mau', 'tidak_mau', 'belum'].includes(status)) return { ok: false, error: 'Status tidak dikenal' }
+  if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return { ok: false, error: 'User tidak ditemukan' }
+  const note = String(noteRaw || '').replace(/\s+/g, ' ').trim().substring(0, 120)
+  const pref = (await getGroupPref(phone)) || {}
+  const now = Date.now()
+  await setGroupMember(phone, status === 'masuk')
+  if (status === 'masuk') {
+    delete pref.adminMark
+    await markOrderInGroupByPhone(phone, 'ditandai admin').catch(() => {})
+  } else {
+    if (status === 'mau') { pref.choice = 'yes'; pref.at = pref.at || now; pref.askAgainAt = 0 }
+    if (status === 'tidak_mau') { pref.choice = 'no'; pref.at = now; pref.askAgainAt = 0; pref.days = 0 }
+    if (status === 'belum') { delete pref.choice; delete pref.askAgainAt; delete pref.days }
+    if (note) pref.adminMark = { inGroup: false, reason: note, at: now }; else delete pref.adminMark
+  }
+  await saveGroupPref(phone, pref)
+  pushLog(`Admin | Grup: status +${phone} diubah menjadi "${GROUP_STATUS_LABEL[status]}"${note ? ' - ' + note : ''} (${via || 'admin'})`)
+  return { ok: true, phone }
+}
+
 app.post('/api/admin/users/group', express.json(), async (req, res) => {
   if (req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
   try {
-    const phone = normalizePhone(String(req.body.phone || ''))
-    const status = String(req.body.status || '')
-    if (!['masuk', 'mau', 'tidak_mau', 'belum'].includes(status)) return res.json({ success: false, error: 'Status tidak dikenal' })
-    if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return res.json({ success: false, error: 'User tidak ditemukan' })
-    const note = String(req.body.note || '').replace(/\s+/g, ' ').trim().substring(0, 120)
-    const pref = (await getGroupPref(phone)) || {}
-    const now = Date.now()
-    await setGroupMember(phone, status === 'masuk')
-    if (status === 'masuk') {
-      delete pref.adminMark
-      await markOrderInGroupByPhone(phone, 'ditandai admin').catch(() => {})
-    } else {
-      if (status === 'mau') { pref.choice = 'yes'; pref.at = pref.at || now; pref.askAgainAt = 0 }
-      if (status === 'tidak_mau') { pref.choice = 'no'; pref.at = now; pref.askAgainAt = 0; pref.days = 0 }
-      if (status === 'belum') { delete pref.choice; delete pref.askAgainAt; delete pref.days }
-      if (note) pref.adminMark = { inGroup: false, reason: note, at: now }; else delete pref.adminMark
-    }
-    await saveGroupPref(phone, pref)
-    pushLog(`Admin | Grup: status +${phone} diubah menjadi "${GROUP_STATUS_LABEL[status]}"${note ? ' - ' + note : ''} (panel admin)`)
-    res.json({ success: true })
+    const r = await setUserGroupStatus(req.body.phone, String(req.body.status || ''), req.body.note, 'panel admin')
+    res.json(r.ok ? { success: true } : { success: false, error: r.error })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
