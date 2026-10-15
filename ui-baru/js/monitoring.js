@@ -275,26 +275,35 @@ setInterval(() => { if (Date.now() - lastData > 60000) { lastData = Date.now(); 
 
 // ===================================================================== NAVIGASI BAWAH
 const NAV = {
-  harga: ['home', () => scrollTo('#sec-harga')],
-  grafik: ['chart', () => scrollTo('#sec-grafik')],
+  harga: ['home', () => showView('harga', '#sec-harga')],
+  grafik: ['chart', () => showView('grafik', '#sec-grafik')],
   promo: ['tag', openPromos],
   news: ['bell', openNews],
   lainnya: ['grid', openMore]
 }
-function scrollTo(sel) {
-  const el = $(sel)
-  window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' })
+const wide = () => matchMedia('(min-width: 1024px)').matches
+/** HP: ganti halaman (Harga / Grafik). Layar lebar: keduanya tampil, cukup gulir ke bagiannya. */
+function showView(view, sel) {
+  setActive(view)
+  if (wide()) {
+    const el = $(sel)
+    window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' })
+    return
+  }
+  document.body.dataset.view = view
+  window.scrollTo({ top: 0 })
 }
+const setActive = key => $$('#bottomNav [data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
 function initNav() {
   $$('#bottomNav [data-nav]').forEach(b => {
     const [ic, fn] = NAV[b.dataset.nav]
     b.insertAdjacentHTML('afterbegin', icon(ic, 'h-[22px] w-[22px]'))
     b.addEventListener('click', fn)
   })
-  // tab aktif mengikuti bagian yang sedang terlihat
-  const setActive = key => $$('#bottomNav [data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
   setActive('harga')
+  // layar lebar: tab aktif mengikuti bagian yang sedang terlihat
   window.addEventListener('scroll', () => {
+    if (!wide()) return
     const g = $('#sec-grafik').getBoundingClientRect().top
     setActive(g < innerHeight * 0.45 ? 'grafik' : 'harga')
   }, { passive: true })

@@ -15,7 +15,7 @@
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
-<body class="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
+<body class="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]" data-view="harga">
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
@@ -38,7 +38,7 @@
 
     <div class="grid gap-4 lg:grid-cols-[420px_1fr] lg:items-start">
       <!-- ============================== KOLOM KIRI ============================== -->
-      <div class="flex flex-col gap-4 lg:sticky lg:top-[72px]">
+      <div class="flex flex-col gap-4 lg:sticky lg:top-[72px]" data-view="harga">
 
         <!-- HARGA UTAMA -->
         <section id="sec-harga" class="card p-4" aria-label="Harga emas">
@@ -102,16 +102,16 @@
       <!-- ============================== KOLOM KANAN ============================== -->
       <div class="flex min-w-0 flex-col gap-4">
         <!-- GRAFIK -->
-        <section id="sec-grafik" class="card overflow-hidden" aria-label="Grafik XAU/USD">
+        <section id="sec-grafik" class="card overflow-hidden" aria-label="Grafik XAU/USD" data-view="grafik">
           <div class="flex items-center justify-between px-4 py-3">
             <h2 class="label">Grafik XAU/USD</h2>
             <button id="btnIndicator" class="text-xs font-semibold text-gold">Indikator</button>
           </div>
-          <div id="tvChart" class="h-[min(62vh,520px)] border-t border-line/[0.07] bg-card2"></div>
+          <div id="tvChart" class="h-[calc(100dvh-210px-env(safe-area-inset-top)-env(safe-area-inset-bottom))] min-h-[360px] border-t border-line/[0.07] bg-card2 lg:h-[min(62vh,520px)]"></div>
         </section>
 
         <!-- RIWAYAT -->
-        <section id="sec-riwayat" class="card overflow-hidden" aria-label="Riwayat perubahan harga">
+        <section id="sec-riwayat" class="card overflow-hidden" aria-label="Riwayat perubahan harga" data-view="harga">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3">
             <h2 class="label mr-auto">Riwayat perubahan</h2>
             <div class="seg" id="histMode">
@@ -133,7 +133,7 @@
         </section>
       </div>
     </div>
-    <p class="py-6 text-center text-[11px] text-muted">PemulaOLD · Harga emas realtime</p>
+    <p class="py-6 text-center text-[11px] text-muted" data-view="harga">PemulaOLD · Harga emas realtime</p>
   </main>
 
   <!-- ============================== NAVIGASI BAWAH ============================== -->
