@@ -3623,6 +3623,49 @@ setInterval(() => {
 const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', 1) // trust Koyeb/Cloudflare proxy so req.ip reflects real client IP
+
+// ==================== TAMPILAN BARU (newxau.pemulaold.com) ====================
+// Alamat newxau.* memakai server, API, dan data yang SAMA; hanya halaman /login dan /monitoring
+// yang diganti dengan versi Tailwind di folder ui-baru/ (lihat ui-baru/README.md).
+// Alamat lain (xau.*) tidak berubah. Untuk mencoba di alamat lain: buka /monitoring?ui=baru
+// (diingat lewat cookie; /monitoring?ui=lama untuk kembali).
+const UI2_DIR = join(__dirname, 'ui-baru')
+const UI2_PAGES = { '/login': 'login.html', '/monitoring': 'monitoring.html' }
+const UI2_VER = Date.now().toString(36) // berubah tiap server restart (= tiap update)
+const _ui2Cache = {}
+const isUi2Request = req => {
+  if (req.query.ui === 'lama') return false
+  return /^newxau\./i.test(String(req.headers.host || '')) || req.query.ui === 'baru' || parseCookies(req).ui === 'baru'
+}
+for (const sub of ['dist', 'js', 'sounds']) {
+  app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
+}
+app.get(['/login', '/monitoring'], async (req, res, next) => {
+  if (req.query.ui === 'baru') res.append('Set-Cookie', 'ui=baru; Path=/; Max-Age=2592000; SameSite=Lax')
+  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=; Path=/; Max-Age=0; SameSite=Lax')
+  if (!isUi2Request(req)) return next()
+  try {
+    const file = UI2_PAGES[req.path]
+    if (!_ui2Cache[file]) _ui2Cache[file] = readFileSync(join(UI2_DIR, 'pages', file), 'utf8')
+    let html = _ui2Cache[file]
+      .replace(/\{\{VER\}\}/g, UI2_VER)
+      .replace('{{TS_SITEKEY}}', String(process.env.TURNSTILE_SITE_KEY || '').replace(/[^A-Za-z0-9_-]/g, ''))
+    // Pulihkan sesi dari cookie ke localStorage (Safari iOS sering menghapus localStorage)
+    let boot = ''
+    try {
+      const sess = parseCookies(req).gold_sess
+      if (sess && req.path === '/monitoring') {
+        const ph = await redis.hget(REDIS_KEYS.SESSIONS, sess)
+        if (ph && (await isUserValid(ph)).valid) boot = '<script>try{if(!localStorage.getItem("goldmonitor_session"))localStorage.setItem("goldmonitor_session",' + JSON.stringify(sess) + ')}catch(e){}</script>'
+      }
+    } catch (e) {}
+    html = html.replace('<!--SESSION_BOOT-->', boot)
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.type('html').send(html)
+  } catch (e) {
+    next() // file tampilan baru bermasalah: pakai tampilan lama
+  }
+})
 app.use(express.json({ limit: '10mb' }))
 
 // Self-host lucide icons

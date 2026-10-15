@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Warna tema (angka RGB, dipakai Tailwind lewat tailwind.config.js) */
+@layer base {
+  :root {
+    --bg: 11 15 20;
+    --card: 18 24 33;
+    --card2: 24 33 44;
+    --line: 255 255 255;
+    --ink: 232 237 243;
+    --muted: 138 150 166;
+    --gold: 245 165 36;
+    --up: 34 197 94;
+    --down: 239 68 68;
+    --sky: 96 165 250;
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --bg: 243 245 248;
+    --card: 255 255 255;
+    --card2: 246 248 251;
+    --line: 15 23 42;
+    --ink: 15 23 42;
+    --muted: 100 116 139;
+    --gold: 194 112 15;
+    --up: 21 128 61;
+    --down: 220 38 38;
+    --sky: 37 99 235;
+    color-scheme: light;
+  }
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-bg text-ink font-sans antialiased; }
+  [hidden] { display: none !important; }
+}
+
+@layer components {
+  .card { @apply rounded-2xl border border-line/[0.08] bg-card; }
+  .tile { @apply rounded-xl border border-line/[0.08] bg-card2; }
+  .label { @apply text-[11px] font-bold uppercase tracking-wider text-muted; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold; }
+  .pill-up { @apply pill bg-up/15 text-up; }
+  .pill-down { @apply pill bg-down/15 text-down; }
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line/[0.08] bg-card2 px-2.5 py-1 text-xs font-bold; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition active:scale-[0.98] disabled:opacity-50; }
+  .btn-gold { @apply btn bg-gold text-black; }
+  .btn-green { @apply btn bg-up text-white; }
+  .btn-ghost { @apply btn border border-line/[0.12] bg-card2 text-ink; }
+  .input { @apply w-full rounded-xl border border-line/[0.12] bg-card2 px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted focus:border-gold; }
+  .icon-btn { @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line/[0.08] bg-card2 text-ink transition active:scale-95; }
+  .seg { @apply flex rounded-xl border border-line/[0.08] bg-card2 p-1; }
+  .seg > button { @apply flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold text-muted transition; }
+  .seg > button[aria-pressed='true'] { @apply bg-card text-ink shadow; }
+  .toggle { @apply relative h-6 w-11 shrink-0 cursor-pointer appearance-none rounded-full bg-line/20 transition checked:bg-up; }
+  .toggle::after { content: ''; @apply absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition; }
+  .toggle:checked::after { transform: translateX(20px); }
+
+  /* lembar dari bawah (sheet) */
+  .sheet-back { @apply pointer-events-none fixed inset-0 z-40 bg-black/60 opacity-0 transition-opacity duration-200; }
+  .sheet { @apply fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88vh] w-full max-w-xl translate-y-full overflow-y-auto rounded-t-3xl border-t border-line/[0.12] bg-card px-4 pt-2 transition-transform duration-200; padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+  .sheet.open { @apply translate-y-0; }
+  .sheet-back.open { @apply pointer-events-auto opacity-100; }
+  .grip { @apply mx-auto mb-3 mt-1 h-1 w-10 rounded-full bg-line/20; }
+
+  /* navigasi bawah */
+  .nav-item { @apply relative flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-muted transition; }
+  .nav-item[aria-current='true'] { @apply text-gold; }
+  .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[3px] w-7 rounded-b bg-gold; }
+  .badge { @apply absolute left-1/2 top-1.5 ml-2 h-[18px] min-w-[18px] rounded-full bg-down px-1 text-center text-[10px] font-extrabold leading-[18px] text-white; }
+
+  /* angka harga: berkedip hijau/merah saat berubah */
+  .flash-up { @apply animate-flash-up; }
+  .flash-down { @apply animate-flash-down; }
+}

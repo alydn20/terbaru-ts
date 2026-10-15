@@ -1,0 +1,12 @@
+{
+  "name": "gold-monitor-ui-baru",
+  "private": true,
+  "description": "Tampilan baru (newxau.pemulaold.com). Hanya untuk build CSS; hasil build (dist/app.css) ikut di-commit.",
+  "scripts": {
+    "build": "tailwindcss -c tailwind.config.js -i src/app.css -o dist/app.css --minify",
+    "watch": "tailwindcss -c tailwind.config.js -i src/app.css -o dist/app.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
+}

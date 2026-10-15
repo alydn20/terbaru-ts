@@ -1,0 +1,362 @@
+// Halaman monitoring (tampilan baru). Alur:
+// 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
+import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang } from './api.js'
+import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
+import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
+import { initHistory, onNewPrice, onUsdIdr, loadHistory } from './monitoring/history.js'
+import { initChart } from './monitoring/chart.js'
+import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
+import { openMore, openRenew, openIndicators, openNominalSettings, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
+
+applyTheme()
+if (!session.get()) location.replace('/login')
+
+// ===================================================================== SESI
+const GRACE_MS = 24 * 3600 * 1000 // server bermasalah: user tetap boleh memantau maks 24 jam
+const markOk = () => { try { localStorage.setItem('gold_sess_ok_at', String(Date.now())) } catch (e) {} }
+const graceOver = () => { try { const t = +localStorage.getItem('gold_sess_ok_at') || 0; return t && Date.now() - t > GRACE_MS } catch (e) { return false } }
+let ending = false
+async function endSession(message, title, extra) {
+  if (ending) return
+  ending = true
+  session.clear()
+  if (extra) extra()
+  setTimeout(() => location.replace('/login'), 10000)
+  if (message) await confirmDialog(message, { title, ok: 'Login lagi', cancel: null })
+  location.replace('/login')
+}
+function handleInvalid(d) {
+  if (d.reason === 'kicked_other_device') {
+    return endSession('Akun Anda baru saja login di perangkat lain. Maksimal 3 perangkat aktif, jadi sesi di perangkat ini dikeluarkan.', 'Login di perangkat lain',
+      () => { try { localStorage.setItem('gold_kicked_notice', String(Date.now())) } catch (e) {} })
+  }
+  if (d.reason === 'expired') return endSession('Masa aktif akun Anda sudah habis. Perpanjang dari halaman login.', 'Masa aktif habis')
+  if (d.reason === 'server_error') { if (graceOver()) endSession('Sesi Anda telah berakhir. Silakan login kembali.', 'Sesi berakhir'); return }
+  // sesi admin dari panel: segarkan otomatis
+  if (session.get().startsWith('admin_') && !d.reason) {
+    fetch('/api/admin-session-refresh').then(r => r.json()).then(x => {
+      if (x.success && x.sessionId) { session.set(x.sessionId); markOk(); location.reload() }
+    }).catch(() => {})
+    return
+  }
+  endSession('Sesi Anda telah berakhir. Silakan login kembali.', 'Sesi berakhir')
+}
+/** null = jaringan/server tidak terjangkau (jangan keluarkan user) */
+async function verify() {
+  try { return await getJSON('/api/verify-session') } catch (e) { return null }
+}
+
+// ===================================================================== HEADER: sisa masa aktif
+const CTA_HIDE = 'renew_cta_hide'
+function renderSisaHari() {
+  const el = $('#sisaHari')
+  const u = state.user
+  if (!u) return
+  el.classList.remove('hidden'); el.classList.add('flex')
+  if (!u.expired) { el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
+  const ms = Number(u.expired) - Date.now()
+  const hari = Math.ceil(ms / 86400000)
+  const color = ms <= 0 || hari <= 3 ? 'text-down' : hari <= 7 ? 'text-gold' : 'text-up'
+  const text = ms <= 0 ? 'Masa aktif habis' : hari <= 1 ? 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi' : 'Sisa ' + hari + ' hari lagi'
+  const wajib = ms <= 0 || hari <= 7
+  let hidden = false
+  try { hidden = !wajib && localStorage.getItem(CTA_HIDE) === String(u.expired) } catch (e) {}
+  el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold ' + color
+  el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
+  el.replaceChildren(h('span', {}, text))
+  if (!hidden) {
+    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-black' }, 'Perpanjang')
+    if (!wajib) {
+      pill.append(h('span', {
+        class: 'ml-0.5 cursor-pointer opacity-70', role: 'button', 'aria-label': 'Tutup',
+        onclick: e => { e.stopPropagation(); try { localStorage.setItem(CTA_HIDE, String(u.expired)) } catch (x) {} pill.remove() }
+      }, '×'))
+    }
+    el.append(pill)
+  }
+  el.onclick = openRenew
+}
+/** Sisa <= 7 hari: tanya sekali sehari; dari notifikasi (?perpanjang=1) langsung buka */
+function renewReminder() {
+  const u = state.user
+  if (!u || !u.expired) return
+  if (/[?&]perpanjang=1/.test(location.search)) { history.replaceState(null, '', location.pathname); openRenew(); return }
+  const ms = Number(u.expired) - Date.now()
+  const hari = Math.ceil(ms / 86400000)
+  if (ms <= 0 || hari > 7) return
+  const today = new Date().toDateString()
+  try { if (localStorage.getItem('renew_ask_day') === today) return; localStorage.setItem('renew_ask_day', today) } catch (e) {}
+  confirmDialog('Masa aktif tinggal ' + (hari <= 1 ? 'kurang dari 1 hari' : hari + ' hari') + '. Perpanjang sekarang?', { title: 'Perpanjang masa aktif', ok: 'Perpanjang', cancel: 'Nanti' })
+    .then(ok => { if (ok) openRenew() })
+}
+
+// ===================================================================== HARGA
+const pillHtml = n => (n > 0 ? 'pill-up' : 'pill-down')
+function setChange(id, change) {
+  const el = $('#' + id)
+  if (!change) return
+  el.className = pillHtml(change)
+  el.textContent = (change > 0 ? '▲ ' : '▼ ') + signed(change)
+}
+function flash(id, change) {
+  const el = $('#' + id)
+  el.classList.remove('flash-up', 'flash-down'); void el.offsetWidth
+  el.classList.add(change > 0 ? 'flash-up' : 'flash-down')
+}
+function updateDayRange(buy) {
+  if (state.high === null || buy > state.high) { state.high = buy; $('#dayHigh').textContent = num(buy) }
+  if (state.low === null || buy < state.low) { state.low = buy; $('#dayLow').textContent = num(buy) }
+}
+function renderMarkup() {
+  if (!(state.sell && state.xauUsd && state.usdIdr)) return
+  const mk = markupOf(state.sell, state.xauUsd, state.usdIdr)
+  $('#chipMarkup').classList.toggle('hidden', mk.normal)
+  if (!mk.normal) {
+    $('#markupLabel').textContent = mk.diff > 0 ? 'MARKUP' : 'MARKDOWN'
+    $('#markupVal').textContent = signed(mk.diff)
+  }
+}
+function renderSpread() {
+  if (!state.buy || !state.sell) return
+  $('#spreadVal').textContent = parseFloat(((state.sell - state.buy) / state.buy * 100).toFixed(2)) + '%'
+}
+function renderNominals() {
+  const box = $('#nominals')
+  const list = visibleNominals()
+  if (!state.nominals.length) return
+  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-2 py-4 text-center text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  box.replaceChildren(...list.map((n, i) => {
+    const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
+    return h('div', { class: 'tile p-3 ' + (list.length % 2 && i === list.length - 1 ? 'col-span-2' : '') },
+      h('div', { class: 'flex items-center justify-between gap-2' },
+        h('span', { class: 'text-sm font-extrabold text-gold' }, n.label),
+        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
+      h('div', { class: 'num mt-1 font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'))
+  }))
+}
+
+/** Satu jalur untuk data harga dari /monitoring/api dan SSE 'price' */
+function applyPrice(d, fromSse) {
+  const ts = d.updatedAt ? new Date(d.updatedAt).getTime() : 0
+  if (ts && ts <= state.lastUpdatedAt) return // data lama, abaikan
+  if (ts) state.lastUpdatedAt = ts
+  if (d.buy) {
+    const prev = fromSse ? d.prevBuy : state.buy
+    const change = prev ? d.buy - prev : 0
+    $('#buyPrice').textContent = num(d.buy)
+    if (change) {
+      setChange('buyChange', change); flash('buyCard', change)
+      if (fromSse) {
+        priceSound(change)
+        if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+          try { new Notification(change > 0 ? 'Harga emas NAIK' : 'Harga emas TURUN', { body: rp(d.buy) + ' (' + signed(change) + ')', icon: '/icon.png', tag: 'gold-price', renotify: true }) } catch (e) {}
+        }
+      }
+      onNewPrice()
+    }
+    state.buy = d.buy
+    updateDayRange(d.buy)
+  }
+  if (d.sell) {
+    const prev = fromSse ? d.prevSell : state.sell
+    const change = prev ? d.sell - prev : 0
+    $('#sellPrice').textContent = num(d.sell)
+    if (change) { setChange('sellChange', change); flash('sellCard', change) }
+    state.sell = d.sell
+  }
+  if (d.usdIdr) setUsdIdr(d.usdIdr)
+  if (d.xauUsd) state.xauUsd = d.xauUsd
+  if (state.buy) document.title = 'B ' + num(state.buy) + ' · J ' + num(state.sell) + ' — PemulaOLD'
+  renderSpread(); renderMarkup(); renderNominals()
+}
+function setUsdIdr(rate) {
+  const r = Math.round(rate)
+  if (state.usdIdr && r !== Math.round(state.usdIdr)) {
+    const c = r - Math.round(state.usdIdr)
+    const el = $('#usdIdrChange')
+    el.className = 'num text-[10px] font-bold ' + (c > 0 ? 'text-up' : 'text-down')
+    el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
+  }
+  state.usdIdr = rate
+  $('#usdIdr').textContent = num(r)
+}
+function setPromoStatus(status, fromSse) {
+  const el = $('#promoStatus')
+  el.className = 'pill px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
+  el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span>PROMO ' + (status === 'ON' ? 'ON' : 'OFF')
+  if (fromSse && state.promo && state.promo !== status) promoSound(status)
+  state.promo = status
+}
+function setChip(id, valId, value, fmt) {
+  const has = value !== null && value !== undefined
+  $('#' + id).classList.toggle('hidden', !has)
+  if (has) $('#' + valId).textContent = fmt ? fmt(value) : value
+}
+
+let appVersion = null
+async function fetchPrices() {
+  try {
+    const res = await fetch('/monitoring/api?session=' + encodeURIComponent(session.get()), { cache: 'no-store' })
+    if (res.status === 403) return
+    const d = await res.json()
+    if (d.version) { if (appVersion && appVersion !== d.version) return location.reload(); appVersion = d.version }
+    applyPrice(d, false)
+  } catch (e) {}
+}
+
+// ===================================================================== JAM
+let offset = 0
+async function syncTime() { try { const d = await (await fetch('/time')).json(); offset = d.timestamp - Date.now() } catch (e) {} }
+function tick() {
+  const now = new Date(Date.now() + offset)
+  const s = now.getSeconds()
+  $('#clkH').textContent = pad2(now.getHours())
+  $('#clkM').textContent = pad2(now.getMinutes())
+  const sEl = $('#clkS')
+  sEl.textContent = pad2(s)
+  sEl.className = s >= 50 ? 'text-down' : ''
+  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' ' + now.getFullYear() + ' · WIB'
+  countdownTick(s, $('main'))
+}
+
+// ===================================================================== PEMBERITAHUAN ADMIN
+function showNotice(d) {
+  const color = { promo: 'border-up/40 bg-up/10', warning: 'border-gold/40 bg-gold/10', urgent: 'border-down/40 bg-down/10' }[d.notifType] || 'border-sky/40 bg-sky/10'
+  const card = h('div', { class: 'flex items-start gap-3 rounded-2xl border p-3 ' + color },
+    h('div', { class: 'min-w-0 flex-1' }, h('div', { class: 'text-sm font-extrabold' }, d.title || 'Info'), h('div', { class: 'mt-0.5 whitespace-pre-line text-sm text-muted' }, d.message || '')),
+    h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Tutup', html: icon('close', 'h-4 w-4'), onclick: () => card.remove() }))
+  $('#notifs').prepend(card)
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    try { new Notification(d.title || 'PemulaOLD', { body: d.message || '', icon: '/icon.png' }) } catch (e) {}
+  }
+  notifSound()
+}
+
+// ===================================================================== SSE REALTIME
+let es = null
+let lastData = Date.now()
+let retry = 0
+function connect() {
+  if (es) es.close()
+  es = new EventSource('/sse?session=' + encodeURIComponent(session.get()))
+  es.onopen = () => { $('#liveDot').className = $('#liveDot').className.replace('bg-gold', 'bg-up'); lastData = Date.now(); if (retry) loadHistory(); retry = 0 }
+  es.onerror = () => {
+    $('#liveDot').className = $('#liveDot').className.replace('bg-up', 'bg-gold')
+    es.close()
+    setTimeout(connect, Math.min(3000 * 2 ** retry++, 30000))
+  }
+  es.onmessage = ev => {
+    lastData = Date.now()
+    let d
+    try { d = JSON.parse(ev.data) } catch (e) { return }
+    switch (d.type) {
+      case 'price': applyPrice(d, true); break
+      case 'usd_idr': if (d.rate) { setUsdIdr(d.rate); if (d.xauUsd) state.xauUsd = d.xauUsd; renderMarkup(); onUsdIdr(d) } break
+      case 'daily_highlow':
+        if (d.high != null && (state.high === null || d.high > state.high)) { state.high = d.high; $('#dayHigh').textContent = num(d.high) }
+        if (d.low != null && (state.low === null || d.low < state.low)) { state.low = d.low; $('#dayLow').textContent = num(d.low) }
+        break
+      case 'promo_status': setPromoStatus(d.status, true); break
+      case 'promo_limit_update': setChip('chipLimit', 'limitVal', d.limit); break
+      case 'lowest_on_price': setChip('chipOn', 'lowestOnVal', d.price, num); break
+      case 'markup_settings_update':
+        if (d.settings) { if (d.settings.minMargin != null) state.markupMin = +d.settings.minMargin; if (d.settings.maxMargin != null) state.markupMax = +d.settings.maxMargin }
+        renderMarkup(); break
+      case 'nominal_update': state.nominals = d.nominals || []; renderNominals(); loadHistory(); break
+      case 'promo_suggestions': setPromos(d.promos || []); break
+      case 'sound_update': if (d.settings) setCustomSounds(d.settings); break
+      case 'notification': showNotice(d); break
+      case 'force_logout':
+      case 'session_expired': endSession('Sesi Anda telah berakhir. Silakan login kembali.', 'Sesi berakhir'); break
+    }
+  }
+}
+setInterval(() => { if (Date.now() - lastData > 60000) { lastData = Date.now(); connect() } }, 10000)
+
+// ===================================================================== NAVIGASI BAWAH
+const NAV = {
+  harga: ['home', () => scrollTo('#sec-harga')],
+  grafik: ['chart', () => scrollTo('#sec-grafik')],
+  promo: ['tag', openPromos],
+  news: ['bell', openNews],
+  lainnya: ['grid', openMore]
+}
+function scrollTo(sel) {
+  const el = $(sel)
+  window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' })
+}
+function initNav() {
+  $$('#bottomNav [data-nav]').forEach(b => {
+    const [ic, fn] = NAV[b.dataset.nav]
+    b.insertAdjacentHTML('afterbegin', icon(ic, 'h-[22px] w-[22px]'))
+    b.addEventListener('click', fn)
+  })
+  // tab aktif mengikuti bagian yang sedang terlihat
+  const setActive = key => $$('#bottomNav [data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
+  setActive('harga')
+  window.addEventListener('scroll', () => {
+    const g = $('#sec-grafik').getBoundingClientRect().top
+    setActive(g < innerHeight * 0.45 ? 'grafik' : 'harga')
+  }, { passive: true })
+}
+
+// ===================================================================== MULAI
+let canJoin = false
+async function start() {
+  $('#btnAdminWa').innerHTML = icon('wa', 'h-5 w-5')
+  $('#btnAdminWa').addEventListener('click', () => contactAdmin(state.phone))
+  $('#btnIndicator').addEventListener('click', openIndicators)
+  $('#btnNominal').addEventListener('click', openNominalSettings)
+  initNav()
+  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+
+  // sesi
+  const v = await verify()
+  if (v && !v.valid) {
+    handleInvalid(v)
+    if (v.reason !== 'server_error') return
+  } else if (v) {
+    markOk()
+    state.phone = String(v.phone || '')
+    state.user = v.user || null
+    state.isAdmin = !!v.isAdmin
+    renderSisaHari()
+    setTimeout(renewReminder, 2500)
+    setTimeout(() => joinGroup(true), 6000)
+    getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})
+  }
+  setInterval(async () => {
+    const x = await verify()
+    if (!x) return
+    if (x.valid) { markOk(); state.user = x.user || state.user; renderSisaHari() } else handleInvalid(x)
+  }, 30000)
+
+  // data
+  syncTime(); setInterval(syncTime, 5 * 60 * 1000)
+  tick(); setInterval(tick, 250)
+  try { const m = await getJSON('/api/markup-settings'); if (m.success && m.settings) { state.markupMin = +m.settings.minMargin || state.markupMin; state.markupMax = +m.settings.maxMargin || state.markupMax } } catch (e) {}
+  getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
+  getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
+  getJSON('/api/lowest-on-price').then(d => setChip('chipOn', 'lowestOnVal', d.price, num)).catch(() => {})
+  getJSON('/api/daily-highlow').then(d => {
+    if (d.high != null) { state.high = Math.max(state.high ?? d.high, d.high); $('#dayHigh').textContent = num(state.high) }
+    if (d.low != null) { state.low = Math.min(state.low ?? d.low, d.low); $('#dayLow').textContent = num(state.low) }
+  }).catch(() => {})
+  await fetchPrices()
+  connect()
+  initHistory()
+  initChart()
+  loadCustomSounds()
+  loadPromos()
+  setTimeout(loadNews, 2000)
+
+  // notifikasi HP: daftar ulang kalau izin sudah diberikan
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(() => {
+      if ('Notification' in window && Notification.permission === 'granted') subscribePush()
+    }).catch(() => {})
+  }
+  // kembali dari latar belakang: segarkan data
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchPrices(); if (Date.now() - lastData > 30000) connect() } })
+}
+start()
