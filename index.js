@@ -1302,20 +1302,59 @@ function getClientIp(req) {
   return req.socket?.remoteAddress || req.ip || '-'
 }
 
+// Lokasi IP (kota, provinsi, negara). Hasil disimpan 7 hari per IP. Sumber utama ip-api.com,
+// cadangan ipwho.is kalau ip-api gagal / kena batas.
+const _ipLocCache = new Map() // ip -> { loc, t }
+function _ipLocal(ip) {
+  return !ip || ip === '-' || ip === '::1' || ip === '127.0.0.1' || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)
+}
+function _ipLocRemember(ip, loc) {
+  if (!loc || loc === '-') return
+  _ipLocCache.set(ip, { loc, t: Date.now() })
+  if (_ipLocCache.size > 5000) _ipLocCache.delete(_ipLocCache.keys().next().value)
+}
 async function getIpLocation(ip) {
-  if (!ip || ip === '-' || ip === '::1' || ip === '127.0.0.1') return 'Lokal'
-  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return 'Lokal'
+  if (_ipLocal(ip)) return 'Lokal'
+  const c = _ipLocCache.get(ip)
+  if (c && Date.now() - c.t < 7 * 86400000) return c.loc
+  let loc = '-'
   try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 3000)
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName,country,status`, { signal: ctrl.signal })
-    clearTimeout(timer)
+    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=city,regionName,country,status`, { signal: AbortSignal.timeout(4000) })
     const d = await res.json()
-    if (d.status !== 'success') return '-'
-    return [d.city, d.regionName, d.country].filter(Boolean).join(', ') || '-'
-  } catch {
-    return '-'
+    if (d.status === 'success') loc = [d.city, d.regionName, d.country].filter(Boolean).join(', ') || '-'
+  } catch {}
+  if (loc === '-') {
+    try {
+      const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}?fields=success,city,region,country`, { signal: AbortSignal.timeout(4000) })
+      const d = await res.json()
+      if (d.success) loc = [d.city, d.region, d.country].filter(Boolean).join(', ') || '-'
+    } catch {}
   }
+  _ipLocRemember(ip, loc)
+  return loc
+}
+
+// Lengkapi lokasi yang kosong ("-") pada daftar riwayat login, sekaligus (maks 100 IP per panggilan).
+// Hasil disimpan di cache memori, jadi IP yang sama tidak dicari ulang.
+async function fillAuthLocations(items) {
+  const need = [...new Set(items.filter(x => (!x.location || x.location === '-') && x.ip && x.ip !== '-' && !_ipLocal(x.ip)).map(x => x.ip))]
+  const ask = need.filter(ip => !_ipLocCache.has(ip)).slice(0, 100)
+  if (ask.length) {
+    try {
+      const res = await fetch('http://ip-api.com/batch?fields=query,city,regionName,country,status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ask), signal: AbortSignal.timeout(6000)
+      })
+      const rows = await res.json()
+      for (const d of Array.isArray(rows) ? rows : []) if (d.status === 'success') _ipLocRemember(d.query, [d.city, d.regionName, d.country].filter(Boolean).join(', '))
+    } catch {}
+  }
+  let changed = 0
+  for (const x of items) {
+    if (x.location && x.location !== '-') continue
+    const c = x.ip && _ipLocCache.get(x.ip)
+    if (c) { x.location = c.loc; changed++ }
+  }
+  return changed
 }
 
 function calculateDiscount(investmentAmount) {
@@ -3584,6 +3623,49 @@ setInterval(() => {
 const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', 1) // trust Koyeb/Cloudflare proxy so req.ip reflects real client IP
+
+// ==================== TAMPILAN BARU (newxau.pemulaold.com) ====================
+// Alamat newxau.* memakai server, API, dan data yang SAMA; hanya halaman /login dan /monitoring
+// yang diganti dengan versi Tailwind di folder ui-baru/ (lihat ui-baru/README.md).
+// Alamat lain (xau.*) tidak berubah. Untuk mencoba di alamat lain: buka /monitoring?ui=baru
+// (diingat lewat cookie; /monitoring?ui=lama untuk kembali).
+const UI2_DIR = join(__dirname, 'ui-baru')
+const UI2_PAGES = { '/login': 'login.html', '/monitoring': 'monitoring.html' }
+const UI2_VER = Date.now().toString(36) // berubah tiap server restart (= tiap update)
+const _ui2Cache = {}
+const isUi2Request = req => {
+  if (req.query.ui === 'lama') return false
+  return /^newxau\./i.test(String(req.headers.host || '')) || req.query.ui === 'baru' || parseCookies(req).ui === 'baru'
+}
+for (const sub of ['dist', 'js', 'sounds']) {
+  app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
+}
+app.get(['/login', '/monitoring'], async (req, res, next) => {
+  if (req.query.ui === 'baru') res.append('Set-Cookie', 'ui=baru; Path=/; Max-Age=2592000; SameSite=Lax')
+  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=; Path=/; Max-Age=0; SameSite=Lax')
+  if (!isUi2Request(req)) return next()
+  try {
+    const file = UI2_PAGES[req.path]
+    if (!_ui2Cache[file]) _ui2Cache[file] = readFileSync(join(UI2_DIR, 'pages', file), 'utf8')
+    let html = _ui2Cache[file]
+      .replace(/\{\{VER\}\}/g, UI2_VER)
+      .replace('{{TS_SITEKEY}}', String(process.env.TURNSTILE_SITE_KEY || '').replace(/[^A-Za-z0-9_-]/g, ''))
+    // Pulihkan sesi dari cookie ke localStorage (Safari iOS sering menghapus localStorage)
+    let boot = ''
+    try {
+      const sess = parseCookies(req).gold_sess
+      if (sess && req.path === '/monitoring') {
+        const ph = await redis.hget(REDIS_KEYS.SESSIONS, sess)
+        if (ph && (await isUserValid(ph)).valid) boot = '<script>try{if(!localStorage.getItem("goldmonitor_session"))localStorage.setItem("goldmonitor_session",' + JSON.stringify(sess) + ')}catch(e){}</script>'
+      }
+    } catch (e) {}
+    html = html.replace('<!--SESSION_BOOT-->', boot)
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+    res.type('html').send(html)
+  } catch (e) {
+    next() // file tampilan baru bermasalah: pakai tampilan lama
+  }
+})
 app.use(express.json({ limit: '10mb' }))
 
 // Self-host lucide icons
@@ -4476,6 +4558,7 @@ app.get('/api/admin/login-history', async (req, res) => {
   try {
     let items = await readAuthLog(phone, limit)
     if (!items.length) items = [...loginHistory].reverse().filter(x => !phone || x.phone === phone).slice(0, limit)
+    await fillAuthLocations(items).catch(() => 0)
     res.json({ success: true, items, total: items.length, phone })
   } catch (e) {
     // Redis bermasalah: pakai salinan di memori
@@ -6018,7 +6101,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'sesi lama dikeluarkan karena login di perangkat baru (maks 3 perangkat)' })
+      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks 3)' })
     }
   }
 
@@ -10203,7 +10286,7 @@ ${authScript}
             </svg>
             Pendaftaran Otomatis via QRIS
           </h2>
-          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Nomor yang belum terdaftar membayar lewat QRIS di halaman login. Nominalnya = harga + 3 angka terakhir nomor HP (nomor berakhiran 0393 membayar Rp5.393). Setelah kamu ACC, akun langsung aktif dengan tanggal berakhir terisi otomatis, dan dihapus sendiri saat masa aktif habis.</p>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Nomor yang belum terdaftar membayar lewat QRIS di halaman login. Nominalnya = harga + kode unik 3 angka yang diambil acak dari nomor HP-nya (berbeda tiap order). Setelah kamu ACC, akun langsung aktif dengan tanggal berakhir terisi otomatis, dan dihapus sendiri saat masa aktif habis.</p>
           <div class="result-msg" id="paySettingsResult"></div>
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
@@ -13601,6 +13684,8 @@ app.get('/monitoring', async (req, res) => {
     .sisa-hari.habis { color: #ef4444; }
     .sisa-hari.lifetime { color: #8b949e; cursor: default; }
     .sisa-hari { cursor: pointer; }
+    .sisa-cta-x { display: inline-block; margin-left: 5px; padding: 0 2px; font-weight: 700; opacity: 0.7; cursor: pointer; }
+    .sisa-cta { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #f7931a; color: #111827; font-weight: 700; font-size: 0.95em; line-height: 1.45; vertical-align: 1px; }
     /* Nav icon buttons */
     .nav-icon-btn {
       display: flex;
@@ -19803,7 +19888,7 @@ app.get('/monitoring', async (req, res) => {
     function _renderSisaHari(user) {
       var el = document.getElementById('sisaHariText');
       if (!el || !user) return;
-      var cls = 'sisa-hari', txt;
+      var cls = 'sisa-hari', txt, cta = false;
       if (!user.expired) { txt = 'Akun Lifetime'; cls += ' lifetime'; el.title = ''; }
       else {
         var ms = Number(user.expired) - Date.now();
@@ -19811,11 +19896,32 @@ app.get('/monitoring', async (req, res) => {
         if (ms <= 0) { txt = 'Masa aktif habis'; cls += ' habis'; }
         else if (hari <= 1) { txt = 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi'; cls += ' habis'; }
         else { txt = 'Sisa ' + hari + ' hari lagi'; if (hari <= 3) cls += ' habis'; else if (hari <= 7) cls += ' hampir'; }
-        if (hari <= 7) txt += ' · Perpanjang';
+        // Selalu ada; sisa > 7 hari boleh ditutup (x), sisa <= 7 hari wajib tampil
+        cta = ms <= 0 || hari <= 7 ? 'wajib' : 'tutup';
+        if (cta === 'tutup') { try { if (localStorage.getItem('renew_cta_hide') === String(user.expired)) cta = false; } catch (e) {} }
         el.title = 'Aktif sampai ' + new Date(Number(user.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       }
       el.className = cls;
       el.textContent = txt;
+      // Tombol kecil "Perpanjang" dengan warna sendiri, beda dari warna sisa hari
+      if (cta) {
+        var b = document.createElement('span');
+        b.className = 'sisa-cta';
+        b.textContent = 'Perpanjang';
+        if (cta === 'tutup') {
+          var x = document.createElement('span');
+          x.className = 'sisa-cta-x';
+          x.textContent = String.fromCharCode(215);
+          x.title = 'Tutup';
+          x.onclick = function(ev) {
+            ev.stopPropagation();
+            try { localStorage.setItem('renew_cta_hide', String(user.expired)); } catch (e) {}
+            b.remove();
+          };
+          b.appendChild(x);
+        }
+        el.appendChild(b);
+      }
       el.style.display = 'block';
       _renewUser = user;
       var mb = document.getElementById('renewMenuBtn');
@@ -21410,7 +21516,7 @@ app.get('/monitoring/api', async (req, res) => {
 
 // ==================== PEMBAYARAN QRIS (pendaftaran & perpanjangan otomatis) ====================
 // Nomor yang belum terdaftar membayar lewat QRIS: QRIS statis milik admin diubah jadi QRIS
-// dinamis dengan nominal unik = harga + 3 angka terakhir nomor HP (nomor ...0393 -> Rp5.393)
+// dinamis dengan nominal unik = harga + 3 angka acak yang diambil dari nomor HP
 // supaya admin langsung tahu pembayaran itu milik siapa.
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
@@ -21633,15 +21739,24 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
     order = order || active.find(o => o.phone === phone && o.price === price) ||
       orders.find(o => o.status === 'rejected' && o.phone === phone && o.price === price && o.expiresAt > now)
     if (!order) {
-      // Nominal = harga + 3 angka terakhir nomor HP. Kalau nominal itu sedang dipakai order
-      // lain yang masih menunggu (nomor berbeda, akhiran sama), pakai kode acak yang kosong.
+      // Nominal = harga + kode unik 3 angka. Kode diambil ACAK dari deretan 3 angka berurutan
+      // di nomor HP (bukan selalu 3 angka terakhir). Tidak boleh sama dengan order lain yang masih
+      // menunggu, dan tidak sama dengan order nomor ini 24 jam terakhir (ganti pilihan bulan =
+      // nominal baru). Kalau semua potongan nomor terpakai, pakai kode acak yang kosong.
       const used = new Set(active.map(o => o.amount))
-      let amount = price + parseInt(phone.slice(-3), 10)
-      if (used.has(amount)) {
+      for (const o of orders) if (o.phone === phone && now - (o.createdAt || 0) < 24 * 3600 * 1000) used.add(o.amount)
+      const local = phone.substring(2)
+      const codes = []
+      for (let i = 0; i + 3 <= local.length; i++) {
+        const c = parseInt(local.substring(i, i + 3), 10)
+        if (c > 0 && !used.has(price + c) && !codes.includes(c)) codes.push(c)
+      }
+      let amount = codes.length ? price + codes[crypto.randomInt(codes.length)] : 0
+      if (!amount) {
         const free = []
         for (let c = 1; c <= 999; c++) if (!used.has(price + c)) free.push(price + c)
         if (free.length === 0) return res.json({ success: false, error: 'Antrian pembayaran penuh. Coba lagi beberapa menit lagi.' })
-        amount = free[Math.floor(Math.random() * free.length)]
+        amount = free[crypto.randomInt(free.length)]
       }
       order = {
         id: crypto.randomBytes(8).toString('hex'),
@@ -22651,6 +22766,7 @@ async function handleTelegramCallback(tg, cq) {
   // --- riwayat login / logout satu nomor ---
   if ((m = /^u:lg:(62[0-9]{8,13})$/.exec(data))) {
     const items = await readAuthLog(m[1], 15).catch(() => [])
+    await fillAuthLocations(items).catch(() => 0)
     const EV = { login: 'LOGIN', logout: 'LOGOUT', kicked: 'DITENDANG', locked: 'DIKUNCI', logout_admin: 'DIKELUARKAN ADMIN' }
     const lines = items.map(x => '<b>' + (EV[x.event] || 'LOGIN') + '</b> ' + tgEsc(String(x.time || '').substring(5, 16)) +
       (x.ua && x.ua !== '-' ? '\n   ' + tgEsc(x.ua) : '') + (x.location && x.location !== '-' ? ' · ' + tgEsc(x.location) : '') +
@@ -23125,7 +23241,7 @@ async function compareGroupWithUsers(phones) {
     webTotal: web.size,
     both: [...grp].filter(p => web.has(p)).length,
     groupOnly: [...grp].filter(p => !web.has(p)).sort().map(p => ({ phone: p, hasOrder: orders.some(o => o.phone === p) })),
-    webOnly: [...web.keys()].filter(p => !grp.has(p)).sort().map(info)
+    webOnly: [...web.keys()].filter(p => !grp.has(p)).sort().map(info).filter(u => u.active)
   }
 }
 
@@ -24174,6 +24290,11 @@ async function checkAndKickExpiredUsers() {
       try {
         const user = typeof userData === 'string' ? JSON.parse(userData) : userData
 
+        // Nomor admin tidak pernah dicabut aksesnya
+        if (phone === ADMIN_PHONE || ADMIN_PHONES.includes(phone)) continue
+        // Sudah dicabut untuk tanggal habis ini (data user disimpan, tidak dihapus)
+        if (user.expired && user.kickedFor === user.expired) continue
+
         // Check if expired
         if (user.expired && user.expired < now) {
           // Bot tidak mengeluarkan orangnya dari grup WA dan tidak mengirim pesan apa pun kepadanya
@@ -24181,8 +24302,11 @@ async function checkAndKickExpiredUsers() {
           // dari grup secara manual berdasarkan laporan di bawah.
           expiredNow.push({ phone, name: user.name || '', expired: user.expired })
 
-          // Delete from database
-          await redis.hdel(REDIS_KEYS.USERS, phone)
+          // Data user DISIMPAN (status jadi Expired) supaya ia bisa perpanjang sendiri dari halaman
+          // login dengan nama dan PIN yang sama. Notifikasi harga dihentikan.
+          user.kickedFor = user.expired
+          user.kickedAt = now
+          await redis.hset(REDIS_KEYS.USERS, { [phone]: JSON.stringify(user) })
           await redis.hdel(REDIS_KEYS.PUSH_SUBS, phone)
 
           // Remove sessions
