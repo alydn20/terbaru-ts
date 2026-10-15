@@ -19015,6 +19015,7 @@ app.get('/monitoring', async (req, res) => {
           customSoundOff = data.settings.soundOff || '';
           customSoundBigUp = data.settings.soundBigUp || '';
           customSoundBigDown = data.settings.soundBigDown || '';
+          _preloadCustomSounds();
           return true;
         }
       } catch (e) {}
@@ -19226,6 +19227,42 @@ app.get('/monitoring', async (req, res) => {
       if (soundSettings.shake) shakeScreen(isFinal);
     }
 
+    // Suara khusus admin diputar lewat WebAudio (AudioBuffer) — new Audio().play() diblokir browser HP
+    // kalau tidak tepat setelah layar disentuh, sehingga dulu selalu jatuh ke bunyi bawaan.
+    var _sndBuf = {};
+    function _decodeSound(url) {
+      if (!url) return Promise.resolve(null);
+      if (_sndBuf[url] !== undefined) return Promise.resolve(_sndBuf[url]);
+      return fetch(url).then(function(r) { return r.arrayBuffer(); }).then(function(data) {
+        return new Promise(function(res, rej) {
+          var pr = getAudioContext().decodeAudioData(data, res, rej);
+          if (pr && pr.then) pr.then(res, rej);
+        });
+      }).then(function(b) { _sndBuf[url] = b; return b; }).catch(function() { _sndBuf[url] = null; return null; });
+    }
+    function _preloadCustomSounds() {
+      [customSoundUp, customSoundDown, customSoundBigUp, customSoundBigDown, customSoundOn, customSoundOff].forEach(function(u) { if (u) _decodeSound(u); });
+    }
+    function _playCustom(url, vol, fallback) {
+      _decodeSound(url).then(function(buf) {
+        if (buf) {
+          try {
+            var c = getAudioContext();
+            var src = c.createBufferSource(); var g = c.createGain();
+            src.buffer = buf; g.gain.value = vol;
+            src.connect(g); g.connect(c.destination); src.start();
+            return;
+          } catch (e) {}
+        }
+        var a = new Audio(url); a.volume = vol;
+        a.play().catch(function() { if (fallback) fallback(); });
+      });
+    }
+    // setiap sentuhan membuka audio lagi (iPhone menutupnya saat aplikasi ke latar belakang)
+    ['pointerdown', 'touchstart', 'keydown'].forEach(function(ev) {
+      window.addEventListener(ev, function() { try { getAudioContext(); } catch (e) {} }, { passive: true });
+    });
+
     function playSound(direction) {
       const keyMap = { up: 'up', bigUp: 'bigUp', down: 'down', bigDown: 'bigDown' };
       if (!soundSettings[keyMap[direction] ?? direction]) return;
@@ -19243,14 +19280,9 @@ app.get('/monitoring', async (req, res) => {
       }
 
       if (soundUrl) {
-        const audio = new Audio(soundUrl);
-        audio.volume = 0.5;
-        audio.play().catch(e => {
-          if (direction === 'bigUp' || direction === 'bigDown') {
-            playDefaultBigSound(direction);
-          } else {
-            playDefaultSound(direction);
-          }
+        _playCustom(soundUrl, 0.5, function() {
+          if (direction === 'bigUp' || direction === 'bigDown') playDefaultBigSound(direction);
+          else playDefaultSound(direction);
         });
       } else if (direction === 'bigUp' || direction === 'bigDown') {
         playDefaultBigSound(direction);
@@ -20734,6 +20766,7 @@ app.get('/monitoring', async (req, res) => {
           customSoundOff = data.settings.soundOff || '';
           customSoundBigUp = data.settings.soundBigUp || '';
           customSoundBigDown = data.settings.soundBigDown || '';
+          _preloadCustomSounds();
           return;
         }
 
@@ -20868,11 +20901,7 @@ app.get('/monitoring', async (req, res) => {
               const soundUrl = statusForSound === 'ON'
                 ? (customSoundOn || defaultPromoSoundOn)
                 : (customSoundOff || defaultPromoSoundOff);
-              const audio = new Audio(soundUrl);
-              audio.volume = 0.7;
-              audio.play()
-                .then(() => {})
-                .catch(() => {});
+              _playCustom(soundUrl, 0.7, null);
             } catch (e) {
             }
           }, 5000); // 5 detik delay

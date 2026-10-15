@@ -112,7 +112,7 @@ function renderMarkup() {
   const mk = markupOf(state.sell, state.xauUsd, state.usdIdr)
   $('#chipMarkup').classList.toggle('hidden', mk.normal)
   if (!mk.normal) {
-    $('#markupLabel').textContent = mk.diff > 0 ? 'MARKUP' : 'MARKDOWN'
+    $('#markupLabel').textContent = mk.diff > 0 ? 'Markup' : 'Markdown'
     $('#markupVal').textContent = signed(mk.diff)
   }
 }
@@ -124,11 +124,12 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-3 py-2 text-sm text-muted lg:col-span-2' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    return h('div', { class: 'tile min-w-0 overflow-hidden px-1.5 py-1 lg:p-3 ' + (list.length % 2 && i === list.length - 1 ? 'lg:col-span-2' : '') },
-      h('div', { class: 'flex items-center justify-between gap-2' },
+    const size = list.length === 1 ? 'basis-1/2 lg:basis-2/3' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.5rem)/2)]'
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:p-3 lg:text-left ' + size },
+      h('div', { class: 'flex items-center justify-center gap-1.5 lg:justify-between lg:gap-2' },
         h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
         h('span', { class: 'num truncate font-mono text-[9px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
       p ? h('div', { class: 'num whitespace-nowrap text-[11.5px] font-extrabold leading-tight lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
@@ -217,7 +218,7 @@ function fitChart() {
   if (wide()) { box.style.height = ''; return }
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
-  box.style.height = Math.max(280, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+  box.style.height = Math.max(220, Math.round(window.innerHeight - top - nav - 8)) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -239,7 +240,7 @@ function tick() {
   const sEl = $('#clkS')
   sEl.textContent = pad2(s)
   sEl.className = s >= 50 ? 'text-down' : ''
-  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' ' + now.getFullYear() + ' · WIB'
+  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
   countdownTick(s, $('main'))
 }
 
