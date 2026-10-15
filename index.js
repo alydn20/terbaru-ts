@@ -364,8 +364,45 @@ let lastQr = null
 let pairingCode = null       // kode pairing 8-digit aktif (metode login alternatif selain QR)
 let pendingPairingPhone = null // nomor yang di-request pairing code-nya — dikonsumsi sekali oleh start()
 const logs = []
-const loginHistory = [] // in-memory login log per nomor user
-const MAX_LOGIN_HISTORY = 300
+const loginHistory = [] // riwayat login/logout semua nomor (terbaru di akhir), dimuat dari Redis saat start
+const MAX_LOGIN_HISTORY = 1000
+// Riwayat login/logout juga disimpan di Redis: daftar gabungan + daftar per nomor,
+// supaya tidak hilang saat server restart dan bisa dilihat per user.
+const AUTH_LOG_KEY = 'gold:auth_log'
+const AUTH_LOG_PHONE_PREFIX = 'gold:auth_log:'
+const AUTH_LOG_PER_PHONE = 100
+// event: 'login' | 'logout' | 'kicked' | 'locked' | 'logout_admin'
+function recordAuthEvent(phone, event, info) {
+  const entry = {
+    t: Date.now(),
+    time: new Date(Date.now() + 7 * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19),
+    phone: String(phone || ''),
+    name: (info && info.name) || '-',
+    event,
+    ip: (info && info.ip) || '-',
+    ua: (info && info.ua) || '-',
+    location: (info && info.location) || '-',
+    note: (info && info.note) || ''
+  }
+  loginHistory.push(entry)
+  if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
+  const save = () => {
+    const raw = JSON.stringify(entry)
+    redis.rpush(AUTH_LOG_KEY, raw).then(() => redis.ltrim(AUTH_LOG_KEY, -MAX_LOGIN_HISTORY, -1)).catch(() => {})
+    if (entry.phone) redis.rpush(AUTH_LOG_PHONE_PREFIX + entry.phone, raw).then(() => redis.ltrim(AUTH_LOG_PHONE_PREFIX + entry.phone, -AUTH_LOG_PER_PHONE, -1)).catch(() => {})
+  }
+  // lokasi IP dicari dulu (kalau ada), baru disimpan
+  if (info && info.locationPromise) info.locationPromise.then(loc => { if (loc) entry.location = loc }).catch(() => {}).finally(save)
+  else save()
+  return entry
+}
+async function readAuthLog(phone, limit) {
+  const key = phone ? AUTH_LOG_PHONE_PREFIX + phone : AUTH_LOG_KEY
+  const rows = (await redis.lrange(key, -(limit || 100), -1)) || []
+  const out = []
+  for (const r of rows) { try { out.push(typeof r === 'string' ? JSON.parse(r) : r) } catch (e) {} }
+  return out.sort((x, y) => (y.t || 0) - (x.t || 0)) // terbaru dulu (entri login disimpan setelah lokasi IP ketemu)
+}
 const processedMsgIds = new Set()
 let _lastDecryptFailLog = 0 // throttle log pesan WA yang gagal didekripsi
 const lastReplyAtPerChat = new Map()
@@ -4392,10 +4429,18 @@ app.get('/api/admin/logs', async (req, res) => {
 })
 
 // Admin: Login history per nomor user (in-memory)
-app.get('/api/admin/login-history', (req, res) => {
-  if (!isAdminCookieValid(req)) return res.status(403).json({ error: 'Unauthorized' })
-  const limit = Math.min(parseInt(req.query.limit) || 100, MAX_LOGIN_HISTORY)
-  res.json({ success: true, items: [...loginHistory].reverse().slice(0, limit), total: loginHistory.length })
+app.get('/api/admin/login-history', async (req, res) => {
+  if (!isAdminCookieValid(req) && !req._adminAuthed) return res.status(403).json({ error: 'Unauthorized' })
+  const phone = req.query.phone ? normalizePhone(String(req.query.phone)) : ''
+  const limit = Math.min(parseInt(req.query.limit) || 100, phone ? AUTH_LOG_PER_PHONE : MAX_LOGIN_HISTORY)
+  try {
+    const items = await readAuthLog(phone, limit)
+    res.json({ success: true, items, total: items.length, phone })
+  } catch (e) {
+    // Redis bermasalah: pakai salinan di memori
+    const items = [...loginHistory].reverse().filter(x => !phone || x.phone === phone).slice(0, limit)
+    res.json({ success: true, items, total: items.length, phone })
+  }
 })
 
 app.get('/stats', (_req, res) => {
@@ -5892,7 +5937,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   if (!verifyPin(pin, storedPin)) {
     const f = _pf && Date.now() - _pf.first < 15 * 60000 ? _pf : { count: 0, first: Date.now(), lockedUntil: 0 }
     f.count++
-    if (f.count >= 8) { f.lockedUntil = Date.now() + 15 * 60000; f.count = 0; pushLog(`Auth | +${normalizedPhone} dikunci 15 menit (8x salah PIN)`) }
+    if (f.count >= 8) { f.lockedUntil = Date.now() + 15 * 60000; f.count = 0; pushLog(`Auth | +${normalizedPhone} dikunci 15 menit (8x salah PIN)`); recordAuthEvent(normalizedPhone, 'locked', { name: check.user?.name, ip: getClientIp(req), ua: parseBrowser(req.headers['user-agent']), note: '8x salah PIN, dikunci 15 menit' }) }
     _pinFails.set(normalizedPhone, f)
     if (_pinFails.size > 5000) for (const [k, v] of _pinFails) if (Date.now() - v.first > 3600000) _pinFails.delete(k)
     return res.json({ success: false, error: 'PIN salah. Silakan coba lagi.' })
@@ -5930,12 +5975,9 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
       await redis.hdel(REDIS_KEYS.SESSION_META, oldSess)
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
-      const _kickWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      const _kickEntry = { time: _kickWib, phone: normalizedPhone, name: _kickName, event: 'kicked', ip: _kickedMeta.ip || '-', ua: _kickedMeta.ua || '-', location: _kickedMeta.location || '-' }
-      loginHistory.push(_kickEntry)
-      if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
+      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'sesi lama dikeluarkan karena login di perangkat baru (maks 3 perangkat)' })
     }
   }
 
@@ -5945,15 +5987,12 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: '' }) })
 
   // Catat ke login history (LOGIN di-push setelah KICKED agar saat .reverse() LOGIN muncul di atas)
-  const _loginWib = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
   const _loginName = check.user?.name || '-'
   pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName}) — ${_clientIp} — ${_clientUa}`)
-  const _loginEntry = { time: _loginWib, phone: normalizedPhone, name: _loginName, ip: _clientIp, ua: _clientUa, location: '-' }
-  loginHistory.push(_loginEntry)
-  if (loginHistory.length > MAX_LOGIN_HISTORY) loginHistory.shift()
   // Lookup lokasi async — update entry & session meta tanpa blokir response
-  getIpLocation(_clientIp).then(loc => {
-    _loginEntry.location = loc
+  const _locP = getIpLocation(_clientIp).catch(() => '-')
+  recordAuthEvent(normalizedPhone, 'login', { name: _loginName, ip: _clientIp, ua: _clientUa, locationPromise: _locP })
+  _locP.then(loc => {
     redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: loc }) }).catch(() => {})
   })
 
@@ -6096,9 +6135,23 @@ app.get('/api/verify-session', async (req, res) => {
 
 // API: Logout
 app.post('/api/logout', express.json(), async (req, res) => {
-  const { session } = req.body
+  const session = (req.body && req.body.session) || parseCookies(req).gold_sess || ''
   if (session) {
+    try {
+      const phone = await redis.hget(REDIS_KEYS.SESSIONS, session)
+      if (phone) {
+        const metaRaw = await redis.hget(REDIS_KEYS.SESSION_META, session).catch(() => null)
+        let meta = {}
+        try { meta = metaRaw ? (typeof metaRaw === 'string' ? JSON.parse(metaRaw) : metaRaw) : {} } catch (e) {}
+        let name = '-'
+        try { const u = await redis.hget(REDIS_KEYS.USERS, phone); if (u) name = (typeof u === 'string' ? JSON.parse(u) : u).name || '-' } catch (e) {}
+        const ip = getClientIp(req), ua = parseBrowser(req.headers['user-agent'])
+        pushLog(`Auth | LOGOUT +${phone} (${name}) — ${ip} — ${ua}`)
+        recordAuthEvent(phone, 'logout', { name, ip, ua, location: meta.location })
+      }
+    } catch (e) {}
     await redis.hdel(REDIS_KEYS.SESSIONS, session)
+    await redis.hdel(REDIS_KEYS.SESSION_META, session).catch(() => {})
   }
   res.setHeader('Set-Cookie', 'gold_sess=; HttpOnly; Secure; SameSite=Lax; Max-Age=0; Path=/')
   res.json({ success: true })
@@ -6307,6 +6360,7 @@ app.post('/api/admin/users/block', express.json(), async (req, res) => {
   }
 
   pushLog(`Admin | Blocked user +${normalizedPhone}`)
+  recordAuthEvent(normalizedPhone, 'logout_admin', { note: 'diblokir admin' + (reason ? ': ' + String(reason).substring(0, 80) : '') })
   res.json({ success: true })
 })
 
@@ -6565,6 +6619,10 @@ app.post('/api/admin/force-logout-all', express.json(), async (req, res) => {
   if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
 
   try {
+    try {
+      const all = (await redis.hgetall(REDIS_KEYS.SESSIONS)) || {}
+      for (const ph of new Set(Object.values(all))) recordAuthEvent(ph, 'logout_admin', { note: 'semua user dikeluarkan oleh admin' })
+    } catch (e) {}
     await redis.del(REDIS_KEYS.SESSIONS)
     await redis.del(REDIS_KEYS.LOGIN_TOKENS)
 
@@ -10528,7 +10586,7 @@ ${authScript}
       <div class="section-content" id="section-logs">
         <div class="card" style="margin-bottom:18px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-            <h2 style="margin:0;">🔐 Riwayat Login User</h2>
+            <h2 style="margin:0;">🔐 Riwayat Login &amp; Logout User</h2>
             <span id="loginHistoryCount" style="font-size:0.82em;color:#8b949e;"></span>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
@@ -12103,17 +12161,28 @@ ${authScript}
     var _loginHistoryData = [];
     var _loginHistoryTimer = null;
 
+    var _loginHistoryPhone = '';
     function loadLoginHistory() {
-      adminFetch('/api/admin/login-history?limit=300')
+      var url = _loginHistoryPhone ? '/api/admin/login-history?limit=100&phone=' + encodeURIComponent(_loginHistoryPhone) : '/api/admin/login-history?limit=1000';
+      adminFetch(url)
         .then(r => r.json())
         .then(data => {
           if (!data.success) return;
           _loginHistoryData = data.items || [];
           const countEl = document.getElementById('loginHistoryCount');
-          if (countEl) countEl.textContent = data.total + ' entri (session ini)';
+          if (countEl) countEl.textContent = data.total + ' entri tersimpan' + (_loginHistoryPhone ? ' untuk +' + _loginHistoryPhone : '');
           renderLoginHistoryFiltered();
         })
         .catch(() => {});
+    }
+
+    // Tombol "Log" di Daftar User: buka riwayat login/logout nomor itu saja
+    function showUserAuthLog(phone) {
+      _loginHistoryPhone = phone;
+      var f = document.getElementById('filterLoginPhone'); if (f) f.value = phone;
+      var tab = document.querySelector('.section-tab[data-section="logs"]'); if (tab) tab.click();
+      loadLoginHistory();
+      var box = document.getElementById('loginHistoryBody'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function renderLoginHistoryFiltered() {
@@ -12125,6 +12194,7 @@ ${authScript}
       const loc = (document.getElementById('filterLoginLocation') || {}).value || '';
       const filtered = _loginHistoryData.filter(function(item) {
         if (phone && !(item.phone || '').includes(phone.charAt(0) === '+' ? phone.slice(1) : phone)) return false;
+        if (_loginHistoryPhone && item.phone !== _loginHistoryPhone) return false;
         if (date && !(item.time || '').startsWith(date)) return false;
         if (name && !(item.name || '').toLowerCase().includes(name.toLowerCase())) return false;
         // Filter lokasi: teks bebas, cocok ke kota/provinsi/negara (kolom Lokasi)
@@ -12136,17 +12206,23 @@ ${authScript}
         return;
       }
       tbody.innerHTML = filtered.map(function(item) {
-        var isKicked = item.event === 'kicked';
-        var badge = isKicked
-          ? '<span style="background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.3);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">DITENDANG</span>'
-          : '<span style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">LOGIN</span>';
-        var ipText = (item.ip && item.ip !== '-') ? item.ip : '<span style="color:#4b5563;">-</span>';
-        var uaText = (item.ua && item.ua !== '-') ? item.ua : '<span style="color:#4b5563;">-</span>';
-        var locText = (item.location && item.location !== '-') ? item.location : '<span style="color:#4b5563;">-</span>';
+        var EV = {
+          login: ['LOGIN', '34,197,94', '#4ade80'],
+          logout: ['LOGOUT', '148,163,184', '#cbd5e1'],
+          kicked: ['DITENDANG', '239,68,68', '#f87171'],
+          locked: ['DIKUNCI', '245,158,11', '#fbbf24'],
+          logout_admin: ['DIKELUARKAN ADMIN', '168,85,247', '#c084fc']
+        };
+        var ev = EV[item.event || 'login'] || EV.login;
+        var isKicked = item.event === 'kicked' || item.event === 'locked' || item.event === 'logout_admin';
+        var badge = '<span title="' + _escHtml(item.note || '') + '" style="background:rgba(' + ev[1] + ',0.14);color:' + ev[2] + ';border:1px solid rgba(' + ev[1] + ',0.3);padding:1px 7px;border-radius:6px;font-size:0.78em;font-weight:600;margin-left:6px;">' + ev[0] + '</span>';
+        var ipText = (item.ip && item.ip !== '-') ? _escHtml(item.ip) : '<span style="color:#4b5563;">-</span>';
+        var uaText = (item.ua && item.ua !== '-') ? _escHtml(item.ua) : '<span style="color:#4b5563;">-</span>';
+        var locText = (item.location && item.location !== '-') ? _escHtml(item.location) : '<span style="color:#4b5563;">-</span>';
         return '<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">' +
           '<td style="padding:8px 10px;color:#9ca3af;font-size:0.9em;font-family:monospace;white-space:nowrap;">' + (item.time || '-') + '</td>' +
           '<td style="padding:8px 10px;font-family:monospace;font-weight:600;color:' + (isKicked ? '#f87171' : '#60a5fa') + ';white-space:nowrap;">+' + (item.phone || '-') + badge + '</td>' +
-          '<td style="padding:8px 10px;color:#e6edf3;">' + (item.name || '-') + '</td>' +
+          '<td style="padding:8px 10px;color:#e6edf3;">' + _escHtml(item.name || '-') + (item.note ? '<div style="color:#6b7280;font-size:0.85em;">' + _escHtml(item.note) + '</div>' : '') + '</td>' +
           '<td style="padding:8px 10px;color:#9ca3af;font-family:monospace;font-size:0.85em;">' + ipText + '</td>' +
           '<td style="padding:8px 10px;color:#c9d1d9;font-size:0.85em;">' + uaText + '</td>' +
           '<td style="padding:8px 10px;color:#86efac;font-size:0.85em;">' + locText + '</td>' +
@@ -12157,6 +12233,7 @@ ${authScript}
     function clearLoginFilters() {
       var f = document.getElementById('filterLoginPhone'); if (f) f.value = '';
       var d = document.getElementById('filterLoginDate'); if (d) d.value = '';
+      if (_loginHistoryPhone) { _loginHistoryPhone = ''; loadLoginHistory(); }
       var n = document.getElementById('filterLoginName'); if (n) n.value = '';
       var l = document.getElementById('filterLoginLocation'); if (l) l.value = '';
       renderLoginHistoryFiltered();
@@ -12777,6 +12854,7 @@ ${authScript}
                   '<button class="action-btn pin" onclick="resetPin(&apos;' + u.phone + '&apos;)">Reset PIN</button>' +
                   '<button class="action-btn" style="background:#7c3aed;" title="Ganti nomor HP user ini" onclick="changeUserPhone(&apos;' + u.phone + '&apos;)">Ganti No</button>' +
                   '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
+                  '<button class="action-btn" style="background:#475569;" title="Riwayat login dan logout nomor ini" onclick="showUserAuthLog(&apos;' + u.phone + '&apos;)">Log</button>' +
                   blockBtn +
                   '<button class="action-btn delete" onclick="deleteUser(&apos;' + u.phone + '&apos;)">Hapus</button>' +
                   '<button class="action-btn kick" onclick="kickUser(&apos;' + u.phone + '&apos;)">Kick</button>' +
@@ -13415,6 +13493,11 @@ app.get('/monitoring', async (req, res) => {
       text-overflow: ellipsis;
     }
     body.light-mode .header-title-text { color: #111827; }
+    /* Sisa masa aktif akun, di bawah judul */
+    .sisa-hari { display: block; font-size: 0.78em; font-weight: 600; line-height: 1.2; margin-top: 1px; color: #22c55e; overflow: hidden; text-overflow: ellipsis; }
+    .sisa-hari.hampir { color: #f59e0b; }
+    .sisa-hari.habis { color: #ef4444; }
+    .sisa-hari.lifetime { color: #8b949e; }
     /* Nav icon buttons */
     .nav-icon-btn {
       display: flex;
@@ -16654,7 +16737,7 @@ app.get('/monitoring', async (req, res) => {
         <span id="trendIcon" style="display:none;"></span>
       </div>
 
-      <div class="header-title-text">Harga PemulaOLD</div>
+      <div class="header-title-text">Harga PemulaOLD<span id="sisaHariText" class="sisa-hari" style="display:none;"></span></div>
 
       <div class="header-right">
         <button class="nav-icon-btn" id="navIndicatorBtn" onclick="openIndicatorSettings()" title="Indikator">
@@ -19609,6 +19692,25 @@ app.get('/monitoring', async (req, res) => {
       }
     }
 
+    // Sisa masa aktif akun di bawah judul "Harga PemulaOLD"
+    function _renderSisaHari(user) {
+      var el = document.getElementById('sisaHariText');
+      if (!el || !user) return;
+      var cls = 'sisa-hari', txt;
+      if (!user.expired) { txt = 'Akun Lifetime'; cls += ' lifetime'; el.title = ''; }
+      else {
+        var ms = Number(user.expired) - Date.now();
+        var hari = Math.ceil(ms / 86400000);
+        if (ms <= 0) { txt = 'Masa aktif habis'; cls += ' habis'; }
+        else if (hari <= 1) { txt = 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi'; cls += ' habis'; }
+        else { txt = 'Sisa ' + hari + ' hari lagi'; if (hari <= 3) cls += ' habis'; else if (hari <= 7) cls += ' hampir'; }
+        el.title = 'Aktif sampai ' + new Date(Number(user.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+      el.className = cls;
+      el.textContent = txt;
+      el.style.display = 'block';
+    }
+
     // Cek berkala: kalau session sudah ditendang (login di device lain), beri notif lalu logout
     setInterval(function() {
       const session = localStorage.getItem('goldmonitor_session');
@@ -19616,7 +19718,7 @@ app.get('/monitoring', async (req, res) => {
       fetch('/api/verify-session?session=' + session)
         .then(r => r.json())
         .then(data => {
-          if (data.valid) { _sessionOk(); return; }
+          if (data.valid) { _sessionOk(); _renderSisaHari(data.user); return; }
           _handleInvalidSession(data);
         })
         .catch(() => {}); // jaringan bermasalah — jangan logout paksa
@@ -19639,6 +19741,7 @@ app.get('/monitoring', async (req, res) => {
           }
           _sessionOk();
           _myPhone = String(data.phone || '');
+          _renderSisaHari(data.user);
           setTimeout(function() { joinWaGroup(true); }, 6000);
 
           // Tampilkan tombol Panel Admin di menu untuk admin
@@ -21283,7 +21386,89 @@ async function getTelegramSettings() {
   return telegramSettingsCache
 }
 
+// Ikon untuk setiap tombol bot Telegram, supaya menu mudah dikenali tanpa membaca.
+// Dipasang otomatis pada semua tombol sebelum dikirim; tombol yang sudah berikon dibiarkan.
+// Urutan penting: aturan pertama yang cocok yang dipakai.
+const TG_BUTTON_ICONS = [
+  [/^menu utama/i, '🏠'],
+  [/^(berikutnya)/i, '➡️'],
+  [/^(sebelumnya|kembali)$/i, '⬅️'],
+  [/^(order pembayaran|lihat order|order)$/i, '🧾'],
+  [/^order ini sudah tidak ada/i, '🗑️'],
+  [/^menunggu acc/i, '⏳'],
+  [/^belum upload bukti/i, '📤'],
+  [/^lunas, belum masuk grup/i, '👥'],
+  [/^lunas, sudah masuk grup/i, '🏁'],
+  [/^ditolak \/ kedaluwarsa/i, '❌'],
+  [/^mau masuk grup/i, '🙋'],
+  [/^mau expired/i, '⏰'],
+  [/^online/i, '🟢'],
+  [/^whatsapp|^wa$/i, '📱'],
+  [/^pengaturan/i, '⚙️'],
+  [/^logs?$/i, '📋'],
+  [/^ringkasan/i, '📊'],
+  [/^(user|daftar)$/i, '👤'],
+  [/^(cari \/ kelola nomor|kelola nomor)/i, '🔎'],
+  [/^riwayat login/i, '🕘'],
+  [/^ubah status grup/i, '👥'],
+  [/^(tandai sudah masuk grup|tandai masuk grup)/i, '✅'],
+  [/^batalkan tanda masuk grup/i, '↩️'],
+  [/^(tidak dimasukkan|tandai tidak di grup)/i, '🚫'],
+  [/^acc/i, '✅'],
+  [/^tolak/i, '❌'],
+  [/^lihat bukti/i, '🖼️'],
+  [/^tulis alasan/i, '✍️'],
+  [/^(ya, hapus|ya, kick)/i, '⚠️'],
+  [/^ya, ganti/i, '✔️'],
+  [/^(hapus|kick)/i, '🗑️'],
+  [/^buka blokir/i, '🔓'],
+  [/^blokir/i, '🔒'],
+  [/^reset pin/i, '🔑'],
+  [/^ganti nomor/i, '📞'],
+  [/^(perpanjang|ubah masa aktif)/i, '📅'],
+  [/^lifetime/i, '♾️'],
+  [/^ubah harga/i, '💰'],
+  [/^(tambah|pakai \+)/i, '➕'],
+  [/^daftarkan/i, '📝'],
+  [/^kirim qr/i, '📷'],
+  [/^(tautkan|minta kode)/i, '🔗'],
+  [/^(muat ulang|coba lagi|cek status)/i, '🔄'],
+  [/^(matikan|jangan arahkan)/i, '⏸️'],
+  [/^(aktifkan|arahkan)/i, '▶️'],
+  [/^(semua)$/i, '📚'],
+  [/^otomatis$/i, '🤖'],
+  [/^manual$/i, '🛠️'],
+  [/^bayar$/i, '💳'],
+  [/^grup wa$/i, '👥'],
+  [/^lainnya$/i, '📁'],
+  [/^(di grup)$/i, '✅'],
+  [/^mau masuk grup, belum masuk/i, '🙋'],
+  [/^tidak mau masuk grup/i, '🙅'],
+  [/^belum menjawab/i, '❔'],
+  [/^batal$/i, '✖️'],
+  [/^\+?62[0-9]/, '👤']
+]
+const TG_HAS_ICON = /^(?:[←-⇿⌀-⏿①-➿⬀-⯿〰〽㊗㊙]|[\uD83C-\uDBFF][\uDC00-\uDFFF])/
+function tgIconText(text) {
+  let t = String(text == null ? '' : text)
+  // penanda pilihan aktif ("• " / "> ") tetap di depan
+  const mark = /^(• |> )/.exec(t)
+  if (mark) t = t.substring(mark[0].length)
+  let back = false
+  if (/^« /.test(t)) { t = t.substring(2); back = true }
+  if (/ »$/.test(t)) t = t.substring(0, t.length - 2)
+  if (!t || TG_HAS_ICON.test(t)) return (mark ? mark[0] : '') + (back ? '⬅️ ' : '') + t
+  let icon = back ? '⬅️' : ''
+  if (!icon) for (const [re, ic] of TG_BUTTON_ICONS) if (re.test(t)) { icon = ic; break }
+  return (mark ? mark[0] : '') + (icon ? icon + ' ' : '') + t
+}
+function tgDecorateKeyboard(markup) {
+  if (!markup || !Array.isArray(markup.inline_keyboard)) return markup
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map(row => Array.isArray(row) ? row.map(b => (b && typeof b.text === 'string' ? { ...b, text: tgIconText(b.text) } : b)) : row) }
+}
+
 async function telegramApi(token, method, body, isForm) {
+  if (!isForm && body && body.reply_markup) body = { ...body, reply_markup: tgDecorateKeyboard(body.reply_markup) }
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: isForm ? undefined : { 'Content-Type': 'application/json' },
@@ -21355,7 +21540,7 @@ async function notifyAdminsTelegram(text, photo, opts) {
     if (photo && photo.buffer) {
       const form = new FormData()
       form.append('chat_id', tg.chatId)
-      if (markup) form.append('reply_markup', JSON.stringify(markup))
+      if (markup) form.append('reply_markup', JSON.stringify(tgDecorateKeyboard(markup)))
       if (html.length <= 1000) { form.append('caption', html); form.append('parse_mode', 'HTML') }
       else form.append('caption', plain.substring(0, 1000))
       form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
@@ -21550,6 +21735,8 @@ async function tgOrderAction(tg, act, id, reason) {
     if (order.inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'ditandai admin' }
     await savePaymentOrder(order)
     await setGroupMember(order.phone, order.inGroup).catch(() => {})
+    // status grup user ikut: masuk -> hapus catatan "tidak dimasukkan"; batal -> kembali "mau masuk"
+    try { const pref = (await getGroupPref(order.phone)) || {}; if (order.inGroup) delete pref.adminMark; await saveGroupPref(order.phone, pref) } catch (e) {}
     pushLog(`Admin | Grup: +${order.phone} ${order.inGroup ? 'ditandai sudah masuk grup' : 'tanda masuk grup dibatalkan'} (Telegram)`)
     return order.inGroup ? 'Ditandai sudah masuk grup.' : 'Tanda masuk grup dibatalkan.'
   }
@@ -21620,7 +21807,7 @@ async function tgUserCard(phone, note) {
   kb.push(grupStatus === 'masuk'
     ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
     : [{ text: 'Tandai masuk grup', callback_data: 'g:in:' + phone }, { text: 'Tidak dimasukkan', callback_data: 'g:out:' + phone }])
-  kb.push([{ text: 'Ubah status grup', callback_data: 'g:ed:' + phone }])
+  kb.push([{ text: 'Ubah status grup', callback_data: 'g:ed:' + phone }, { text: 'Riwayat login', callback_data: 'u:lg:' + phone }])
   kb.push([{ text: 'Ganti nomor HP', callback_data: 'u:cn:' + phone }, { text: 'Hapus user', callback_data: 'u:dq:' + phone }])
   kb.push([{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]])
   return { text, kb }
@@ -22075,6 +22262,20 @@ async function handleTelegramCallback(tg, cq) {
     return toast(note)
   }
 
+  // --- riwayat login / logout satu nomor ---
+  if ((m = /^u:lg:(62[0-9]{8,13})$/.exec(data))) {
+    const items = await readAuthLog(m[1], 15).catch(() => [])
+    const EV = { login: 'LOGIN', logout: 'LOGOUT', kicked: 'DITENDANG', locked: 'DIKUNCI', logout_admin: 'DIKELUARKAN ADMIN' }
+    const lines = items.map(x => '<b>' + (EV[x.event] || 'LOGIN') + '</b> ' + tgEsc(String(x.time || '').substring(5, 16)) +
+      (x.ua && x.ua !== '-' ? '\n   ' + tgEsc(x.ua) : '') + (x.location && x.location !== '-' ? ' · ' + tgEsc(x.location) : '') +
+      (x.note ? '\n   ' + tgEsc(x.note) : ''))
+    await show({
+      text: '<b>Riwayat login / logout</b>\n<code>+' + m[1] + '</code>\n\n' + (lines.length ? lines.join('\n') : 'Belum ada catatan.') + '\n\n<i>15 terakhir, jam WIB</i>',
+      kb: [[{ text: 'Muat ulang', callback_data: 'u:lg:' + m[1] }, { text: '« Kembali', callback_data: 'u:v:' + m[1] }]]
+    })
+    return toast('')
+  }
+
   // --- ganti nomor HP ---
   if ((m = /^u:cn:(62[0-9]{8,13})$/.exec(data))) {
     tgSetAwait('chg', m[1])
@@ -22432,9 +22633,30 @@ async function saveGroupMembers(phones, at) {
 // Tambah / hapus satu nomor tanpa mengubah waktu sinkron terakhir
 async function setGroupMember(phone, inGroup) {
   const g = await getGroupMembers()
-  if (g.phones.has(phone) === !!inGroup) return
-  if (inGroup) g.phones.add(phone); else g.phones.delete(phone)
-  await saveGroupMembers(g.phones, g.at)
+  if (g.phones.has(phone) !== !!inGroup) {
+    if (inGroup) g.phones.add(phone); else g.phones.delete(phone)
+    await saveGroupMembers(g.phones, g.at)
+  }
+  // Catatan "masuk grup" di semua order lunas nomor ini ikut disamakan (menu Order di Telegram
+  // dan panel admin membaca tanda ini)
+  await syncOrdersGroupFlag(phone, !!inGroup, 'ditandai admin').catch(() => {})
+}
+
+// Samakan tanda inGroup pada semua order lunas milik satu nomor. Mengembalikan jumlah order yang diubah.
+async function syncOrdersGroupFlag(phone, inGroup, how) {
+  let changed = 0
+  for (const o of await loadPaymentOrders()) {
+    if (o.phone !== phone || o.status !== 'paid' || !!o.inGroup === inGroup) continue
+    const order = await readPaymentOrder(o.id)
+    if (!order || order.status !== 'paid' || !!order.inGroup === inGroup) continue
+    order.inGroup = inGroup
+    order.inGroupAt = inGroup ? Date.now() : null
+    if (inGroup) order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: how || 'ditandai admin' }
+    else if (order.groupAdd) order.groupAdd = { ...order.groupAdd, status: 'removed' }
+    await savePaymentOrder(order)
+    changed++
+  }
+  return changed
 }
 
 // ---------- Pilihan user soal grup WA ----------
@@ -22662,15 +22884,10 @@ app.post('/api/admin/group-members/sync', express.json({ limit: '1mb' }), async 
     // Order lunas milik anggota grup otomatis ditandai sudah masuk
     const set = new Set(phones)
     let marked = 0
-    for (const o of await loadPaymentOrders()) {
-      if (o.status !== 'paid' || o.inGroup || !set.has(o.phone)) continue
-      const order = await readPaymentOrder(o.id)
-      if (!order || order.inGroup) continue
-      order.inGroup = true
-      order.inGroupAt = Date.now()
-      order.groupAdd = { ...(order.groupAdd || {}), status: 'added', how: 'sinkron daftar grup' }
-      await savePaymentOrder(order)
-      marked++
+    const orderPhones = new Set((await loadPaymentOrders()).filter(o => o.status === 'paid').map(o => o.phone))
+    for (const ph of orderPhones) {
+      const n = await syncOrdersGroupFlag(ph, set.has(ph), 'sinkron daftar grup')
+      if (set.has(ph)) marked += n
     }
     const cmp = await compareGroupWithUsers(phones)
     pushLog(`Admin | Grup: daftar anggota disinkron - ${cmp.groupTotal} anggota, ${cmp.groupOnly.length} tidak terdaftar di web, ${cmp.webOnly.length} user web belum di grup, ${marked} order ditandai masuk`)
