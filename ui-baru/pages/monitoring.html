@@ -73,18 +73,19 @@
             <span id="chipSpread" class="chip px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">SPREAD</span><span id="spreadVal" class="num">—</span></span>
             <span id="chipOn" class="chip hidden px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">TITIK ON</span><span id="lowestOnVal" class="num text-up"></span></span>
           </div>
+
+          <!-- untung per nominal (di dalam kotak harga); sisa di baris terakhir / satu-satunya: di tengah -->
+          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5">
+            <div class="mb-1 flex items-center justify-between px-0.5">
+              <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
+              <button id="btnNominal" class="text-[11px] font-semibold text-gold">Atur</button>
+            </div>
+            <div id="nominals" class="flex flex-wrap justify-center gap-1 lg:gap-2">
+              <div class="py-2 text-sm text-muted">Memuat...</div>
+            </div>
+          </div>
         </section>
 
-        <!-- UNTUNG PER NOMINAL: semua terlihat (grid), tanpa geser -->
-        <section class="card min-w-0 px-2 py-1.5 lg:p-4" aria-label="Untung per nominal">
-          <div class="mb-1 flex items-center justify-between px-0.5 lg:mb-3">
-            <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
-            <button id="btnNominal" class="text-[11px] font-semibold text-gold">Atur</button>
-          </div>
-          <div id="nominals" class="grid grid-cols-3 gap-1 lg:grid-cols-2 lg:gap-2">
-            <div class="col-span-3 py-2 text-sm text-muted">Memuat...</div>
-          </div>
-        </section>
       </div>
 
       <!-- ============================== KOLOM KANAN ============================== -->
