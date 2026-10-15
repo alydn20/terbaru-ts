@@ -112,7 +112,7 @@ function renderMarkup() {
   const mk = markupOf(state.sell, state.xauUsd, state.usdIdr)
   $('#chipMarkup').classList.toggle('hidden', mk.normal)
   if (!mk.normal) {
-    $('#markupLabel').textContent = mk.diff > 0 ? 'MARKUP' : 'MARKDOWN'
+    $('#markupLabel').textContent = mk.diff > 0 ? 'Markup' : 'Markdown'
     $('#markupVal').textContent = signed(mk.diff)
   }
 }
@@ -218,7 +218,7 @@ function fitChart() {
   if (wide()) { box.style.height = ''; return }
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
-  box.style.height = Math.max(280, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+  box.style.height = Math.max(220, Math.round(window.innerHeight - top - nav - 8)) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -240,7 +240,7 @@ function tick() {
   const sEl = $('#clkS')
   sEl.textContent = pad2(s)
   sEl.className = s >= 50 ? 'text-down' : ''
-  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' ' + now.getFullYear() + ' · WIB'
+  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
   countdownTick(s, $('main'))
 }
 

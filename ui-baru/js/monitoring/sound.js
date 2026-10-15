@@ -20,9 +20,24 @@ export function setSetting(type, on) {
   try { localStorage.setItem(KEY, JSON.stringify(settings)) } catch (e) {}
 }
 
+// Suara khusus admin diputar lewat WebAudio (AudioBuffer), BUKAN new Audio().play():
+// di HP (terutama iPhone) new Audio().play() diblokir kalau tidak tepat setelah layar disentuh,
+// sehingga dulu selalu jatuh ke bunyi bawaan. AudioContext yang sudah dibuka sekali oleh sentuhan
+// boleh memutar kapan saja.
 let custom = {}
+const buffers = {}   // url -> AudioBuffer
 export function setCustomSounds(s) {
   custom = { up: s.soundUp, down: s.soundDown, bigUp: s.soundBigUp, bigDown: s.soundBigDown, on: s.soundOn, off: s.soundOff }
+  Object.values(custom).forEach(u => { if (u) decode(u) })
+}
+async function decode(url) {
+  if (!url || buffers[url]) return buffers[url]
+  try {
+    const data = await (await fetch(url)).arrayBuffer()
+    const c = audio()
+    buffers[url] = await new Promise((res, rej) => { const pr = c.decodeAudioData(data, res, rej); if (pr && pr.then) pr.then(res, rej) })
+  } catch (e) { buffers[url] = null }
+  return buffers[url]
 }
 export async function loadCustomSounds() {
   for (let i = 0; i < 5; i++) {
@@ -39,7 +54,8 @@ const audio = () => {
   if (ctx.state === 'suspended') ctx.resume().catch(() => {})
   return ctx
 }
-;['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => { interacted = true; try { audio() } catch (e) {} }, { once: true, passive: true }))
+// setiap sentuhan membuka (resume) audio lagi: iPhone menutupnya saat aplikasi ke latar belakang
+;['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => { interacted = true; try { audio() } catch (e) {} }, { passive: true }))
 
 function tones(list, type, vol) {
   try {
@@ -61,8 +77,19 @@ const BUILTIN = {
   bigUp: () => tones([[600, 0, 0.25], [900, 0.12, 0.25], [1400, 0.24, 0.25]], 'sine', 0.4),
   bigDown: () => tones([[1200, 0, 0.25], [800, 0.12, 0.25], [350, 0.24, 0.25]], 'sawtooth', 0.35)
 }
-function playUrl(url, fallback, vol = 0.5) {
+async function playUrl(url, fallback, vol = 0.5) {
   if (!url) { if (fallback) fallback(); return }
+  const buf = await decode(url)
+  if (buf) {
+    try {
+      const c = audio()
+      const src = c.createBufferSource(); const g = c.createGain()
+      src.buffer = buf; g.gain.value = vol
+      src.connect(g); g.connect(c.destination); src.start()
+      return
+    } catch (e) {}
+  }
+  // cadangan: elemen audio biasa, lalu bunyi bawaan
   const a = new Audio(url); a.volume = vol
   a.play().catch(() => { if (fallback) fallback() })
 }

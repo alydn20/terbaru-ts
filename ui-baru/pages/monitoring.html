@@ -41,44 +41,42 @@
       <!-- ============================== KOLOM KIRI ============================== -->
       <div class="flex min-w-0 flex-col gap-2 lg:sticky lg:top-[72px] lg:gap-4">
 
-        <!-- HARGA UTAMA -->
+        <!-- HARGA UTAMA: semua isi kartu rata tengah dan kotak kecil berukuran sama -->
         <section id="sec-harga" class="card min-w-0 p-2 lg:p-4" aria-label="Harga emas">
           <div class="grid grid-cols-2 gap-1.5 lg:gap-2">
-            <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 lg:p-3">
-              <div class="flex items-center justify-between gap-1"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
+            <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:p-3">
+              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
               <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
             </div>
-            <div id="sellCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 lg:p-3">
-              <div class="flex items-center justify-between gap-1"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-sky"></span>Jual</span><span id="sellChange" class="hidden"></span></div>
+            <div id="sellCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:p-3">
+              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-sky"></span>Jual</span><span id="sellChange" class="hidden"></span></div>
               <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
             </div>
           </div>
 
           <!-- jam + status promo -->
-          <div class="mt-1.5 flex items-center justify-between gap-2 px-0.5">
-            <div class="flex min-w-0 items-baseline gap-2">
-              <span class="num font-mono text-lg font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
-              <span id="clkDate" class="truncate text-[10px] text-muted">&nbsp;</span>
-            </div>
-            <div id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</div>
+          <div class="mt-2 flex items-center justify-center gap-3">
+            <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
+            <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
+            <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
           </div>
 
-          <!-- info kecil: turun ke baris berikutnya kalau tidak muat (tidak pernah terpotong) -->
-          <div id="chips" class="mt-1.5 flex flex-wrap gap-1">
-            <span class="chip px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">USD/IDR</span><span id="usdIdr" class="num text-sky">—</span><span id="usdIdrChange" class="hidden"></span></span>
-            <span class="chip px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">TERTINGGI</span><span id="dayHigh" class="num text-up">—</span></span>
-            <span class="chip px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">TERENDAH</span><span id="dayLow" class="num text-down">—</span></span>
-            <span id="chipLimit" class="chip hidden px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">LIMIT</span><span id="limitVal" class="num text-gold"></span></span>
-            <span id="chipMarkup" class="chip hidden px-1.5 py-0.5 text-[10px]"><span id="markupLabel" class="text-[8.5px] tracking-wider text-muted">MARKUP</span><span id="markupVal" class="num text-gold"></span></span>
-            <span id="chipSpread" class="chip px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">SPREAD</span><span id="spreadVal" class="num">—</span></span>
-            <span id="chipOn" class="chip hidden px-1.5 py-0.5 text-[10px]"><span class="text-[8.5px] tracking-wider text-muted">TITIK ON</span><span id="lowestOnVal" class="num text-up"></span></span>
+          <!-- info harga: kotak seragam 3 per baris; sisa di baris terakhir di tengah -->
+          <div id="chips" class="mt-2 flex flex-wrap justify-center gap-1">
+            <div class="stat"><span class="stat-k">USD/IDR <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
+            <div class="stat"><span class="stat-k">Tertinggi</span><span id="dayHigh" class="stat-v text-up">—</span></div>
+            <div class="stat"><span class="stat-k">Terendah</span><span id="dayLow" class="stat-v text-down">—</span></div>
+            <div id="chipLimit" class="stat hidden"><span class="stat-k">Limit</span><span id="limitVal" class="stat-v text-gold"></span></div>
+            <div id="chipMarkup" class="stat hidden"><span id="markupLabel" class="stat-k">Markup</span><span id="markupVal" class="stat-v text-gold"></span></div>
+            <div id="chipSpread" class="stat"><span class="stat-k">Spread</span><span id="spreadVal" class="stat-v">—</span></div>
+            <div id="chipOn" class="stat hidden"><span class="stat-k">Titik ON</span><span id="lowestOnVal" class="stat-v text-up"></span></div>
           </div>
 
-          <!-- untung per nominal (di dalam kotak harga); sisa di baris terakhir / satu-satunya: di tengah -->
+          <!-- untung per nominal -->
           <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5">
-            <div class="mb-1 flex items-center justify-between px-0.5">
+            <div class="relative mb-1 text-center">
               <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
-              <button id="btnNominal" class="text-[11px] font-semibold text-gold">Atur</button>
+              <button id="btnNominal" class="absolute right-0.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gold">Atur</button>
             </div>
             <div id="nominals" class="flex flex-wrap justify-center gap-1 lg:gap-2">
               <div class="py-2 text-sm text-muted">Memuat...</div>
