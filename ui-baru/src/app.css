@@ -40,6 +40,8 @@
   .tile { @apply rounded-xl border border-line/[0.08] bg-card2; }
   .label { @apply text-[11px] font-bold uppercase tracking-wider text-muted; }
   .num { font-variant-numeric: tabular-nums; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
   .pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold; }
   .pill-up { @apply pill bg-up/15 text-up; }
   .pill-down { @apply pill bg-down/15 text-down; }

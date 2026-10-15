@@ -95,8 +95,8 @@ const pillHtml = n => (n > 0 ? 'pill-up' : 'pill-down')
 function setChange(id, change) {
   const el = $('#' + id)
   if (!change) return
-  el.className = pillHtml(change)
-  el.textContent = (change > 0 ? '▲ ' : '▼ ') + signed(change)
+  el.className = pillHtml(change) + ' px-1.5 py-0 text-[10px] lg:text-xs'
+  el.textContent = (change > 0 ? '▲' : '▼') + signed(change)
 }
 function flash(id, change) {
   const el = $('#' + id)
@@ -124,15 +124,19 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-2 py-4 text-center text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted lg:col-span-2' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    return h('div', { class: 'tile p-3 ' + (list.length % 2 && i === list.length - 1 ? 'col-span-2' : '') },
+    return h('div', { class: 'tile min-w-[118px] shrink-0 px-2.5 py-1.5 lg:min-w-0 lg:p-3 ' + (list.length % 2 && i === list.length - 1 ? 'lg:col-span-2' : '') },
       h('div', { class: 'flex items-center justify-between gap-2' },
-        h('span', { class: 'text-sm font-extrabold text-gold' }, n.label),
-        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
-      h('div', { class: 'num mt-1 font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'))
+        h('span', { class: 'text-xs font-extrabold text-gold lg:text-sm' }, n.label),
+        h('span', { class: 'num font-mono text-[10px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
+      p ? h('div', { class: 'num mt-0.5 text-[13px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
+      h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
+        h('span', { class: 'num font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'),
+        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
   }))
+  fitChart()
 }
 
 /** Satu jalur untuk data harga dari /monitoring/api dan SSE 'price' */
@@ -174,7 +178,7 @@ function setUsdIdr(rate) {
   if (state.usdIdr && r !== Math.round(state.usdIdr)) {
     const c = r - Math.round(state.usdIdr)
     const el = $('#usdIdrChange')
-    el.className = 'num text-[10px] font-bold ' + (c > 0 ? 'text-up' : 'text-down')
+    el.className = 'num ml-0.5 normal-case tracking-normal ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
   }
   state.usdIdr = rate
@@ -204,6 +208,20 @@ async function fetchPrices() {
   } catch (e) {}
 }
 
+// ===================================================================== GRAFIK MUAT SATU LAYAR (HP)
+const wide = () => matchMedia('(min-width: 1024px)').matches
+/** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
+function fitChart() {
+  const box = $('#tvChart')
+  if (!box) return
+  if (wide()) { box.style.height = ''; return }
+  const top = box.getBoundingClientRect().top + window.scrollY
+  const nav = $('#bottomNav').offsetHeight
+  box.style.height = Math.max(280, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+}
+window.addEventListener('resize', fitChart)
+window.addEventListener('orientationchange', () => setTimeout(fitChart, 300))
+
 // ===================================================================== JAM
 let offset = 0
 async function syncTime() { try { const d = await (await fetch('/time')).json(); offset = d.timestamp - Date.now() } catch (e) {} }
@@ -226,6 +244,7 @@ function showNotice(d) {
     h('div', { class: 'min-w-0 flex-1' }, h('div', { class: 'text-sm font-extrabold' }, d.title || 'Info'), h('div', { class: 'mt-0.5 whitespace-pre-line text-sm text-muted' }, d.message || '')),
     h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Tutup', html: icon('close', 'h-4 w-4'), onclick: () => card.remove() }))
   $('#notifs').prepend(card)
+  fitChart()
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     try { new Notification(d.title || 'PemulaOLD', { body: d.message || '', icon: '/icon.png' }) } catch (e) {}
   }
@@ -308,6 +327,7 @@ async function start() {
   $('#btnIndicator').addEventListener('click', openIndicators)
   $('#btnNominal').addEventListener('click', openNominalSettings)
   initNav()
+  fitChart()
   setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
@@ -321,6 +341,7 @@ async function start() {
     state.user = v.user || null
     state.isAdmin = !!v.isAdmin
     renderSisaHari()
+    fitChart()
     setTimeout(renewReminder, 2500)
     setTimeout(() => joinGroup(true), 6000)
     getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})

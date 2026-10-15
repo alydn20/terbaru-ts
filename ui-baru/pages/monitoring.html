@@ -19,95 +19,93 @@
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
-    <div class="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5">
+    <div class="mx-auto flex max-w-6xl items-center gap-2.5 px-3 py-1.5 lg:gap-3 lg:px-4 lg:py-2.5">
       <div class="relative shrink-0">
-        <svg viewBox="0 0 24 24" class="h-8 w-8" aria-hidden="true"><rect x="7" y="1" width="16" height="16" rx="4" fill="#f7931a"/><path d="M1 23V9a13 13 0 0 1 13 14Z" fill="#c97a10" opacity=".9"/></svg>
+        <svg viewBox="0 0 24 24" class="h-7 w-7 lg:h-8 lg:w-8" aria-hidden="true"><rect x="7" y="1" width="16" height="16" rx="4" fill="#f7931a"/><path d="M1 23V9a13 13 0 0 1 13 14Z" fill="#c97a10" opacity=".9"/></svg>
         <span id="liveDot" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-up ring-2 ring-bg" title="Data live"></span>
       </div>
       <div class="min-w-0 flex-1 leading-tight">
-        <div class="truncate text-[15px] font-extrabold">Harga PemulaOLD</div>
-        <button id="sisaHari" class="mt-0.5 hidden items-center gap-1.5 text-xs font-semibold"></button>
+        <div class="truncate text-sm font-extrabold lg:text-[15px]">Harga PemulaOLD</div>
+        <button id="sisaHari" class="hidden items-center gap-1.5 text-[11px] font-semibold"></button>
       </div>
-      <button id="btnAdminWa" class="icon-btn border-up/30 bg-up/10 text-up" aria-label="Hubungi admin lewat WhatsApp"></button>
+      <button id="btnAdminWa" class="icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
     </div>
   </header>
 
-  <main class="mx-auto max-w-6xl px-4 pt-3">
+  <main class="mx-auto max-w-6xl px-2.5 pt-2 lg:px-4 lg:pt-3">
     <!-- pemberitahuan dari admin -->
-    <div id="notifs" class="mb-3 flex flex-col gap-2 empty:hidden"></div>
+    <div id="notifs" class="mb-2 flex flex-col gap-2 empty:hidden"></div>
 
-    <div class="grid gap-4 lg:grid-cols-[420px_1fr] lg:items-start">
+    <!-- HP: harga + nominal + grafik muat dalam satu layar; layar lebar: dua kolom -->
+    <div class="grid grid-cols-1 gap-2 lg:grid-cols-[420px_1fr] lg:items-start lg:gap-4">
       <!-- ============================== KOLOM KIRI ============================== -->
-      <div class="flex flex-col gap-4 lg:sticky lg:top-[72px]">
+      <div class="flex min-w-0 flex-col gap-2 lg:sticky lg:top-[72px] lg:gap-4">
 
         <!-- HARGA UTAMA -->
-        <section id="sec-harga" class="card p-4" aria-label="Harga emas">
-          <div class="grid grid-cols-2 gap-2.5">
-            <div id="buyCard" class="tile border-t-[3px] border-t-up p-3">
-              <div class="label">Beli</div>
-              <div class="num mt-1 whitespace-nowrap font-mono text-[clamp(1.2rem,5.4vw,1.6rem)] font-extrabold tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
-              <span id="buyChange" class="mt-1.5 hidden"></span>
+        <section id="sec-harga" class="card min-w-0 p-2.5 lg:p-4" aria-label="Harga emas">
+          <div class="grid grid-cols-2 gap-2">
+            <div id="buyCard" class="tile min-w-0 border-t-[3px] border-t-up px-2.5 py-2 lg:p-3">
+              <div class="flex items-center justify-between gap-1"><span class="label text-[10px]">Beli</span><span id="buyChange" class="hidden"></span></div>
+              <div class="num whitespace-nowrap font-mono text-[clamp(1.1rem,5.2vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
             </div>
-            <div id="sellCard" class="tile border-t-[3px] border-t-sky p-3">
-              <div class="label">Jual</div>
-              <div class="num mt-1 whitespace-nowrap font-mono text-[clamp(1.2rem,5.4vw,1.6rem)] font-extrabold tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
-              <span id="sellChange" class="mt-1.5 hidden"></span>
+            <div id="sellCard" class="tile min-w-0 border-t-[3px] border-t-sky px-2.5 py-2 lg:p-3">
+              <div class="flex items-center justify-between gap-1"><span class="label text-[10px]">Jual</span><span id="sellChange" class="hidden"></span></div>
+              <div class="num whitespace-nowrap font-mono text-[clamp(1.1rem,5.2vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
             </div>
           </div>
 
-          <div class="mt-2.5 grid grid-cols-3 gap-2">
-            <div class="tile px-2.5 py-2">
-              <div class="label text-[10px]">USD/IDR</div>
-              <div class="num font-mono text-sm font-bold text-sky" id="usdIdr">—</div>
-              <span id="usdIdrChange" class="hidden"></span>
+          <div class="mt-2 grid grid-cols-3 gap-1.5 text-center">
+            <div class="tile px-1.5 py-1">
+              <div class="label text-[9px]">USD/IDR <span id="usdIdrChange" class="hidden"></span></div>
+              <div class="num font-mono text-[13px] font-bold text-sky" id="usdIdr">—</div>
             </div>
-            <div class="tile px-2.5 py-2">
-              <div class="label text-[10px]">Tertinggi</div>
-              <div class="num font-mono text-sm font-bold text-up" id="dayHigh">—</div>
+            <div class="tile px-1.5 py-1">
+              <div class="label text-[9px]">Tertinggi</div>
+              <div class="num font-mono text-[13px] font-bold text-up" id="dayHigh">—</div>
             </div>
-            <div class="tile px-2.5 py-2">
-              <div class="label text-[10px]">Terendah</div>
-              <div class="num font-mono text-sm font-bold text-down" id="dayLow">—</div>
+            <div class="tile px-1.5 py-1">
+              <div class="label text-[9px]">Terendah</div>
+              <div class="num font-mono text-[13px] font-bold text-down" id="dayLow">—</div>
             </div>
           </div>
 
-          <!-- jam & status -->
-          <div class="mt-3 flex items-center gap-3 border-t border-dashed border-line/[0.12] pt-3">
-            <div class="min-w-0 flex-1">
-              <div class="num font-mono text-2xl font-extrabold leading-none"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></div>
-              <div id="clkDate" class="mt-1 truncate text-xs text-muted">&nbsp;</div>
+          <!-- jam, status promo, limit / markup / spread -->
+          <div class="mt-2 flex items-center gap-2 border-t border-dashed border-line/[0.12] pt-2">
+            <div class="min-w-0 shrink-0">
+              <div class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></div>
+              <div id="clkDate" class="mt-0.5 truncate text-[10px] text-muted">&nbsp;</div>
             </div>
-            <div id="promoStatus" class="pill bg-line/10 px-3 py-1.5 text-sm text-muted" title="Status promo">PROMO —</div>
-          </div>
-          <div id="chips" class="mt-3 flex flex-wrap gap-1.5">
-            <span id="chipLimit" class="chip hidden"><span class="text-[10px] tracking-wider text-muted">LIMIT</span><span id="limitVal" class="num text-gold"></span></span>
-            <span id="chipMarkup" class="chip hidden"><span id="markupLabel" class="text-[10px] tracking-wider text-muted">MARKUP</span><span id="markupVal" class="num text-gold"></span></span>
-            <span id="chipSpread" class="chip"><span class="text-[10px] tracking-wider text-muted">SPREAD</span><span id="spreadVal" class="num">—</span></span>
-            <span id="chipOn" class="chip hidden"><span class="text-[10px] tracking-wider text-muted">TITIK ON</span><span id="lowestOnVal" class="num text-up"></span></span>
+            <div id="chips" class="no-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto">
+              <span id="chipLimit" class="chip hidden shrink-0 px-2 py-0.5 text-[11px]"><span class="text-[9px] tracking-wider text-muted">LIMIT</span><span id="limitVal" class="num text-gold"></span></span>
+              <span id="chipMarkup" class="chip hidden shrink-0 px-2 py-0.5 text-[11px]"><span id="markupLabel" class="text-[9px] tracking-wider text-muted">MARKUP</span><span id="markupVal" class="num text-gold"></span></span>
+              <span id="chipSpread" class="chip shrink-0 px-2 py-0.5 text-[11px]"><span class="text-[9px] tracking-wider text-muted">SPREAD</span><span id="spreadVal" class="num">—</span></span>
+              <span id="chipOn" class="chip hidden shrink-0 px-2 py-0.5 text-[11px]"><span class="text-[9px] tracking-wider text-muted">TITIK ON</span><span id="lowestOnVal" class="num text-up"></span></span>
+            </div>
+            <div id="promoStatus" class="pill shrink-0 bg-line/10 px-2.5 py-1 text-xs text-muted" title="Status promo">PROMO —</div>
           </div>
         </section>
 
-        <!-- UNTUNG PER NOMINAL -->
-        <section class="card p-4" aria-label="Untung per nominal">
-          <div class="mb-3 flex items-center justify-between">
-            <h2 class="label">Untung per nominal</h2>
-            <button id="btnNominal" class="text-xs font-semibold text-gold">Atur</button>
+        <!-- UNTUNG PER NOMINAL: HP satu baris geser, layar lebar grid -->
+        <section class="card min-w-0 px-2.5 py-2 lg:p-4" aria-label="Untung per nominal">
+          <div class="mb-1.5 flex items-center justify-between lg:mb-3">
+            <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
+            <button id="btnNominal" class="text-[11px] font-semibold text-gold">Atur</button>
           </div>
-          <div id="nominals" class="grid grid-cols-2 gap-2">
-            <div class="col-span-2 py-4 text-center text-sm text-muted">Memuat...</div>
+          <div id="nominals" class="no-scrollbar flex gap-1.5 overflow-x-auto lg:grid lg:grid-cols-2 lg:gap-2">
+            <div class="py-2 text-sm text-muted">Memuat...</div>
           </div>
         </section>
       </div>
 
       <!-- ============================== KOLOM KANAN ============================== -->
-      <div class="flex min-w-0 flex-col gap-4">
-        <!-- GRAFIK -->
+      <div class="flex min-w-0 flex-col gap-2 lg:gap-4">
+        <!-- GRAFIK: di HP mengisi sisa layar (diatur monitoring.js) -->
         <section id="sec-grafik" class="card overflow-hidden" aria-label="Grafik XAU/USD">
-          <div class="flex items-center justify-between px-4 py-3">
+          <div class="hidden items-center justify-between px-4 py-3 lg:flex">
             <h2 class="label">Grafik XAU/USD</h2>
             <button id="btnIndicator" class="text-xs font-semibold text-gold">Indikator</button>
           </div>
-          <div id="tvChart" class="h-[min(62vh,520px)] border-t border-line/[0.07] bg-card2"></div>
+          <div id="tvChart" class="h-[360px] bg-card2 lg:h-[min(62vh,520px)] lg:border-t lg:border-line/[0.07]"></div>
         </section>
 
         <!-- RIWAYAT -->
