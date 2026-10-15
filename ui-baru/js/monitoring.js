@@ -65,7 +65,7 @@ function renderSisaHari() {
   el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
   el.replaceChildren(h('span', {}, text))
   if (!hidden) {
-    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-black' }, 'Perpanjang')
+    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-bg' }, 'Perpanjang')
     if (!wajib) {
       pill.append(h('span', {
         class: 'ml-0.5 cursor-pointer opacity-70', role: 'button', 'aria-label': 'Tutup',
@@ -95,8 +95,8 @@ const pillHtml = n => (n > 0 ? 'pill-up' : 'pill-down')
 function setChange(id, change) {
   const el = $('#' + id)
   if (!change) return
-  el.className = pillHtml(change)
-  el.textContent = (change > 0 ? '▲ ' : '▼ ') + signed(change)
+  el.className = pillHtml(change) + ' px-1.5 py-0 text-[10px] lg:text-xs'
+  el.textContent = (change > 0 ? '▲' : '▼') + signed(change)
 }
 function flash(id, change) {
   const el = $('#' + id)
@@ -124,15 +124,19 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-2 py-4 text-center text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-3 py-2 text-sm text-muted lg:col-span-2' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    return h('div', { class: 'tile p-3 ' + (list.length % 2 && i === list.length - 1 ? 'col-span-2' : '') },
+    return h('div', { class: 'tile min-w-0 overflow-hidden px-1.5 py-1 lg:p-3 ' + (list.length % 2 && i === list.length - 1 ? 'lg:col-span-2' : '') },
       h('div', { class: 'flex items-center justify-between gap-2' },
-        h('span', { class: 'text-sm font-extrabold text-gold' }, n.label),
-        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
-      h('div', { class: 'num mt-1 font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'))
+        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
+        h('span', { class: 'num truncate font-mono text-[9px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
+      p ? h('div', { class: 'num whitespace-nowrap text-[11.5px] font-extrabold leading-tight lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
+      h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
+        h('span', { class: 'num font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'),
+        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
   }))
+  fitChart()
 }
 
 /** Satu jalur untuk data harga dari /monitoring/api dan SSE 'price' */
@@ -174,7 +178,7 @@ function setUsdIdr(rate) {
   if (state.usdIdr && r !== Math.round(state.usdIdr)) {
     const c = r - Math.round(state.usdIdr)
     const el = $('#usdIdrChange')
-    el.className = 'num text-[10px] font-bold ' + (c > 0 ? 'text-up' : 'text-down')
+    el.className = 'num text-[9px] ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
   }
   state.usdIdr = rate
@@ -204,6 +208,26 @@ async function fetchPrices() {
   } catch (e) {}
 }
 
+// ===================================================================== GRAFIK MUAT SATU LAYAR (HP)
+const wide = () => matchMedia('(min-width: 1024px)').matches
+/** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
+function fitChart() {
+  const box = $('#tvChart')
+  if (!box) return
+  if (wide()) { box.style.height = ''; return }
+  const top = box.getBoundingClientRect().top + window.scrollY
+  const nav = $('#bottomNav').offsetHeight
+  box.style.height = Math.max(280, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+}
+window.addEventListener('resize', fitChart)
+// bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(() => fitChart())
+  ;['header', '#notifs', '#sec-harga', '#nominals'].forEach(sel => { const el = $(sel); if (el) ro.observe(el) })
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitChart)
+window.addEventListener('orientationchange', () => setTimeout(fitChart, 300))
+
 // ===================================================================== JAM
 let offset = 0
 async function syncTime() { try { const d = await (await fetch('/time')).json(); offset = d.timestamp - Date.now() } catch (e) {} }
@@ -226,6 +250,7 @@ function showNotice(d) {
     h('div', { class: 'min-w-0 flex-1' }, h('div', { class: 'text-sm font-extrabold' }, d.title || 'Info'), h('div', { class: 'mt-0.5 whitespace-pre-line text-sm text-muted' }, d.message || '')),
     h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Tutup', html: icon('close', 'h-4 w-4'), onclick: () => card.remove() }))
   $('#notifs').prepend(card)
+  fitChart()
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
     try { new Notification(d.title || 'PemulaOLD', { body: d.message || '', icon: '/icon.png' }) } catch (e) {}
   }
@@ -260,8 +285,8 @@ function connect() {
       case 'promo_limit_update': setChip('chipLimit', 'limitVal', d.limit); break
       case 'lowest_on_price': setChip('chipOn', 'lowestOnVal', d.price, num); break
       case 'markup_settings_update':
-        if (d.settings) { if (d.settings.minMargin != null) state.markupMin = +d.settings.minMargin; if (d.settings.maxMargin != null) state.markupMax = +d.settings.maxMargin }
-        renderMarkup(); break
+        if (d.settings) { if (d.settings.minMargin != null) state.markupMin = parseFloat(d.settings.minMargin); if (d.settings.maxMargin != null) state.markupMax = parseFloat(d.settings.maxMargin) }
+        renderMarkup(); loadHistory(); break
       case 'nominal_update': state.nominals = d.nominals || []; renderNominals(); loadHistory(); break
       case 'promo_suggestions': setPromos(d.promos || []); break
       case 'sound_update': if (d.settings) setCustomSounds(d.settings); break
@@ -308,6 +333,7 @@ async function start() {
   $('#btnIndicator').addEventListener('click', openIndicators)
   $('#btnNominal').addEventListener('click', openNominalSettings)
   initNav()
+  fitChart()
   setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
@@ -321,6 +347,7 @@ async function start() {
     state.user = v.user || null
     state.isAdmin = !!v.isAdmin
     renderSisaHari()
+    fitChart()
     setTimeout(renewReminder, 2500)
     setTimeout(() => joinGroup(true), 6000)
     getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})
@@ -334,7 +361,14 @@ async function start() {
   // data
   syncTime(); setInterval(syncTime, 5 * 60 * 1000)
   tick(); setInterval(tick, 250)
-  try { const m = await getJSON('/api/markup-settings'); if (m.success && m.settings) { state.markupMin = +m.settings.minMargin || state.markupMin; state.markupMax = +m.settings.maxMargin || state.markupMax } } catch (e) {}
+  // batas markup dari admin; 0 adalah nilai sah (jangan diganti nilai bawaan)
+  try {
+    const m = await getJSON('/api/markup-settings')
+    if (m.success && m.settings) {
+      if (m.settings.minMargin != null && !isNaN(parseFloat(m.settings.minMargin))) state.markupMin = parseFloat(m.settings.minMargin)
+      if (m.settings.maxMargin != null && !isNaN(parseFloat(m.settings.maxMargin))) state.markupMax = parseFloat(m.settings.maxMargin)
+    }
+  } catch (e) {}
   getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
   getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
   getJSON('/api/lowest-on-price').then(d => setChip('chipOn', 'lowestOnVal', d.price, num)).catch(() => {})

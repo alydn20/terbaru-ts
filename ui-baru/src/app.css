@@ -4,48 +4,51 @@
 
 /* Warna tema (angka RGB, dipakai Tailwind lewat tailwind.config.js) */
 @layer base {
+  /* Tema "malam biru": latar biru tua, aksen cyan, naik emerald, turun rose */
   :root {
-    --bg: 11 15 20;
-    --card: 18 24 33;
-    --card2: 24 33 44;
-    --line: 255 255 255;
-    --ink: 232 237 243;
-    --muted: 138 150 166;
-    --gold: 245 165 36;
-    --up: 34 197 94;
-    --down: 239 68 68;
-    --sky: 96 165 250;
+    --bg: 7 11 24;
+    --card: 14 21 40;
+    --card2: 21 30 54;
+    --line: 148 163 255;
+    --ink: 230 236 255;
+    --muted: 138 151 189;
+    --gold: 34 211 238;   /* aksen utama (cyan) */
+    --up: 16 185 129;
+    --down: 244 63 94;
+    --sky: 129 140 248;
     color-scheme: dark;
   }
   :root[data-theme='light'] {
-    --bg: 243 245 248;
+    --bg: 239 243 255;
     --card: 255 255 255;
-    --card2: 246 248 251;
-    --line: 15 23 42;
+    --card2: 238 242 255;
+    --line: 30 41 99;
     --ink: 15 23 42;
-    --muted: 100 116 139;
-    --gold: 194 112 15;
-    --up: 21 128 61;
-    --down: 220 38 38;
-    --sky: 37 99 235;
+    --muted: 88 102 140;
+    --gold: 8 145 178;
+    --up: 5 150 105;
+    --down: 225 29 72;
+    --sky: 79 70 229;
     color-scheme: light;
   }
   html { -webkit-tap-highlight-color: transparent; }
-  body { @apply bg-bg text-ink font-sans antialiased; }
+  body { @apply bg-bg text-ink font-sans antialiased; background-image: radial-gradient(1200px 500px at 50% -200px, rgb(var(--gold) / 0.10), transparent 70%); background-attachment: fixed; }
   [hidden] { display: none !important; }
 }
 
 @layer components {
-  .card { @apply rounded-2xl border border-line/[0.08] bg-card; }
-  .tile { @apply rounded-xl border border-line/[0.08] bg-card2; }
+  .card { @apply rounded-[22px] border border-line/[0.10] bg-card shadow-[0_10px_30px_-18px_rgb(0_0_0/0.6)]; }
+  .tile { @apply rounded-2xl border border-line/[0.08] bg-card2; }
   .label { @apply text-[11px] font-bold uppercase tracking-wider text-muted; }
   .num { font-variant-numeric: tabular-nums; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
   .pill { @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold; }
   .pill-up { @apply pill bg-up/15 text-up; }
   .pill-down { @apply pill bg-down/15 text-down; }
   .chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line/[0.08] bg-card2 px-2.5 py-1 text-xs font-bold; }
   .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition active:scale-[0.98] disabled:opacity-50; }
-  .btn-gold { @apply btn bg-gold text-black; }
+  .btn-gold { @apply btn bg-gold text-bg; }
   .btn-green { @apply btn bg-up text-white; }
   .btn-ghost { @apply btn border border-line/[0.12] bg-card2 text-ink; }
   .input { @apply w-full rounded-xl border border-line/[0.12] bg-card2 px-4 py-3 text-base text-ink outline-none transition placeholder:text-muted focus:border-gold; }

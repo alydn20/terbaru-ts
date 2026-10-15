@@ -25,7 +25,7 @@ export function mountPayment(root, opts) {
       h('div', { class: 'label mb-2' }, 'Pilih lama perpanjangan'),
       h('div', { class: 'grid grid-cols-3 gap-2' }, opts.monthOptions.map(m =>
         h('button', {
-          class: 'rounded-xl border px-2 py-2.5 text-center transition ' + (m === active ? 'border-gold bg-gold text-black' : 'border-line/[0.12] bg-card2'),
+          class: 'rounded-xl border px-2 py-2.5 text-center transition ' + (m === active ? 'border-gold bg-gold text-bg' : 'border-line/[0.12] bg-card2'),
           onclick: () => load(m)
         },
         h('div', { class: 'text-sm font-extrabold' }, m + ' bulan'),
