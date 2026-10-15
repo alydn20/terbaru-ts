@@ -19837,7 +19837,7 @@ app.get('/monitoring', async (req, res) => {
         var today = new Date().toDateString();
         try { if (localStorage.getItem('renew_ask_day') === today) return; localStorage.setItem('renew_ask_day', today); } catch (e) {}
         var sisa = hari <= 1 ? 'kurang dari 1 hari' : hari + ' hari';
-        showConfirm('Masa aktif akun Anda tinggal ' + sisa + ' lagi. Perpanjang sekarang supaya tetap bisa memantau harga? Caranya: bayar QRIS lalu upload bukti, langsung dari halaman ini.', 'Perpanjang Masa Aktif')
+        showConfirm('Masa aktif tinggal ' + sisa + '. Perpanjang sekarang?', 'Perpanjang Masa Aktif')
           .then(function(ok) { if (ok) openRenewModal(); });
       } catch (e) {}
     }
@@ -19859,9 +19859,9 @@ app.get('/monitoring', async (req, res) => {
       b.style.display = show ? 'block' : 'none'; b.disabled = false; b.textContent = label || 'UPLOAD BUKTI PEMBAYARAN';
     }
     function _renewProofState(proofStatus) {
-      if (!proofStatus) { _renewShowUpload(true); _renewSetStatus('Setelah bayar, upload screenshot buktinya.', '#fbbf24'); return; }
+      if (!proofStatus) { _renewShowUpload(true); _renewSetStatus('Setelah bayar, upload bukti.', '#fbbf24'); return; }
       _renewShowUpload(false);
-      _renewSetStatus(proofStatus === 'checking' ? 'Bukti terkirim. Sedang diperiksa...' : 'Bukti terkirim. Menunggu konfirmasi.', '#4ade80');
+      _renewSetStatus(proofStatus === 'checking' ? 'Sedang diperiksa...' : 'Menunggu konfirmasi.', '#4ade80');
     }
     async function openRenewModal() {
       if (_renewUser && !_renewUser.expired) { showConfirm('Akun Anda Lifetime, tidak perlu diperpanjang.', 'Perpanjang Masa Aktif'); return; }
@@ -19941,13 +19941,13 @@ app.get('/monitoring', async (req, res) => {
       body.textContent = '';
       // Bukti untuk pilihan lain sudah terkirim: pilihan itu yang dipakai
       if ((data.order.months || 1) !== months) {
-        body.appendChild(_renewEl('div', 'font-size:0.8em;color:#fbbf24;margin-bottom:8px;', 'Bukti untuk pilihan ' + (data.order.months || 1) + ' bulan sudah terkirim, jadi pilihan itu yang dipakai.'));
+        body.appendChild(_renewEl('div', 'font-size:0.8em;color:#fbbf24;margin-bottom:8px;', 'Bukti ' + (data.order.months || 1) + ' bulan sudah terkirim.'));
         document.querySelectorAll('.renew-month').forEach(function(b) {
           var on = Number(b.getAttribute('data-m')) === (data.order.months || 1);
           b.style.background = on ? '#fbbf24' : 'rgba(255,255,255,0.06)'; b.style.color = on ? '#0b1220' : '#e7e9ea'; b.style.borderColor = on ? '#fbbf24' : 'rgba(255,255,255,0.12)';
         });
       }
-      body.appendChild(_renewEl('div', 'font-size:0.88em;color:#cbd5e1;margin-bottom:10px;', 'Tambah ' + (data.order.months || 1) + ' bulan (' + data.order.days + ' hari): ' + _rp(data.order.price) + '. Scan QRIS di bawah, bayar PERSIS:'));
+      body.appendChild(_renewEl('div', 'font-size:0.88em;color:#cbd5e1;margin-bottom:10px;', 'Scan QRIS, bayar persis:'));
       body.appendChild(_renewEl('div', 'font-size:1.6em;font-weight:800;color:#fbbf24;margin-bottom:10px;letter-spacing:0.5px;', _rp(data.order.amount)));
       if (data.order.qrDataUrl) {
         var img = _renewEl('img', 'width:220px;max-width:100%;background:#fff;padding:8px;border-radius:12px;');
@@ -19957,7 +19957,7 @@ app.get('/monitoring', async (req, res) => {
         save.href = data.order.qrDataUrl; save.download = 'qris-perpanjang.png';
         body.appendChild(save);
       }
-      body.appendChild(_renewEl('div', 'font-size:0.78em;color:#9ca3af;margin-bottom:12px;', 'Masa aktif ditambahkan dari tanggal habis akun sekarang, jadi sisa hari Anda tidak hilang.'));
+      body.appendChild(_renewEl('div', 'font-size:0.78em;color:#9ca3af;margin-bottom:12px;', 'Sisa hari Anda tidak hilang.'));
       var rej = _renewEl('div', 'display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fca5a5;border-radius:10px;padding:10px;font-size:0.85em;margin-bottom:10px;');
       rej.id = 'renewReject';
       body.appendChild(rej);
@@ -19978,7 +19978,7 @@ app.get('/monitoring', async (req, res) => {
     }
     function _renewRejected(reason) {
       var r = document.getElementById('renewReject');
-      if (r) { r.textContent = 'Bukti ditolak: ' + (reason || 'Bukti tidak valid') + '. Upload bukti yang benar.'; r.style.display = 'block'; }
+      if (r) { r.textContent = 'Ditolak: ' + (reason || 'Bukti tidak valid'); r.style.display = 'block'; }
       _renewShowUpload(true, 'UPLOAD BUKTI BARU');
       _renewSetStatus('Bukti ditolak. Upload bukti baru.', '#ef4444');
     }
