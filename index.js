@@ -14695,6 +14695,23 @@ app.get('/monitoring', async (req, res) => {
     .clk-m { color: #f7931a; }
     .clk-s { color: #22c55e; display: inline-block; transition: color 0.2s ease; }
     .clk-s.clk-s-alert { color: #ef4444 !important; animation: clkSPulse 1s ease-in-out infinite; }
+    /* ===== Mode gelap hitam pekat: semua kartu, header, tabel, panel berlatar #000 ===== */
+    body:not(.light-mode) { --bg-page: #000; --bg-header: #000; --bg-card: #000; --bg-card-hover: #0a0a0a; --bg-input: #0a0a0a; background: #000; }
+    body:not(.light-mode) .header,
+    body:not(.light-mode) .chart-section,
+    body:not(.light-mode) .chart-header,
+    body:not(.light-mode) .stat-item,
+    body:not(.light-mode) .history-section,
+    body:not(.light-mode) .history-header,
+    body:not(.light-mode) .nav-menu-dropdown,
+    body:not(.light-mode) .sound-panel,
+    body:not(.light-mode) .info-item,
+    body:not(.light-mode) .price-high-overlay,
+    body:not(.light-mode) .price-low-overlay,
+    body:not(.light-mode) .limit-label,
+    body:not(.light-mode) .markup-overlay,
+    body:not(.light-mode) .spread-overlay { background-color: #000 !important; }
+    body:not(.light-mode) .history-table th { background-color: #050505 !important; }
     /* ===== Perbaikan responsif HP (halaman tidak tergeser, label & jam tidak terpotong) ===== */
     html { overflow-x: hidden; }
     .info-time { white-space: nowrap; }
