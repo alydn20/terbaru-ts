@@ -10203,7 +10203,7 @@ ${authScript}
             </svg>
             Pendaftaran Otomatis via QRIS
           </h2>
-          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Nomor yang belum terdaftar membayar lewat QRIS di halaman login. Nominalnya = harga + 3 angka terakhir nomor HP (nomor berakhiran 0393 membayar Rp5.393). Setelah kamu ACC, akun langsung aktif dengan tanggal berakhir terisi otomatis, dan dihapus sendiri saat masa aktif habis.</p>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Nomor yang belum terdaftar membayar lewat QRIS di halaman login. Nominalnya = harga + kode unik 3 angka yang diambil acak dari nomor HP-nya (berbeda tiap order). Setelah kamu ACC, akun langsung aktif dengan tanggal berakhir terisi otomatis, dan dihapus sendiri saat masa aktif habis.</p>
           <div class="result-msg" id="paySettingsResult"></div>
 
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:10px;">
@@ -13601,6 +13601,7 @@ app.get('/monitoring', async (req, res) => {
     .sisa-hari.habis { color: #ef4444; }
     .sisa-hari.lifetime { color: #8b949e; cursor: default; }
     .sisa-hari { cursor: pointer; }
+    .sisa-cta-x { display: inline-block; margin-left: 5px; padding: 0 2px; font-weight: 700; opacity: 0.7; cursor: pointer; }
     .sisa-cta { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #f7931a; color: #111827; font-weight: 700; font-size: 0.95em; line-height: 1.45; vertical-align: 1px; }
     /* Nav icon buttons */
     .nav-icon-btn {
@@ -19812,13 +19813,32 @@ app.get('/monitoring', async (req, res) => {
         if (ms <= 0) { txt = 'Masa aktif habis'; cls += ' habis'; }
         else if (hari <= 1) { txt = 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi'; cls += ' habis'; }
         else { txt = 'Sisa ' + hari + ' hari lagi'; if (hari <= 3) cls += ' habis'; else if (hari <= 7) cls += ' hampir'; }
-        var cta = hari <= 7;
+        // Selalu ada; sisa > 7 hari boleh ditutup (x), sisa <= 7 hari wajib tampil
+        cta = ms <= 0 || hari <= 7 ? 'wajib' : 'tutup';
+        if (cta === 'tutup') { try { if (localStorage.getItem('renew_cta_hide') === String(user.expired)) cta = false; } catch (e) {} }
         el.title = 'Aktif sampai ' + new Date(Number(user.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       }
       el.className = cls;
       el.textContent = txt;
       // Tombol kecil "Perpanjang" dengan warna sendiri, beda dari warna sisa hari
-      if (cta) { var b = document.createElement('span'); b.className = 'sisa-cta'; b.textContent = 'Perpanjang'; el.appendChild(b); }
+      if (cta) {
+        var b = document.createElement('span');
+        b.className = 'sisa-cta';
+        b.textContent = 'Perpanjang';
+        if (cta === 'tutup') {
+          var x = document.createElement('span');
+          x.className = 'sisa-cta-x';
+          x.textContent = String.fromCharCode(215);
+          x.title = 'Tutup';
+          x.onclick = function(ev) {
+            ev.stopPropagation();
+            try { localStorage.setItem('renew_cta_hide', String(user.expired)); } catch (e) {}
+            b.remove();
+          };
+          b.appendChild(x);
+        }
+        el.appendChild(b);
+      }
       el.style.display = 'block';
       _renewUser = user;
       var mb = document.getElementById('renewMenuBtn');
@@ -21413,7 +21433,7 @@ app.get('/monitoring/api', async (req, res) => {
 
 // ==================== PEMBAYARAN QRIS (pendaftaran & perpanjangan otomatis) ====================
 // Nomor yang belum terdaftar membayar lewat QRIS: QRIS statis milik admin diubah jadi QRIS
-// dinamis dengan nominal unik = harga + 3 angka terakhir nomor HP (nomor ...0393 -> Rp5.393)
+// dinamis dengan nominal unik = harga + 3 angka acak yang diambil dari nomor HP
 // supaya admin langsung tahu pembayaran itu milik siapa.
 // Verifikasi: admin menekan Konfirmasi (ACC) di panel; opsional webhook /api/payment/notify
 // dari penerus notifikasi di HP admin. Setelah di-ACC, user otomatis aktif N hari;
@@ -21636,15 +21656,24 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
     order = order || active.find(o => o.phone === phone && o.price === price) ||
       orders.find(o => o.status === 'rejected' && o.phone === phone && o.price === price && o.expiresAt > now)
     if (!order) {
-      // Nominal = harga + 3 angka terakhir nomor HP. Kalau nominal itu sedang dipakai order
-      // lain yang masih menunggu (nomor berbeda, akhiran sama), pakai kode acak yang kosong.
+      // Nominal = harga + kode unik 3 angka. Kode diambil ACAK dari deretan 3 angka berurutan
+      // di nomor HP (bukan selalu 3 angka terakhir). Tidak boleh sama dengan order lain yang masih
+      // menunggu, dan tidak sama dengan order nomor ini 24 jam terakhir (ganti pilihan bulan =
+      // nominal baru). Kalau semua potongan nomor terpakai, pakai kode acak yang kosong.
       const used = new Set(active.map(o => o.amount))
-      let amount = price + parseInt(phone.slice(-3), 10)
-      if (used.has(amount)) {
+      for (const o of orders) if (o.phone === phone && now - (o.createdAt || 0) < 24 * 3600 * 1000) used.add(o.amount)
+      const local = phone.substring(2)
+      const codes = []
+      for (let i = 0; i + 3 <= local.length; i++) {
+        const c = parseInt(local.substring(i, i + 3), 10)
+        if (c > 0 && !used.has(price + c) && !codes.includes(c)) codes.push(c)
+      }
+      let amount = codes.length ? price + codes[crypto.randomInt(codes.length)] : 0
+      if (!amount) {
         const free = []
         for (let c = 1; c <= 999; c++) if (!used.has(price + c)) free.push(price + c)
         if (free.length === 0) return res.json({ success: false, error: 'Antrian pembayaran penuh. Coba lagi beberapa menit lagi.' })
-        amount = free[Math.floor(Math.random() * free.length)]
+        amount = free[crypto.randomInt(free.length)]
       }
       order = {
         id: crypto.randomBytes(8).toString('hex'),
