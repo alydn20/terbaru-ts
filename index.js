@@ -19837,7 +19837,7 @@ app.get('/monitoring', async (req, res) => {
         var today = new Date().toDateString();
         try { if (localStorage.getItem('renew_ask_day') === today) return; localStorage.setItem('renew_ask_day', today); } catch (e) {}
         var sisa = hari <= 1 ? 'kurang dari 1 hari' : hari + ' hari';
-        showConfirm('Masa aktif akun Anda tinggal ' + sisa + ' lagi. Perpanjang sekarang supaya tetap bisa memantau harga? Caranya: bayar QRIS lalu upload bukti, langsung dari halaman ini.', 'Perpanjang Masa Aktif')
+        showConfirm('Masa aktif tinggal ' + sisa + '. Perpanjang sekarang?', 'Perpanjang Masa Aktif')
           .then(function(ok) { if (ok) openRenewModal(); });
       } catch (e) {}
     }
@@ -19859,9 +19859,9 @@ app.get('/monitoring', async (req, res) => {
       b.style.display = show ? 'block' : 'none'; b.disabled = false; b.textContent = label || 'UPLOAD BUKTI PEMBAYARAN';
     }
     function _renewProofState(proofStatus) {
-      if (!proofStatus) { _renewShowUpload(true); _renewSetStatus('Setelah bayar, upload screenshot buktinya.', '#fbbf24'); return; }
+      if (!proofStatus) { _renewShowUpload(true); _renewSetStatus('Setelah bayar, upload bukti.', '#fbbf24'); return; }
       _renewShowUpload(false);
-      _renewSetStatus(proofStatus === 'checking' ? 'Bukti terkirim. Sedang diperiksa...' : 'Bukti terkirim. Menunggu konfirmasi.', '#4ade80');
+      _renewSetStatus(proofStatus === 'checking' ? 'Sedang diperiksa...' : 'Menunggu konfirmasi.', '#4ade80');
     }
     async function openRenewModal() {
       if (_renewUser && !_renewUser.expired) { showConfirm('Akun Anda Lifetime, tidak perlu diperpanjang.', 'Perpanjang Masa Aktif'); return; }
@@ -19898,14 +19898,56 @@ app.get('/monitoring', async (req, res) => {
         }
         return;
       }
+      // Pilihan lama perpanjangan: 1, 2, 3, 6, 12 bulan (harga kelipatan)
+      body.textContent = '';
+      var pilih = _renewEl('div', 'margin-bottom:12px;');
+      pilih.appendChild(_renewEl('div', 'font-size:0.82em;color:#9ca3af;margin-bottom:6px;', 'Pilih lama perpanjangan:'));
+      var row = _renewEl('div', 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px;');
+      (cfg.renewMonths || [1]).forEach(function(bln) {
+        var b = _renewEl('button', '');
+        b.type = 'button';
+        b.className = 'renew-month';
+        b.setAttribute('data-m', bln);
+        b.appendChild(_renewEl('div', 'font-weight:700;font-size:0.95em;', bln + ' bulan'));
+        b.appendChild(_renewEl('div', 'font-size:0.75em;opacity:0.85;', _rp(cfg.price * bln)));
+        b.onclick = function() { _renewLoad(bln, session); };
+        row.appendChild(b);
+      });
+      pilih.appendChild(row);
+      body.appendChild(pilih);
+      var pay = _renewEl('div', '');
+      pay.id = 'renewPay';
+      body.appendChild(pay);
+      _renewLoad(1, session);
+    }
+    var _renewLoading = 0;
+    async function _renewLoad(months, session) {
+      var body = document.getElementById('renewPay');
+      if (!body) return;
+      var token = ++_renewLoading;
+      document.querySelectorAll('.renew-month').forEach(function(b) {
+        var on = Number(b.getAttribute('data-m')) === months;
+        b.style.cssText = 'padding:8px 4px;border-radius:10px;cursor:pointer;color:' + (on ? '#0b1220' : '#e7e9ea') + ';background:' + (on ? '#fbbf24' : 'rgba(255,255,255,0.06)') + ';border:1px solid ' + (on ? '#fbbf24' : 'rgba(255,255,255,0.12)') + ';';
+      });
+      body.textContent = 'Memuat...';
+      if (_renewTimer) { clearInterval(_renewTimer); _renewTimer = null; }
+      var data = null;
       try {
-        data = await (await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: _myPhone, session: session }) })).json();
+        data = await (await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: _myPhone, session: session, months: months }) })).json();
       } catch (e) {}
-      if (!document.getElementById('renewModal')) return;
+      if (!document.getElementById('renewModal') || token !== _renewLoading) return;
       if (!data || !data.success) { body.textContent = (data && data.error) || 'Gagal membuat pembayaran. Coba lagi.'; return; }
       _renewOrder = data.order;
       body.textContent = '';
-      body.appendChild(_renewEl('div', 'font-size:0.88em;color:#cbd5e1;margin-bottom:10px;', 'Tambah ' + data.order.days + ' hari: ' + _rp(data.order.price) + '. Scan QRIS di bawah, bayar PERSIS:'));
+      // Bukti untuk pilihan lain sudah terkirim: pilihan itu yang dipakai
+      if ((data.order.months || 1) !== months) {
+        body.appendChild(_renewEl('div', 'font-size:0.8em;color:#fbbf24;margin-bottom:8px;', 'Bukti ' + (data.order.months || 1) + ' bulan sudah terkirim.'));
+        document.querySelectorAll('.renew-month').forEach(function(b) {
+          var on = Number(b.getAttribute('data-m')) === (data.order.months || 1);
+          b.style.background = on ? '#fbbf24' : 'rgba(255,255,255,0.06)'; b.style.color = on ? '#0b1220' : '#e7e9ea'; b.style.borderColor = on ? '#fbbf24' : 'rgba(255,255,255,0.12)';
+        });
+      }
+      body.appendChild(_renewEl('div', 'font-size:0.88em;color:#cbd5e1;margin-bottom:10px;', 'Scan QRIS, bayar persis:'));
       body.appendChild(_renewEl('div', 'font-size:1.6em;font-weight:800;color:#fbbf24;margin-bottom:10px;letter-spacing:0.5px;', _rp(data.order.amount)));
       if (data.order.qrDataUrl) {
         var img = _renewEl('img', 'width:220px;max-width:100%;background:#fff;padding:8px;border-radius:12px;');
@@ -19915,7 +19957,7 @@ app.get('/monitoring', async (req, res) => {
         save.href = data.order.qrDataUrl; save.download = 'qris-perpanjang.png';
         body.appendChild(save);
       }
-      body.appendChild(_renewEl('div', 'font-size:0.78em;color:#9ca3af;margin-bottom:12px;', 'Masa aktif ditambahkan dari tanggal habis akun sekarang, jadi sisa hari Anda tidak hilang.'));
+      body.appendChild(_renewEl('div', 'font-size:0.78em;color:#9ca3af;margin-bottom:12px;', 'Sisa hari Anda tidak hilang.'));
       var rej = _renewEl('div', 'display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fca5a5;border-radius:10px;padding:10px;font-size:0.85em;margin-bottom:10px;');
       rej.id = 'renewReject';
       body.appendChild(rej);
@@ -19936,7 +19978,7 @@ app.get('/monitoring', async (req, res) => {
     }
     function _renewRejected(reason) {
       var r = document.getElementById('renewReject');
-      if (r) { r.textContent = 'Bukti ditolak: ' + (reason || 'Bukti tidak valid') + '. Upload bukti yang benar.'; r.style.display = 'block'; }
+      if (r) { r.textContent = 'Ditolak: ' + (reason || 'Bukti tidak valid'); r.style.display = 'block'; }
       _renewShowUpload(true, 'UPLOAD BUKTI BARU');
       _renewSetStatus('Bukti ditolak. Upload bukti baru.', '#ef4444');
     }
@@ -21375,6 +21417,8 @@ app.get('/monitoring/api', async (req, res) => {
 // auto-kick yang sudah ada menghapusnya lagi saat masa aktif habis.
 const DEFAULT_PAYMENT_SETTINGS = { enabled: false, qrisStatic: '', price: 5000, days: 30, waFallback: true, autoVerify: true, groupLink: '', notifySecret: '' }
 const PAYMENT_ORDER_TTL_MS = 24 * 3600 * 1000 // admin meng-ACC manual, jadi order berlaku 24 jam
+// Perpanjangan bisa beberapa bulan sekaligus: harga dan jumlah hari dikali jumlah bulan
+const RENEW_MONTH_OPTIONS = [1, 2, 3, 6, 12]
 let paymentSettingsCache = null
 
 async function getPaymentSettings() {
@@ -21538,7 +21582,7 @@ function extractRupiahAmounts(text) {
 // Publik: konfigurasi untuk halaman login
 app.get('/api/payment/config', async (_req, res) => {
   const s = await getPaymentSettings()
-  res.json({ enabled: !!(s.enabled && s.qrisStatic), price: s.price, days: s.days, waFallback: s.waFallback !== false })
+  res.json({ enabled: !!(s.enabled && s.qrisStatic), price: s.price, days: s.days, waFallback: s.waFallback !== false, renewMonths: RENEW_MONTH_OPTIONS })
 })
 
 // Publik: buat order pembayaran untuk nomor yang belum terdaftar
@@ -21567,17 +21611,35 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
     const now = Date.now()
     const orders = await loadPaymentOrders()
     const active = orders.filter(o => o.status === 'pending')
+    // Jumlah bulan (hanya untuk perpanjangan; pendaftaran baru selalu 1 bulan)
+    const months = renew && RENEW_MONTH_OPTIONS.includes(Number(req.body?.months)) ? Number(req.body.months) : 1
+    const price = s.price * months
+    const days = s.days * months
+    // Order lain milik nomor ini dengan pilihan bulan berbeda: kalau buktinya sudah dikirim dan
+    // sedang diperiksa, tetap pakai order itu (pilihan tidak bisa diganti); kalau belum, batalkan.
+    let order = active.find(o => o.phone === phone && o.price !== price && o.proof && o.proof.status)
+    if (!order) {
+      for (const o of active) {
+        if (o.phone !== phone || o.price === price) continue
+        const old = await readPaymentOrder(o.id)
+        if (old && old.status === 'pending' && !(old.proof && old.proof.status)) {
+          old.status = 'expired'
+          old.cancelReason = 'diganti pilihan ' + months + ' bulan'
+          await savePaymentOrder(old)
+        }
+      }
+    }
     // Pakai lagi order yang masih berlaku untuk nomor yang sama (hindari banyak nominal berbeda)
-    let order = active.find(o => o.phone === phone && o.price === s.price) ||
-      orders.find(o => o.status === 'rejected' && o.phone === phone && o.price === s.price && o.expiresAt > now)
+    order = order || active.find(o => o.phone === phone && o.price === price) ||
+      orders.find(o => o.status === 'rejected' && o.phone === phone && o.price === price && o.expiresAt > now)
     if (!order) {
       // Nominal = harga + 3 angka terakhir nomor HP. Kalau nominal itu sedang dipakai order
       // lain yang masih menunggu (nomor berbeda, akhiran sama), pakai kode acak yang kosong.
       const used = new Set(active.map(o => o.amount))
-      let amount = s.price + parseInt(phone.slice(-3), 10)
+      let amount = price + parseInt(phone.slice(-3), 10)
       if (used.has(amount)) {
         const free = []
-        for (let c = 1; c <= 999; c++) if (!used.has(s.price + c)) free.push(s.price + c)
+        for (let c = 1; c <= 999; c++) if (!used.has(price + c)) free.push(price + c)
         if (free.length === 0) return res.json({ success: false, error: 'Antrian pembayaran penuh. Coba lagi beberapa menit lagi.' })
         amount = free[Math.floor(Math.random() * free.length)]
       }
@@ -21585,8 +21647,9 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
         id: crypto.randomBytes(8).toString('hex'),
         phone,
         name: cleanPublicName(req.body?.name),
-        price: s.price,
-        days: s.days,
+        price,
+        days,
+        months,
         amount,
         status: 'pending',
         createdAt: now,
@@ -21594,7 +21657,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
         renew
       }
       await savePaymentOrder(order)
-      pushLog(`PAY | Order baru${renew ? ' (perpanjang)' : ''} +${phone} Rp${amount.toLocaleString('id-ID')}`)
+      pushLog(`PAY | Order baru${renew ? ' (perpanjang ' + months + ' bulan)' : ''} +${phone} Rp${amount.toLocaleString('id-ID')}`)
     }
 
     const qris = makeDynamicQris(s.qrisStatic, order.amount)
@@ -21603,7 +21666,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, renew: !!order.renew, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, status: order.status, rejectReason: order.status === 'rejected' ? (order.rejectReason || '') : '', qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, renew: !!order.renew, months: order.months || 1, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, status: order.status, rejectReason: order.status === 'rejected' ? (order.rejectReason || '') : '', qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
@@ -23722,7 +23785,8 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
   if (!order) return
   const photo = { buffer, mime }
   const ulang = ctx && ctx.wasRejected ? '\nBukti BARU setelah ditolak' + (ctx.prevReason ? ' (alasan lama: ' + ctx.prevReason + ')' : '') : ''
-  const kepala = 'Nomor: +' + order.phone + '\nNominal order: *' + rp(order.amount) + '*' + ulang
+  const kepala = 'Nomor: +' + order.phone + '\nNominal order: *' + rp(order.amount) + '*' +
+    (order.renew ? '\nJenis: PERPANJANG ' + (order.months || 1) + ' bulan (' + (order.days || '') + ' hari)' : '\nJenis: daftar baru') + ulang
   const manualKb = { orderId: order.id }
 
   if (settings.autoVerify === false) {
