@@ -33,11 +33,6 @@
   html { -webkit-tap-highlight-color: transparent; }
   body { @apply bg-bg text-ink font-sans antialiased; }
   [hidden] { display: none !important; }
-  /* HP & tablet: tab Harga dan Grafik tampil sebagai halaman terpisah; layar lebar tampil berdampingan */
-  @media (max-width: 1023px) {
-    body[data-view='harga'] [data-view='grafik'],
-    body[data-view='grafik'] [data-view='harga'] { display: none !important; }
-  }
 }
 
 @layer components {
