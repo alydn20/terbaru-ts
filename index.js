@@ -13601,6 +13601,7 @@ app.get('/monitoring', async (req, res) => {
     .sisa-hari.habis { color: #ef4444; }
     .sisa-hari.lifetime { color: #8b949e; cursor: default; }
     .sisa-hari { cursor: pointer; }
+    .sisa-cta { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #f7931a; color: #111827; font-weight: 700; font-size: 0.95em; line-height: 1.45; vertical-align: 1px; }
     /* Nav icon buttons */
     .nav-icon-btn {
       display: flex;
@@ -19803,7 +19804,7 @@ app.get('/monitoring', async (req, res) => {
     function _renderSisaHari(user) {
       var el = document.getElementById('sisaHariText');
       if (!el || !user) return;
-      var cls = 'sisa-hari', txt;
+      var cls = 'sisa-hari', txt, cta = false;
       if (!user.expired) { txt = 'Akun Lifetime'; cls += ' lifetime'; el.title = ''; }
       else {
         var ms = Number(user.expired) - Date.now();
@@ -19811,11 +19812,13 @@ app.get('/monitoring', async (req, res) => {
         if (ms <= 0) { txt = 'Masa aktif habis'; cls += ' habis'; }
         else if (hari <= 1) { txt = 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi'; cls += ' habis'; }
         else { txt = 'Sisa ' + hari + ' hari lagi'; if (hari <= 3) cls += ' habis'; else if (hari <= 7) cls += ' hampir'; }
-        if (hari <= 7) txt += ' · Perpanjang';
+        var cta = hari <= 7;
         el.title = 'Aktif sampai ' + new Date(Number(user.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       }
       el.className = cls;
       el.textContent = txt;
+      // Tombol kecil "Perpanjang" dengan warna sendiri, beda dari warna sisa hari
+      if (cta) { var b = document.createElement('span'); b.className = 'sisa-cta'; b.textContent = 'Perpanjang'; el.appendChild(b); }
       el.style.display = 'block';
       _renewUser = user;
       var mb = document.getElementById('renewMenuBtn');
