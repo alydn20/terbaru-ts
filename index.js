@@ -2892,6 +2892,53 @@ async function sendPushToAll(title, body, type = 'price') {
   }
 }
 
+// Pengingat perpanjang lewat notifikasi HP (web push), hanya ke user yang mengaktifkan notifikasi.
+// Dikirim sekali untuk tiap batas: 7, 3, dan 1 hari sebelum habis. Dicatat per tanggal habis,
+// jadi setelah diperpanjang hitungannya mulai lagi. Tidak ada pesan WA ke user.
+const RENEW_REMIND_KEY = 'gold:renew_reminded'
+const RENEW_REMIND_DAYS = [7, 3, 1]
+async function sendRenewReminders() {
+  const [users, subs, sent] = await Promise.all([
+    redis.hgetall(REDIS_KEYS.USERS), redis.hgetall(REDIS_KEYS.PUSH_SUBS), redis.hgetall(RENEW_REMIND_KEY).catch(() => ({}))
+  ])
+  const now = Date.now()
+  let n = 0
+  for (const [phone, subRaw] of Object.entries(subs || {})) {
+    try {
+      const raw = users && users[phone]
+      if (!raw) continue
+      const user = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (!user.expired || user.expired <= now) continue
+      const left = user.expired - now
+      const step = RENEW_REMIND_DAYS.filter(d => left <= d * 86400000).pop() // batas terkecil yang sudah dilewati
+      if (!step) continue
+      let mark = {}
+      try { mark = sent && sent[phone] ? JSON.parse(sent[phone]) : {} } catch (e) {}
+      if (mark.exp !== user.expired) mark = { exp: user.expired, steps: [] }
+      if (mark.steps.includes(step)) continue
+      mark.steps.push(step)
+      await redis.hset(RENEW_REMIND_KEY, { [phone]: JSON.stringify(mark) })
+      const hari = Math.ceil(left / 86400000)
+      const payload = JSON.stringify({
+        title: hari <= 1 ? 'Masa aktif habis besok' : 'Masa aktif tinggal ' + hari + ' hari',
+        body: 'Ketuk untuk perpanjang: bayar QRIS lalu upload bukti, langsung dari website.',
+        icon: '/icon.png', badge: '/icon.png', type: 'info', url: '/monitoring?perpanjang=1'
+      })
+      const subscription = typeof subRaw === 'string' ? JSON.parse(subRaw) : subRaw
+      await webpush.sendNotification(subscription, payload).then(() => { n++ }).catch(async e => {
+        if (e.statusCode === 410) await redis.hdel(REDIS_KEYS.PUSH_SUBS, phone).catch(() => {})
+      })
+    } catch (e) {}
+  }
+  if (n) pushLog(`📱 PUSH | Pengingat perpanjang terkirim ke ${n} user`)
+  return n
+}
+// cek tiap jam, hanya jam 08.00-20.59 WIB supaya tidak mengganggu malam hari
+setInterval(() => {
+  const jam = new Date(Date.now() + 7 * 3600000).getUTCHours()
+  if (jam >= 8 && jam <= 20) sendRenewReminders().catch(() => {})
+}, 3600000)
+
 let _lastWaSendErrLog = 0 // throttle log error WA agar tidak spam
 
 // ⚡ ULTRA-INSTANT BROADCAST - Message sudah di-build sebelumnya
@@ -5856,7 +5903,7 @@ app.post('/api/check-user', rateLimit(10, 60000), express.json(), async (req, re
       return res.json({ success: false, error: 'Nomor tidak terdaftar. Silakan daftar dulu.', needRegister: true })
     }
     if (check.reason === 'expired') {
-      return res.json({ success: false, error: 'Akun sudah expired. Hubungi admin untuk perpanjang.' })
+      return res.json({ success: false, expired: true, error: 'Masa aktif akun sudah habis. Perpanjang dulu untuk masuk.' })
     }
     return res.json({ success: false, error: 'Terjadi kesalahan' })
   }
@@ -5893,7 +5940,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       return res.json({ success: false, error: 'Nomor tidak terdaftar. Silakan daftar dulu.', needRegister: true })
     }
     if (check.reason === 'expired') {
-      return res.json({ success: false, error: 'Akun sudah expired. Hubungi admin untuk perpanjang.' })
+      return res.json({ success: false, expired: true, error: 'Masa aktif akun sudah habis. Perpanjang dulu untuk masuk.' })
     }
     return res.json({ success: false, error: 'Terjadi kesalahan' })
   }
@@ -6209,7 +6256,7 @@ app.post('/api/user/request-login', rateLimit(3, 10 * 60000), express.json(), as
       return res.json({ success: false, error: 'Nomor tidak terdaftar. Hubungi admin untuk mendaftar.' })
     }
     if (check.reason === 'expired') {
-      return res.json({ success: false, error: 'Akun sudah expired. Hubungi admin untuk perpanjang.' })
+      return res.json({ success: false, expired: true, error: 'Masa aktif akun sudah habis. Perpanjang dulu untuk masuk.' })
     }
     return res.json({ success: false, error: 'Terjadi kesalahan' })
   }
@@ -8560,6 +8607,14 @@ app.get('/login', async (req, res) => {
           const pinInputs = document.querySelectorAll('#pinForm .pin-input');
           setupPinInputs(pinInputs, () => submitLogin());
           pinInputs[0].focus();
+        } else if (data.expired) {
+          // Masa aktif habis: tampilkan pembayaran perpanjangan (QRIS) langsung di sini
+          showMessage(data.error, 'error');
+          const payResult = await startPaymentFlow(phone);
+          if (payResult === 'redirect') {
+            window.location.href = 'https://wa.me/62895701692525?text=' + encodeURIComponent('Halo admin, saya mau perpanjang masa aktif. Nomor WA saya: +62' + phone);
+            return;
+          }
         } else if (data.needRegister) {
           // Nomor tidak terdaftar — tampilkan pembayaran QRIS bila aktif; kalau tidak,
           // ikuti pengaturan admin: arahkan ke WA admin atau cukup tampilkan pesan.
@@ -8653,7 +8708,7 @@ app.get('/login', async (req, res) => {
         }
         _payOrder = data.order;
         try { localStorage.setItem('pay_order', JSON.stringify({ phone: phone, id: data.order.id })); } catch (e) {}
-        document.getElementById('payDesc').textContent = 'Scan QRIS di bawah untuk mendaftar: ' + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
+        document.getElementById('payDesc').textContent = (data.order.renew ? 'Masa aktif akun Anda sudah habis. Scan QRIS di bawah untuk memperpanjang: ' : 'Scan QRIS di bawah untuk mendaftar: ') + _rupiah(data.order.price) + ' untuk ' + data.order.days + ' hari.';
         document.getElementById('payAmount').textContent = _rupiah(data.order.amount);
         document.getElementById('payAmountStep').textContent = _rupiah(data.order.amount);
         var img = document.getElementById('payQr');
@@ -8749,13 +8804,15 @@ app.get('/login', async (req, res) => {
       }, 4000);
     }
 
+    var _payOrderRenew = false;
     function _paymentDone() {
       _stopPayPolling();
+      _payOrderRenew = !!(_payOrder && _payOrder.renew);
       _payOrder = null;
       _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
-      showMessage('Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
+      showMessage(_payOrderRenew ? 'Pembayaran diterima! Masa aktif diperpanjang. Masuk dengan PIN Anda.' : 'Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
       setTimeout(function() { checkUser(); }, 1500);
     }
 
@@ -19765,6 +19822,26 @@ app.get('/monitoring', async (req, res) => {
       if (mb) mb.style.display = user.expired ? '' : 'none';
     }
 
+    // Pengingat perpanjang: dari notifikasi (?perpanjang=1) langsung buka; kalau sisa <= 7 hari tanya sekali sehari
+    function _renewReminder(user) {
+      try {
+        if (!user || !user.expired) return;
+        if (/[?&]perpanjang=1/.test(location.search)) {
+          try { history.replaceState(null, '', location.pathname); } catch (e) {}
+          openRenewModal();
+          return;
+        }
+        var ms = Number(user.expired) - Date.now();
+        var hari = Math.ceil(ms / 86400000);
+        if (ms <= 0 || hari > 7) return;
+        var today = new Date().toDateString();
+        try { if (localStorage.getItem('renew_ask_day') === today) return; localStorage.setItem('renew_ask_day', today); } catch (e) {}
+        var sisa = hari <= 1 ? 'kurang dari 1 hari' : hari + ' hari';
+        showConfirm('Masa aktif akun Anda tinggal ' + sisa + ' lagi. Perpanjang sekarang supaya tetap bisa memantau harga? Caranya: bayar QRIS lalu upload bukti, langsung dari halaman ini.', 'Perpanjang Masa Aktif')
+          .then(function(ok) { if (ok) openRenewModal(); });
+      } catch (e) {}
+    }
+
     // ===== Perpanjang masa aktif lewat QRIS (dari /monitoring) =====
     var _renewUser = null, _renewOrder = null, _renewTimer = null, _renewUploading = false;
     function _rp(n) { return 'Rp' + Number(n).toLocaleString('id-ID'); }
@@ -19957,6 +20034,7 @@ app.get('/monitoring', async (req, res) => {
           _sessionOk();
           _myPhone = String(data.phone || '');
           _renderSisaHari(data.user);
+          setTimeout(function() { _renewReminder(data.user); }, 2500);
           setTimeout(function() { joinWaGroup(true); }, 6000);
 
           // Tampilkan tombol Panel Admin di menu untuk admin
@@ -21482,6 +21560,8 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       if (sessPhone !== phone) return res.json({ success: false, alreadyRegistered: true, error: 'Nomor sudah terdaftar. Silakan login.' })
       if (!check.user || !check.user.expired) return res.json({ success: false, error: 'Akun Lifetime tidak perlu diperpanjang.' })
       renew = true
+    } else if (check.reason === 'expired') {
+      renew = true // akun lama yang masa aktifnya habis: bayar dari halaman login
     }
 
     const now = Date.now()
