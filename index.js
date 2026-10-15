@@ -21386,7 +21386,89 @@ async function getTelegramSettings() {
   return telegramSettingsCache
 }
 
+// Ikon untuk setiap tombol bot Telegram, supaya menu mudah dikenali tanpa membaca.
+// Dipasang otomatis pada semua tombol sebelum dikirim; tombol yang sudah berikon dibiarkan.
+// Urutan penting: aturan pertama yang cocok yang dipakai.
+const TG_BUTTON_ICONS = [
+  [/^menu utama/i, '🏠'],
+  [/^(berikutnya)/i, '➡️'],
+  [/^(sebelumnya|kembali)$/i, '⬅️'],
+  [/^(order pembayaran|lihat order|order)$/i, '🧾'],
+  [/^order ini sudah tidak ada/i, '🗑️'],
+  [/^menunggu acc/i, '⏳'],
+  [/^belum upload bukti/i, '📤'],
+  [/^lunas, belum masuk grup/i, '👥'],
+  [/^lunas, sudah masuk grup/i, '🏁'],
+  [/^ditolak \/ kedaluwarsa/i, '❌'],
+  [/^mau masuk grup/i, '🙋'],
+  [/^mau expired/i, '⏰'],
+  [/^online/i, '🟢'],
+  [/^whatsapp|^wa$/i, '📱'],
+  [/^pengaturan/i, '⚙️'],
+  [/^logs?$/i, '📋'],
+  [/^ringkasan/i, '📊'],
+  [/^(user|daftar)$/i, '👤'],
+  [/^(cari \/ kelola nomor|kelola nomor)/i, '🔎'],
+  [/^riwayat login/i, '🕘'],
+  [/^ubah status grup/i, '👥'],
+  [/^(tandai sudah masuk grup|tandai masuk grup)/i, '✅'],
+  [/^batalkan tanda masuk grup/i, '↩️'],
+  [/^(tidak dimasukkan|tandai tidak di grup)/i, '🚫'],
+  [/^acc/i, '✅'],
+  [/^tolak/i, '❌'],
+  [/^lihat bukti/i, '🖼️'],
+  [/^tulis alasan/i, '✍️'],
+  [/^(ya, hapus|ya, kick)/i, '⚠️'],
+  [/^ya, ganti/i, '✔️'],
+  [/^(hapus|kick)/i, '🗑️'],
+  [/^buka blokir/i, '🔓'],
+  [/^blokir/i, '🔒'],
+  [/^reset pin/i, '🔑'],
+  [/^ganti nomor/i, '📞'],
+  [/^(perpanjang|ubah masa aktif)/i, '📅'],
+  [/^lifetime/i, '♾️'],
+  [/^ubah harga/i, '💰'],
+  [/^(tambah|pakai \+)/i, '➕'],
+  [/^daftarkan/i, '📝'],
+  [/^kirim qr/i, '📷'],
+  [/^(tautkan|minta kode)/i, '🔗'],
+  [/^(muat ulang|coba lagi|cek status)/i, '🔄'],
+  [/^(matikan|jangan arahkan)/i, '⏸️'],
+  [/^(aktifkan|arahkan)/i, '▶️'],
+  [/^(semua)$/i, '📚'],
+  [/^otomatis$/i, '🤖'],
+  [/^manual$/i, '🛠️'],
+  [/^bayar$/i, '💳'],
+  [/^grup wa$/i, '👥'],
+  [/^lainnya$/i, '📁'],
+  [/^(di grup)$/i, '✅'],
+  [/^mau masuk grup, belum masuk/i, '🙋'],
+  [/^tidak mau masuk grup/i, '🙅'],
+  [/^belum menjawab/i, '❔'],
+  [/^batal$/i, '✖️'],
+  [/^\+?62[0-9]/, '👤']
+]
+const TG_HAS_ICON = /^(?:[←-⇿⌀-⏿①-➿⬀-⯿〰〽㊗㊙]|[\uD83C-\uDBFF][\uDC00-\uDFFF])/
+function tgIconText(text) {
+  let t = String(text == null ? '' : text)
+  // penanda pilihan aktif ("• " / "> ") tetap di depan
+  const mark = /^(• |> )/.exec(t)
+  if (mark) t = t.substring(mark[0].length)
+  let back = false
+  if (/^« /.test(t)) { t = t.substring(2); back = true }
+  if (/ »$/.test(t)) t = t.substring(0, t.length - 2)
+  if (!t || TG_HAS_ICON.test(t)) return (mark ? mark[0] : '') + (back ? '⬅️ ' : '') + t
+  let icon = back ? '⬅️' : ''
+  if (!icon) for (const [re, ic] of TG_BUTTON_ICONS) if (re.test(t)) { icon = ic; break }
+  return (mark ? mark[0] : '') + (icon ? icon + ' ' : '') + t
+}
+function tgDecorateKeyboard(markup) {
+  if (!markup || !Array.isArray(markup.inline_keyboard)) return markup
+  return { ...markup, inline_keyboard: markup.inline_keyboard.map(row => Array.isArray(row) ? row.map(b => (b && typeof b.text === 'string' ? { ...b, text: tgIconText(b.text) } : b)) : row) }
+}
+
 async function telegramApi(token, method, body, isForm) {
+  if (!isForm && body && body.reply_markup) body = { ...body, reply_markup: tgDecorateKeyboard(body.reply_markup) }
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
     headers: isForm ? undefined : { 'Content-Type': 'application/json' },
@@ -21458,7 +21540,7 @@ async function notifyAdminsTelegram(text, photo, opts) {
     if (photo && photo.buffer) {
       const form = new FormData()
       form.append('chat_id', tg.chatId)
-      if (markup) form.append('reply_markup', JSON.stringify(markup))
+      if (markup) form.append('reply_markup', JSON.stringify(tgDecorateKeyboard(markup)))
       if (html.length <= 1000) { form.append('caption', html); form.append('parse_mode', 'HTML') }
       else form.append('caption', plain.substring(0, 1000))
       form.append('photo', new Blob([photo.buffer], { type: photo.mime || 'image/jpeg' }), 'bukti.jpg')
