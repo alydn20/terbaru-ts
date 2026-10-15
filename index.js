@@ -4434,7 +4434,8 @@ app.get('/api/admin/login-history', async (req, res) => {
   const phone = req.query.phone ? normalizePhone(String(req.query.phone)) : ''
   const limit = Math.min(parseInt(req.query.limit) || 100, phone ? AUTH_LOG_PER_PHONE : MAX_LOGIN_HISTORY)
   try {
-    const items = await readAuthLog(phone, limit)
+    let items = await readAuthLog(phone, limit)
+    if (!items.length) items = [...loginHistory].reverse().filter(x => !phone || x.phone === phone).slice(0, limit)
     res.json({ success: true, items, total: items.length, phone })
   } catch (e) {
     // Redis bermasalah: pakai salinan di memori
@@ -9334,6 +9335,9 @@ ${authScript}
       z-index: 50;
     }
     .section-tab {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
       padding: 9px 16px;
       background: transparent;
       border: 1px solid transparent;
@@ -9760,7 +9764,7 @@ ${authScript}
       <!-- Section Tabs -->
       <div class="section-tabs">
         <div class="section-tab active" data-section="users">Daftar User</div>
-        <div class="section-tab" data-section="want-join">?? Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
+        <div class="section-tab" data-section="want-join">🙋 Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="online">Online <span id="onlineBadge" style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="add">Tambah User</div>
         <div class="section-tab" data-section="pending">Pending <span id="pendingBadge" style="background:#f7931a;color:#000;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
@@ -9791,6 +9795,8 @@ ${authScript}
             <div id="grpSyncResult" style="margin-top:10px;font-size:0.85em;"></div>
           </details>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            <input id="userSearch" type="search" inputmode="search" autocomplete="off" placeholder="Cari nomor HP / nama..." oninput="applyUserGroupFilter()" style="flex:1;min-width:170px;background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:6px 10px;font-size:0.85em;outline:none;">
+            <span id="userSearchCount" style="align-self:center;color:#6b7280;font-size:0.78em;"></span>
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
               <option value="masuk">Di grup</option>
@@ -9837,14 +9843,12 @@ ${authScript}
             <table class="user-table">
               <thead>
                 <tr>
-                  <th>No WA</th>
-                  <th>Nama</th>
-                  <th>Status Akun</th>
+                  <th>User</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="wantJoinList">
-                <tr><td colspan="4" class="empty-state">Sedang muat...</td></tr>
+                <tr><td colspan="2" class="empty-state">Memuat...</td></tr>
               </tbody>
             </table>
           </div>
@@ -12643,12 +12647,31 @@ ${authScript}
     }
 
     // ----- Cocokkan Daftar User dengan anggota grup WA -----
+    // Filter Daftar User: status grup + kotak cari (nomor HP format bebas: 0812..., +62 812-..., 812...; atau nama)
     function applyUserGroupFilter() {
       const sel = document.getElementById('userGroupFilter');
       const v = sel ? sel.value : '';
+      const raw = ((document.getElementById('userSearch') || {}).value || '').trim().toLowerCase();
+      const digits = raw.replace(/[^0-9]/g, '');
+      // "0812..." juga dicari sebagai "62812..."; potongan seperti "0393" tetap dicari apa adanya
+      const digits62 = digits.charAt(0) === '0' ? '62' + digits.substring(1) : digits;
+      const byPhone = digits.length >= 3 && digits.length >= raw.replace(/[^0-9a-z]/g, '').length;
+      let shown = 0, total = 0;
       document.querySelectorAll('#userList tr').forEach(tr => {
-        tr.style.display = (!v || tr.getAttribute('data-group') === v) ? '' : 'none';
+        const ph = tr.querySelector('.phone');
+        if (!ph) return;
+        total++;
+        let ok = !v || tr.getAttribute('data-group') === v;
+        if (ok && raw) {
+          const phone = ph.textContent.replace(/[^0-9]/g, '');
+          const name = ((tr.children[1] || {}).textContent || '').toLowerCase();
+          ok = byPhone ? (phone.indexOf(digits) !== -1 || phone.indexOf(digits62) !== -1) : name.indexOf(raw) !== -1 || (digits && phone.indexOf(digits) !== -1);
+        }
+        tr.style.display = ok ? '' : 'none';
+        if (ok) shown++;
       });
+      const cnt = document.getElementById('userSearchCount');
+      if (cnt) cnt.textContent = (raw || v) ? shown + ' dari ' + total + ' user' : '';
     }
 
     function renderGroupCompare(d) {
@@ -12803,14 +12826,14 @@ ${authScript}
           document.getElementById('pinChangedUsers').textContent = pinChanged;
 
           // Filter user yang ingin gabung grup tapi belum di grup
-          const wantJoinUsers = users.filter(u => u.groupChoice === 'yes' && u.groupStatus !== 'masuk');
+          const wantJoinUsers = users.filter(u => u.groupChoice === 'yes' && u.groupStatus !== 'masuk' && !u.isBlocked && (!u.expired || u.expired > now));
           document.getElementById('wantJoinBadge').textContent = wantJoinUsers.length;
 
           const tbody = document.getElementById('userList');
           if (users.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada user</td></tr>';
             const wjList = document.getElementById('wantJoinList');
-            if (wjList) wjList.innerHTML = '<tr><td colspan="4" class="empty-state">Belum ada</td></tr>';
+            if (wjList) wjList.innerHTML = '<tr><td colspan="2" class="empty-state">Belum ada</td></tr>';
             return;
           }
 
@@ -12868,15 +12891,15 @@ ${authScript}
           const wjList = document.getElementById('wantJoinList');
           if (wjList) {
             wjList.innerHTML = wantJoinUsers.length === 0
-              ? '<tr><td colspan="4" class="empty-state">Semua user sudah diproses</td></tr>'
+              ? '<tr><td colspan="2" class="empty-state">Tidak ada yang menunggu</td></tr>'
               : wantJoinUsers.map(u => {
-                  const status = u.expired ? (u.expired > now ? 'Aktif sampai ' + new Date(u.expired).toLocaleDateString('id-ID') : 'Expired') : 'Lifetime';
+                  const status = u.expired ? 'Aktif sampai ' + new Date(u.expired).toLocaleDateString('id-ID') : 'Lifetime';
                   return '<tr>' +
-                    '<td class="phone">+' + u.phone + '</td>' +
-                    '<td>' + _escHtml(u.name || '-') + '</td>' +
-                    '<td><span class="status-badge ' + (u.expired && u.expired <= now ? 'status-expired' : (u.expired ? 'status-active' : 'status-lifetime')) + '">' + status + '</span></td>' +
-                    '<td>' +
-                      '<button class="action-btn" style="background:#10b981;" onclick="approveWantJoin(' + "'" + u.phone + "'" + ')">✓ Sudah Ditambahkan</button>' +
+                    '<td><div class="phone">+' + u.phone + '</div>' +
+                      '<div style="font-size:0.85em;color:#c9d1d9;margin-top:2px;">' + _escHtml(u.name || '-') + '</div>' +
+                      '<span class="status-badge ' + (u.expired ? 'status-active' : 'status-lifetime') + '" style="margin-top:4px;display:inline-block;">' + status + '</span></td>' +
+                    '<td style="white-space:nowrap;">' +
+                      '<button class="action-btn" style="background:#10b981;" onclick="approveWantJoin(&apos;' + u.phone + '&apos;)">Sudah Ditambahkan</button>' +
                     '</td>' +
                     '</tr>';
                 }).join('');
@@ -12884,8 +12907,8 @@ ${authScript}
         });
     }
 
-    function approveWantJoin(phone) {
-      const confirmed = window.confirm('Tandai +' + phone + ' sebagai sudah ditambahkan ke grup WA?');
+    async function approveWantJoin(phone) {
+      const confirmed = await showConfirm('Tandai +' + phone + ' sudah ditambahkan ke grup WA?', { title: 'Sudah Ditambahkan', type: 'warning' });
       if (!confirmed) return;
 
       adminFetch('/api/admin/users/group', {
