@@ -1360,16 +1360,9 @@ async function fetchEconomicCalendar() {
   }
   
   try {
-    const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', {
-      signal: AbortSignal.timeout(5000)
-    })
-    
-    if (!res.ok) {
-      // Silent fail
-      return null
-    }
-    
-    const events = await res.json()
+    // Satu sumber data dengan menu News di website (feed membatasi permintaan yang terlalu sering)
+    const events = (await loadFFCalendar()).events
+    if (!events.length) return null
     
     // Waktu Jakarta (WIB = UTC+7)
     const jakartaNow = new Date(Date.now() + (7 * 60 * 60 * 1000))
@@ -4434,7 +4427,8 @@ app.get('/api/admin/login-history', async (req, res) => {
   const phone = req.query.phone ? normalizePhone(String(req.query.phone)) : ''
   const limit = Math.min(parseInt(req.query.limit) || 100, phone ? AUTH_LOG_PER_PHONE : MAX_LOGIN_HISTORY)
   try {
-    const items = await readAuthLog(phone, limit)
+    let items = await readAuthLog(phone, limit)
+    if (!items.length) items = [...loginHistory].reverse().filter(x => !phone || x.phone === phone).slice(0, limit)
     res.json({ success: true, items, total: items.length, phone })
   } catch (e) {
     // Redis bermasalah: pakai salinan di memori
@@ -7074,32 +7068,51 @@ app.get('/api/promo-suggestions', async (req, res) => {
 
 let cachedFFCalendar = []
 let lastFFCalendarFetch = 0
-const FF_CALENDAR_TTL = 5 * 60 * 1000 // cache 5 menit
+const FF_CALENDAR_TTL = 15 * 60 * 1000 // cache 15 menit (feed membatasi permintaan yang terlalu sering)
+const FF_CALENDAR_RETRY = 5 * 60 * 1000 // kalau gagal / kena batas, coba lagi paling cepat 5 menit kemudian
+const FF_CALENDAR_REDIS_KEY = 'gold:ff_calendar'
+let _ffCalendarLoading = null
 
-app.get('/api/ff-calendar', async (req, res) => {
-  if (!await requireSession(req, res)) return
-  try {
-    const now = Date.now()
-    if (cachedFFCalendar.length > 0 && now - lastFFCalendarFetch < FF_CALENDAR_TTL) {
-      return res.json({ success: true, events: cachedFFCalendar, cached: true })
-    }
-
-    // Fetch Forex Factory JSON feed (this week + next week)
-    const fetchJson = (url) => new Promise((resolve, reject) => {
-      https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (r) => {
+// Ambil kalender dari feed Forex Factory. Kalau feed sedang membatasi (halaman "Rate Limited")
+// atau gagal, data terakhir yang berhasil tetap dipakai (disimpan juga di Redis supaya tidak
+// hilang saat restart). Hanya satu permintaan ke feed yang berjalan pada satu waktu.
+async function loadFFCalendar() {
+  const now = Date.now()
+  if (!cachedFFCalendar.length && !lastFFCalendarFetch) {
+    try {
+      const saved = await redis.get(FF_CALENDAR_REDIS_KEY)
+      const obj = saved ? (typeof saved === 'string' ? JSON.parse(saved) : saved) : null
+      if (obj && Array.isArray(obj.events)) { cachedFFCalendar = obj.events; lastFFCalendarFetch = obj.at || 0 }
+    } catch (e) {}
+  }
+  if (cachedFFCalendar.length > 0 && now - lastFFCalendarFetch < FF_CALENDAR_TTL) return { events: cachedFFCalendar, cached: true }
+  if (_ffCalendarLoading) return _ffCalendarLoading
+  _ffCalendarLoading = (async () => {
+    // null = gagal / dibatasi; [] = feed kosong (mis. minggu depan belum terbit)
+    const fetchJson = (url) => new Promise((resolve) => {
+      const rq = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 }, (r) => {
         let data = ''
         r.on('data', chunk => data += chunk)
-        r.on('end', () => { try { resolve(JSON.parse(data)) } catch(e) { resolve([]) } })
-        r.on('error', () => resolve([]))
-      }).on('error', () => resolve([]))
+        r.on('end', () => {
+          if (r.statusCode === 404) return resolve([])
+          try { const j = JSON.parse(data); resolve(Array.isArray(j) ? j : null) } catch (e) { resolve(null) }
+        })
+        r.on('error', () => resolve(null))
+      })
+      rq.on('timeout', () => rq.destroy())
+      rq.on('error', () => resolve(null))
     })
 
-    const [week1, week2] = await Promise.all([
-      fetchJson('https://nfs.faireconomy.media/ff_calendar_thisweek.json').catch(() => []),
-      fetchJson('https://nfs.faireconomy.media/ff_calendar_nextweek.json').catch(() => [])
-    ])
+    const week1 = await fetchJson('https://nfs.faireconomy.media/ff_calendar_thisweek.json')
+    if (!week1) {
+      // gagal: pakai data lama, coba lagi nanti (jangan memukul feed terus-menerus)
+      lastFFCalendarFetch = Date.now() - FF_CALENDAR_TTL + FF_CALENDAR_RETRY
+      pushLog(`📰 FF Calendar: feed sedang membatasi/gagal, memakai data terakhir (${cachedFFCalendar.length} event)`)
+      return { events: cachedFFCalendar, stale: true }
+    }
+    const week2 = (await fetchJson('https://nfs.faireconomy.media/ff_calendar_nextweek.json')) || []
 
-    const allEvents = [...(Array.isArray(week1) ? week1 : []), ...(Array.isArray(week2) ? week2 : [])]
+    const allEvents = [...week1, ...week2]
     const events = allEvents.filter(ev => ev.country === 'USD').map(ev => ({
       title: ev.title || '',
       country: ev.country || '',
@@ -7111,9 +7124,19 @@ app.get('/api/ff-calendar', async (req, res) => {
       actual: ev.actual || ''
     }))
     cachedFFCalendar = events
-    lastFFCalendarFetch = now
+    lastFFCalendarFetch = Date.now()
+    redis.set(FF_CALENDAR_REDIS_KEY, JSON.stringify({ at: lastFFCalendarFetch, events })).catch(() => {})
     pushLog(`📰 FF Calendar: ${events.length} USD events loaded`)
-    res.json({ success: true, events })
+    return { events }
+  })().finally(() => { _ffCalendarLoading = null })
+  return _ffCalendarLoading
+}
+
+app.get('/api/ff-calendar', async (req, res) => {
+  if (!await requireSession(req, res)) return
+  try {
+    const r = await loadFFCalendar()
+    res.json({ success: true, ...r })
   } catch (e) {
     pushLog(`❌ FF Calendar error: ${e.message}`)
     res.json({ success: false, error: e.message, events: cachedFFCalendar })
@@ -9334,6 +9357,9 @@ ${authScript}
       z-index: 50;
     }
     .section-tab {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
       padding: 9px 16px;
       background: transparent;
       border: 1px solid transparent;
@@ -9760,7 +9786,7 @@ ${authScript}
       <!-- Section Tabs -->
       <div class="section-tabs">
         <div class="section-tab active" data-section="users">Daftar User</div>
-        <div class="section-tab" data-section="want-join">?? Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
+        <div class="section-tab" data-section="want-join">🙋 Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="online">Online <span id="onlineBadge" style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="add">Tambah User</div>
         <div class="section-tab" data-section="pending">Pending <span id="pendingBadge" style="background:#f7931a;color:#000;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
@@ -9791,6 +9817,8 @@ ${authScript}
             <div id="grpSyncResult" style="margin-top:10px;font-size:0.85em;"></div>
           </details>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+            <input id="userSearch" type="search" inputmode="search" autocomplete="off" placeholder="Cari nomor HP / nama..." oninput="applyUserGroupFilter()" style="flex:1;min-width:170px;background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:6px 10px;font-size:0.85em;outline:none;">
+            <span id="userSearchCount" style="align-self:center;color:#6b7280;font-size:0.78em;"></span>
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
               <option value="masuk">Di grup</option>
@@ -9837,14 +9865,12 @@ ${authScript}
             <table class="user-table">
               <thead>
                 <tr>
-                  <th>No WA</th>
-                  <th>Nama</th>
-                  <th>Status Akun</th>
+                  <th>User</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="wantJoinList">
-                <tr><td colspan="4" class="empty-state">Sedang muat...</td></tr>
+                <tr><td colspan="2" class="empty-state">Memuat...</td></tr>
               </tbody>
             </table>
           </div>
@@ -12643,12 +12669,31 @@ ${authScript}
     }
 
     // ----- Cocokkan Daftar User dengan anggota grup WA -----
+    // Filter Daftar User: status grup + kotak cari (nomor HP format bebas: 0812..., +62 812-..., 812...; atau nama)
     function applyUserGroupFilter() {
       const sel = document.getElementById('userGroupFilter');
       const v = sel ? sel.value : '';
+      const raw = ((document.getElementById('userSearch') || {}).value || '').trim().toLowerCase();
+      const digits = raw.replace(/[^0-9]/g, '');
+      // "0812..." juga dicari sebagai "62812..."; potongan seperti "0393" tetap dicari apa adanya
+      const digits62 = digits.charAt(0) === '0' ? '62' + digits.substring(1) : digits;
+      const byPhone = digits.length >= 3 && digits.length >= raw.replace(/[^0-9a-z]/g, '').length;
+      let shown = 0, total = 0;
       document.querySelectorAll('#userList tr').forEach(tr => {
-        tr.style.display = (!v || tr.getAttribute('data-group') === v) ? '' : 'none';
+        const ph = tr.querySelector('.phone');
+        if (!ph) return;
+        total++;
+        let ok = !v || tr.getAttribute('data-group') === v;
+        if (ok && raw) {
+          const phone = ph.textContent.replace(/[^0-9]/g, '');
+          const name = ((tr.children[1] || {}).textContent || '').toLowerCase();
+          ok = byPhone ? (phone.indexOf(digits) !== -1 || phone.indexOf(digits62) !== -1) : name.indexOf(raw) !== -1 || (digits && phone.indexOf(digits) !== -1);
+        }
+        tr.style.display = ok ? '' : 'none';
+        if (ok) shown++;
       });
+      const cnt = document.getElementById('userSearchCount');
+      if (cnt) cnt.textContent = (raw || v) ? shown + ' dari ' + total + ' user' : '';
     }
 
     function renderGroupCompare(d) {
@@ -12803,14 +12848,14 @@ ${authScript}
           document.getElementById('pinChangedUsers').textContent = pinChanged;
 
           // Filter user yang ingin gabung grup tapi belum di grup
-          const wantJoinUsers = users.filter(u => u.groupChoice === 'yes' && u.groupStatus !== 'masuk');
+          const wantJoinUsers = users.filter(u => u.groupChoice === 'yes' && u.groupStatus !== 'masuk' && !u.isBlocked && (!u.expired || u.expired > now));
           document.getElementById('wantJoinBadge').textContent = wantJoinUsers.length;
 
           const tbody = document.getElementById('userList');
           if (users.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Belum ada user</td></tr>';
             const wjList = document.getElementById('wantJoinList');
-            if (wjList) wjList.innerHTML = '<tr><td colspan="4" class="empty-state">Belum ada</td></tr>';
+            if (wjList) wjList.innerHTML = '<tr><td colspan="2" class="empty-state">Belum ada</td></tr>';
             return;
           }
 
@@ -12868,15 +12913,15 @@ ${authScript}
           const wjList = document.getElementById('wantJoinList');
           if (wjList) {
             wjList.innerHTML = wantJoinUsers.length === 0
-              ? '<tr><td colspan="4" class="empty-state">Semua user sudah diproses</td></tr>'
+              ? '<tr><td colspan="2" class="empty-state">Tidak ada yang menunggu</td></tr>'
               : wantJoinUsers.map(u => {
-                  const status = u.expired ? (u.expired > now ? 'Aktif sampai ' + new Date(u.expired).toLocaleDateString('id-ID') : 'Expired') : 'Lifetime';
+                  const status = u.expired ? 'Aktif sampai ' + new Date(u.expired).toLocaleDateString('id-ID') : 'Lifetime';
                   return '<tr>' +
-                    '<td class="phone">+' + u.phone + '</td>' +
-                    '<td>' + _escHtml(u.name || '-') + '</td>' +
-                    '<td><span class="status-badge ' + (u.expired && u.expired <= now ? 'status-expired' : (u.expired ? 'status-active' : 'status-lifetime')) + '">' + status + '</span></td>' +
-                    '<td>' +
-                      '<button class="action-btn" style="background:#10b981;" onclick="approveWantJoin(' + "'" + u.phone + "'" + ')">✓ Sudah Ditambahkan</button>' +
+                    '<td><div class="phone">+' + u.phone + '</div>' +
+                      '<div style="font-size:0.85em;color:#c9d1d9;margin-top:2px;">' + _escHtml(u.name || '-') + '</div>' +
+                      '<span class="status-badge ' + (u.expired ? 'status-active' : 'status-lifetime') + '" style="margin-top:4px;display:inline-block;">' + status + '</span></td>' +
+                    '<td style="white-space:nowrap;">' +
+                      '<button class="action-btn" style="background:#10b981;" onclick="approveWantJoin(&apos;' + u.phone + '&apos;)">Sudah Ditambahkan</button>' +
                     '</td>' +
                     '</tr>';
                 }).join('');
@@ -12884,8 +12929,8 @@ ${authScript}
         });
     }
 
-    function approveWantJoin(phone) {
-      const confirmed = window.confirm('Tandai +' + phone + ' sebagai sudah ditambahkan ke grup WA?');
+    async function approveWantJoin(phone) {
+      const confirmed = await showConfirm('Tandai +' + phone + ' sudah ditambahkan ke grup WA?', { title: 'Sudah Ditambahkan', type: 'warning' });
       if (!confirmed) return;
 
       adminFetch('/api/admin/users/group', {
@@ -13497,7 +13542,8 @@ app.get('/monitoring', async (req, res) => {
     .sisa-hari { display: block; font-size: 0.78em; font-weight: 600; line-height: 1.2; margin-top: 1px; color: #22c55e; overflow: hidden; text-overflow: ellipsis; }
     .sisa-hari.hampir { color: #f59e0b; }
     .sisa-hari.habis { color: #ef4444; }
-    .sisa-hari.lifetime { color: #8b949e; }
+    .sisa-hari.lifetime { color: #8b949e; cursor: default; }
+    .sisa-hari { cursor: pointer; }
     /* Nav icon buttons */
     .nav-icon-btn {
       display: flex;
@@ -16737,7 +16783,7 @@ app.get('/monitoring', async (req, res) => {
         <span id="trendIcon" style="display:none;"></span>
       </div>
 
-      <div class="header-title-text">Harga PemulaOLD<span id="sisaHariText" class="sisa-hari" style="display:none;"></span></div>
+      <div class="header-title-text">Harga PemulaOLD<span id="sisaHariText" class="sisa-hari" style="display:none;" onclick="openRenewModal()" title="Perpanjang masa aktif"></span></div>
 
       <div class="header-right">
         <button class="nav-icon-btn" id="navIndicatorBtn" onclick="openIndicatorSettings()" title="Indikator">
@@ -16792,6 +16838,10 @@ app.get('/monitoring', async (req, res) => {
       <button class="nav-menu-item" id="adminPanelBtn" style="display:none;" onclick="window.location.href='/admin/sso?session=' + encodeURIComponent(localStorage.getItem('goldmonitor_session')||'')" title="Panel Admin">
         <i data-lucide="shield" style="width:14px;height:14px;"></i>
         Panel Admin
+      </button>
+      <button class="nav-menu-item" id="renewMenuBtn" onclick="closeNavMenu();openRenewModal()" title="Tambah masa aktif akun">
+        <i data-lucide="calendar-plus" style="width:14px;height:14px;color:#22c55e;"></i>
+        Perpanjang Masa Aktif
       </button>
       <button class="nav-menu-item" id="joinGroupBtn" style="display:none;" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
         <i data-lucide="users" style="width:14px;height:14px;"></i>
@@ -19704,11 +19754,176 @@ app.get('/monitoring', async (req, res) => {
         if (ms <= 0) { txt = 'Masa aktif habis'; cls += ' habis'; }
         else if (hari <= 1) { txt = 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi'; cls += ' habis'; }
         else { txt = 'Sisa ' + hari + ' hari lagi'; if (hari <= 3) cls += ' habis'; else if (hari <= 7) cls += ' hampir'; }
+        if (hari <= 7) txt += ' · Perpanjang';
         el.title = 'Aktif sampai ' + new Date(Number(user.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
       }
       el.className = cls;
       el.textContent = txt;
       el.style.display = 'block';
+      _renewUser = user;
+      var mb = document.getElementById('renewMenuBtn');
+      if (mb) mb.style.display = user.expired ? '' : 'none';
+    }
+
+    // ===== Perpanjang masa aktif lewat QRIS (dari /monitoring) =====
+    var _renewUser = null, _renewOrder = null, _renewTimer = null, _renewUploading = false;
+    function _rp(n) { return 'Rp' + Number(n).toLocaleString('id-ID'); }
+    function _renewEl(tag, css, text) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (text) e.textContent = text; return e; }
+    function closeRenewModal() {
+      if (_renewTimer) { clearInterval(_renewTimer); _renewTimer = null; }
+      var w = document.getElementById('renewModal'); if (w) w.remove();
+    }
+    function _renewSetStatus(text, color) {
+      var st = document.getElementById('renewStatus'); if (!st) return;
+      st.textContent = text; st.style.color = color || '#9ca3af';
+    }
+    function _renewShowUpload(show, label) {
+      var b = document.getElementById('renewUploadBtn'); if (!b) return;
+      b.style.display = show ? 'block' : 'none'; b.disabled = false; b.textContent = label || 'UPLOAD BUKTI PEMBAYARAN';
+    }
+    function _renewProofState(proofStatus) {
+      if (!proofStatus) { _renewShowUpload(true); _renewSetStatus('Setelah bayar, upload screenshot buktinya.', '#fbbf24'); return; }
+      _renewShowUpload(false);
+      _renewSetStatus(proofStatus === 'checking' ? 'Bukti terkirim. Sedang diperiksa...' : 'Bukti terkirim. Menunggu konfirmasi.', '#4ade80');
+    }
+    async function openRenewModal() {
+      if (_renewUser && !_renewUser.expired) { showConfirm('Akun Anda Lifetime, tidak perlu diperpanjang.', 'Perpanjang Masa Aktif'); return; }
+      closeRenewModal();
+      var wrap = _renewEl('div', 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;');
+      wrap.id = 'renewModal';
+      var box = _renewEl('div', 'background:linear-gradient(180deg,rgba(25,32,42,0.98),rgba(18,24,32,0.98));border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:20px;width:100%;max-width:360px;max-height:92vh;overflow-y:auto;text-align:center;color:#e7e9ea;');
+      box.appendChild(_renewEl('div', 'font-size:1.1em;font-weight:700;margin-bottom:4px;', 'Perpanjang Masa Aktif'));
+      var cur = _renewEl('div', 'color:#9ca3af;font-size:0.82em;margin-bottom:12px;');
+      if (_renewUser && _renewUser.expired) cur.textContent = 'Aktif sampai ' + new Date(Number(_renewUser.expired)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+      box.appendChild(cur);
+      var body = _renewEl('div', '', 'Memuat...');
+      body.id = 'renewBody';
+      box.appendChild(body);
+      var close = _renewEl('button', 'display:block;width:100%;margin-top:14px;background:transparent;color:#9ca3af;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px;cursor:pointer;', 'Tutup');
+      close.type = 'button';
+      close.onclick = closeRenewModal;
+      box.appendChild(close);
+      wrap.appendChild(box);
+      wrap.onclick = function(ev) { if (ev.target === wrap) closeRenewModal(); };
+      document.body.appendChild(wrap);
+
+      var session = localStorage.getItem('goldmonitor_session') || '';
+      var cfg = null, data = null;
+      try { cfg = await (await fetch('/api/payment/config', { cache: 'no-store' })).json(); } catch (e) {}
+      if (!cfg || !cfg.enabled) {
+        body.textContent = '';
+        body.appendChild(_renewEl('div', 'color:#9ca3af;font-size:0.9em;margin-bottom:12px;', cfg ? 'Pembayaran QRIS sedang tidak aktif. Hubungi admin untuk perpanjang.' : 'Gagal memuat. Coba lagi sebentar lagi.'));
+        if (cfg) {
+          var wa = _renewEl('button', 'width:100%;padding:11px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;', 'Chat Admin');
+          wa.type = 'button';
+          wa.onclick = function() { window.open('https://wa.me/62895701692525?text=' + encodeURIComponent('Hallo saya (+' + (_myPhone || '') + ') mau perpanjang masa aktif'), '_blank'); };
+          body.appendChild(wa);
+        }
+        return;
+      }
+      try {
+        data = await (await fetch('/api/payment/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: _myPhone, session: session }) })).json();
+      } catch (e) {}
+      if (!document.getElementById('renewModal')) return;
+      if (!data || !data.success) { body.textContent = (data && data.error) || 'Gagal membuat pembayaran. Coba lagi.'; return; }
+      _renewOrder = data.order;
+      body.textContent = '';
+      body.appendChild(_renewEl('div', 'font-size:0.88em;color:#cbd5e1;margin-bottom:10px;', 'Tambah ' + data.order.days + ' hari: ' + _rp(data.order.price) + '. Scan QRIS di bawah, bayar PERSIS:'));
+      body.appendChild(_renewEl('div', 'font-size:1.6em;font-weight:800;color:#fbbf24;margin-bottom:10px;letter-spacing:0.5px;', _rp(data.order.amount)));
+      if (data.order.qrDataUrl) {
+        var img = _renewEl('img', 'width:220px;max-width:100%;background:#fff;padding:8px;border-radius:12px;');
+        img.src = data.order.qrDataUrl; img.alt = 'QRIS';
+        body.appendChild(img);
+        var save = _renewEl('a', 'display:block;color:#60a5fa;font-size:0.8em;margin:6px 0 10px;', 'Simpan gambar QRIS');
+        save.href = data.order.qrDataUrl; save.download = 'qris-perpanjang.png';
+        body.appendChild(save);
+      }
+      body.appendChild(_renewEl('div', 'font-size:0.78em;color:#9ca3af;margin-bottom:12px;', 'Masa aktif ditambahkan dari tanggal habis akun sekarang, jadi sisa hari Anda tidak hilang.'));
+      var rej = _renewEl('div', 'display:none;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);color:#fca5a5;border-radius:10px;padding:10px;font-size:0.85em;margin-bottom:10px;');
+      rej.id = 'renewReject';
+      body.appendChild(rej);
+      var file = _renewEl('input');
+      file.type = 'file'; file.accept = 'image/*'; file.style.display = 'none';
+      file.onchange = function() { _renewUpload(file); };
+      body.appendChild(file);
+      var up = _renewEl('button', 'width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;font-weight:700;cursor:pointer;margin-bottom:8px;');
+      up.type = 'button'; up.id = 'renewUploadBtn';
+      up.onclick = function() { file.click(); };
+      body.appendChild(up);
+      var st = _renewEl('div', 'font-size:0.85em;');
+      st.id = 'renewStatus';
+      body.appendChild(st);
+      if (data.order.status === 'rejected') _renewRejected(data.order.rejectReason);
+      else _renewProofState(data.order.proofStatus);
+      _renewPoll();
+    }
+    function _renewRejected(reason) {
+      var r = document.getElementById('renewReject');
+      if (r) { r.textContent = 'Bukti ditolak: ' + (reason || 'Bukti tidak valid') + '. Upload bukti yang benar.'; r.style.display = 'block'; }
+      _renewShowUpload(true, 'UPLOAD BUKTI BARU');
+      _renewSetStatus('Bukti ditolak. Upload bukti baru.', '#ef4444');
+    }
+    function _renewPoll() {
+      if (_renewTimer) clearInterval(_renewTimer);
+      _renewTimer = setInterval(async function() {
+        if (!_renewOrder || document.hidden || _renewUploading) return;
+        var d = null;
+        try { d = await (await fetch('/api/payment/status?id=' + _renewOrder.id)).json(); } catch (e) {}
+        if (!d || !d.success) return;
+        if (d.status === 'paid') { _renewDone(d.activeUntil); return; }
+        if (d.status === 'rejected') { _renewRejected(d.rejectReason); return; }
+        var r = document.getElementById('renewReject'); if (r) r.style.display = 'none';
+        if (d.status === 'expired') {
+          clearInterval(_renewTimer); _renewTimer = null;
+          _renewShowUpload(false);
+          _renewSetStatus('Order sudah tidak berlaku. Tutup lalu buka lagi menu Perpanjang.', '#ef4444');
+          return;
+        }
+        _renewProofState(d.proofStatus);
+      }, 4000);
+    }
+    function _renewDone(activeUntil) {
+      if (_renewTimer) { clearInterval(_renewTimer); _renewTimer = null; }
+      _renewOrder = null;
+      var body = document.getElementById('renewBody');
+      if (body) {
+        body.textContent = '';
+        body.appendChild(_renewEl('div', 'font-size:2.2em;margin:6px 0;', String.fromCharCode(10004)));
+        body.appendChild(_renewEl('div', 'color:#4ade80;font-weight:700;margin-bottom:6px;', 'Pembayaran diterima!'));
+        body.appendChild(_renewEl('div', 'color:#cbd5e1;font-size:0.9em;', activeUntil ? 'Akun aktif sampai ' + new Date(Number(activeUntil)).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) + '.' : 'Masa aktif sudah ditambahkan.'));
+      }
+      if (activeUntil && _renewUser) { _renewUser = Object.assign({}, _renewUser, { expired: Number(activeUntil) }); _renderSisaHari(_renewUser); }
+    }
+    async function _renewShrink(f) {
+      var bm = await createImageBitmap(f);
+      var sc = Math.min(1, 1600 / Math.max(bm.width, bm.height));
+      var c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bm.width * sc)); c.height = Math.max(1, Math.round(bm.height * sc));
+      c.getContext('2d').drawImage(bm, 0, 0, c.width, c.height);
+      return await new Promise(function(res) { c.toBlob(res, 'image/jpeg', 0.75); });
+    }
+    async function _renewUpload(input) {
+      var f = input.files && input.files[0];
+      input.value = '';
+      if (!f || !_renewOrder) return;
+      if (!(await showConfirm('Kirim foto ini sebagai bukti pembayaran?', 'Kirim Bukti'))) return;
+      var b = document.getElementById('renewUploadBtn');
+      _renewUploading = true;
+      if (b) { b.disabled = true; b.textContent = 'Mengunggah...'; }
+      _renewSetStatus('Mengunggah bukti...');
+      try {
+        var blob = null;
+        try { blob = await _renewShrink(f); } catch (e) {}
+        if (!blob) blob = f;
+        var d = await (await fetch('/api/payment/proof?id=' + _renewOrder.id, { method: 'POST', headers: { 'Content-Type': blob.type || 'image/jpeg' }, body: blob })).json();
+        _renewUploading = false;
+        if (d.success) { var r = document.getElementById('renewReject'); if (r) r.style.display = 'none'; _renewProofState('checking'); }
+        else { _renewShowUpload(true); _renewSetStatus(d.error || 'Gagal mengunggah. Coba lagi.', '#ef4444'); }
+      } catch (e) {
+        _renewUploading = false;
+        _renewShowUpload(true);
+        _renewSetStatus('Gagal mengunggah. Periksa koneksi lalu coba lagi.', '#ef4444');
+      }
     }
 
     // Cek berkala: kalau session sudah ditendang (login di device lain), beri notif lalu logout
@@ -21197,7 +21412,7 @@ async function completePaymentOrder(order, via) {
   const until = user.expired ? new Date(user.expired).toLocaleDateString('id-ID') : 'Lifetime'
   // AUTO = diputuskan sistem sendiri, Admin = diputuskan admin (manual). Dipisah di Logs dan Telegram.
   const otomatis = /^otomatis|^notifikasi otomatis/.test(String(via))
-  pushLog(`${otomatis ? 'AUTO | ACC otomatis' : 'Admin | ACC manual'} +${order.phone} Rp${order.amount.toLocaleString('id-ID')} (${via}) - aktif sampai ${until}`)
+  pushLog(`${otomatis ? 'AUTO | ACC otomatis' : 'Admin | ACC manual'}${order.renew ? ' (perpanjang)' : ''} +${order.phone} Rp${order.amount.toLocaleString('id-ID')} (${via}) - aktif sampai ${until}`)
   // Sengaja TIDAK mengirim WA ke nomor pembayar: bot hanya boleh mengirim pesan pribadi ke
   // nomor admin, supaya nomor bot tidak dibekukan WhatsApp karena mengirim ke nomor asing.
   // User mendapat kabar lewat halaman login (lanjut otomatis + info PIN awal).
@@ -21258,7 +21473,16 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
     if (phone.length < 11 || phone.length > 15) return res.json({ success: false, error: 'Nomor WhatsApp tidak valid' })
     if (await redis.hget(REDIS_KEYS.BLOCKED_USERS, phone)) return res.json({ success: false, error: 'Nomor ini diblokir. Hubungi admin.' })
     const check = await isUserValid(phone)
-    if (check.valid) return res.json({ success: false, alreadyRegistered: true, error: 'Nomor sudah terdaftar. Silakan login.' })
+    // Nomor yang masih aktif hanya boleh membayar (perpanjang) dari /monitoring, dengan sesi
+    // login miliknya sendiri. Dari halaman login tetap ditolak seperti biasa.
+    let renew = false
+    if (check.valid) {
+      const sess = String(req.body?.session || '')
+      const sessPhone = sess ? await redis.hget(REDIS_KEYS.SESSIONS, sess).catch(() => null) : null
+      if (sessPhone !== phone) return res.json({ success: false, alreadyRegistered: true, error: 'Nomor sudah terdaftar. Silakan login.' })
+      if (!check.user || !check.user.expired) return res.json({ success: false, error: 'Akun Lifetime tidak perlu diperpanjang.' })
+      renew = true
+    }
 
     const now = Date.now()
     const orders = await loadPaymentOrders()
@@ -21286,10 +21510,11 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
         amount,
         status: 'pending',
         createdAt: now,
-        expiresAt: now + PAYMENT_ORDER_TTL_MS
+        expiresAt: now + PAYMENT_ORDER_TTL_MS,
+        renew
       }
       await savePaymentOrder(order)
-      pushLog(`PAY | Order baru +${phone} Rp${amount.toLocaleString('id-ID')}`)
+      pushLog(`PAY | Order baru${renew ? ' (perpanjang)' : ''} +${phone} Rp${amount.toLocaleString('id-ID')}`)
     }
 
     const qris = makeDynamicQris(s.qrisStatic, order.amount)
@@ -21298,7 +21523,7 @@ app.post('/api/payment/create', rateLimit(6, 60000), express.json(), async (req,
       const mod = await import('qrcode')
       qrDataUrl = await (mod.toDataURL || mod.default.toDataURL)(qris, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
     } catch (e) {}
-    res.json({ success: true, order: { id: order.id, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, status: order.status, rejectReason: order.status === 'rejected' ? (order.rejectReason || '') : '', qris, qrDataUrl } })
+    res.json({ success: true, order: { id: order.id, renew: !!order.renew, amount: order.amount, price: order.price, days: order.days, expiresAt: order.expiresAt, proofStatus: (order.proof && order.proof.status) || null, proofReused: !!(order.proof && order.proof.reused), existing: order.createdAt !== now, status: order.status, rejectReason: order.status === 'rejected' ? (order.rejectReason || '') : '', qris, qrDataUrl } })
   } catch (e) {
     pushLog('PAY | Gagal membuat order: ' + e.message)
     res.json({ success: false, error: 'Gagal membuat pembayaran. Coba lagi.' })
@@ -21487,7 +21712,7 @@ const TG_TITLE_EMOJI = [
   [/^DI-ACC OTOMATIS/, '✅'], [/^DITOLAK OTOMATIS/, '❌'], [/^BUKTI PERLU DICEK MANUAL/, '⚠️'],
   [/^BUKTI BAYAR MENUNGGU ACC/, '💳'], [/^PERMINTAAN GABUNG GRUP/, '👥'], [/^MEMBUKA LINK GRUP/, '🔗'],
   [/^MASA AKTIF HABIS/, '⛔'], [/^LAPORAN HARIAN/, '📅'], [/^SUDAH ACC, BELUM MASUK GRUP WA/, '👥'], [/^INGIN GABUNG GRUP WA/, '🙋'],
-  [/^Habis dalam 3 hari/, '⏳'], [/^BOT WHATSAPP TER-LOGOUT/, '🚨']
+  [/^Habis dalam 3 hari/, '⏳'], [/^BOT WHATSAPP TER-LOGOUT/, '🚨'], [/^DITAMBAHKAN/, '➕']
 ]
 const TG_LINE_EMOJI = [
   [/^Nomor di website:/, '🌐'], [/^Nomor WA pengirim:/, '📱'], [/^Nomor:/, '📱'], [/^Nominal order:/, '💰'],
@@ -22020,8 +22245,26 @@ function tgLogsPage(cat) {
 
 // Log penting dikumpulkan lalu dikirim sebagai SATU pesan tiap 2 menit (bukan satu pesan per baris)
 let _tgLogBuf = []
+// Penambahan user / masa aktif: dikirim LANGSUNG ke Telegram (tidak menunggu ringkasan 2 menit).
+// Yang dilakukan dari Telegram sendiri tidak dikirim lagi (admin sudah melihatnya di sana).
+const TG_ADD_EVENTS = [
+  [/^Admin \| Added user \+([0-9]+), expired: (.*)$/, m => 'User baru ditambahkan (panel admin)\nNomor: +' + m[1] + '\nAktif sampai: ' + m[2]],
+  [/^Admin \| Bulk import: ([1-9][0-9]*) added/, m => m[1] + ' user baru ditambahkan lewat impor massal (panel admin)'],
+  [/^Admin \| Updated user \+([0-9]+): name=(.*), expired=(.*)$/, m => 'Data user diubah (panel admin)\nNomor: +' + m[1] + '\nNama: ' + m[2] + '\nAktif sampai: ' + m[3]],
+  [/^WA CMD \| Admin ([0-9+]+) (?:quick-)?added user \+([0-9]+)/, m => 'User ditambahkan lewat perintah WA\nNomor: +' + m[2] + '\nOleh: ' + m[1]],
+  // ACC otomatis user baru sudah punya pesan "DI-ACC OTOMATIS" sendiri, jadi hanya perpanjangan / ACC manual
+  [/^(AUTO \| ACC otomatis|Admin \| ACC manual)( \(perpanjang\))? \+([0-9]+) (Rp[0-9.]+) \((.*)\) - aktif sampai (.*)$/, m => (/^AUTO/.test(m[1]) && !m[2]) ? null : (m[2] ? 'Masa aktif DIPERPANJANG (bayar QRIS)' : 'User baru AKTIF (bayar QRIS)') + '\nNomor: +' + m[3] + '\nBayar: ' + m[4] + '\nAktif sampai: ' + m[6] + '\nDiputuskan: ' + m[5]]
+]
+function tgAddNotify(text) {
+  if (/\(Telegram\)/.test(text)) return
+  for (const [re, fmt] of TG_ADD_EVENTS) {
+    const m = re.exec(text)
+    if (m) { const body = fmt(m); if (body) notifyAdminsTelegram('*DITAMBAHKAN*\n\n' + body).catch(() => {}); return }
+  }
+}
 function tgLogHook(s) {
   const text = String(s)
+  try { tgAddNotify(text) } catch (e) {}
   const important = /^(AUTO|Admin|PAY|Auto-kick|Laporan harian) \|/.test(text) || /^❌/.test(text) ||
     (/^WA \|/.test(text) && /(connected|terhubung|tersambung|terputus|disconnect|logout|logged out|Kicked|repair|QR)/i.test(text))
   if (!important) return
@@ -22047,8 +22290,8 @@ async function tgFlushLogs() {
   }
   const groups = [
     ['🤖 LOG OTOMATIS (sistem)', items.filter(x => TG_LOG_CATS.o.test(x.s))],
-    ['👤 LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))],
-    ['📋 LOG LAINNYA', items.filter(x => !TG_LOG_CATS.o.test(x.s) && !TG_LOG_CATS.m.test(x.s))]
+    ['👤 LOG MANUAL (admin)', items.filter(x => TG_LOG_CATS.m.test(x.s))]
+    // log lainnya tidak dikirim ke Telegram, cukup dilihat di menu Logs
   ]
   // Tiap bagian dikirim sebagai pesan sendiri; yang panjang dipecah supaya tidak terpotong
   for (const [judul, list] of groups) {
