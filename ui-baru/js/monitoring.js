@@ -65,7 +65,7 @@ function renderSisaHari() {
   el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
   el.replaceChildren(h('span', {}, text))
   if (!hidden) {
-    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-black' }, 'Perpanjang')
+    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-bg' }, 'Perpanjang')
     if (!wajib) {
       pill.append(h('span', {
         class: 'ml-0.5 cursor-pointer opacity-70', role: 'button', 'aria-label': 'Tutup',
@@ -124,14 +124,14 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted lg:col-span-2' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  if (!list.length) { box.replaceChildren(h('div', { class: 'col-span-3 py-2 text-sm text-muted lg:col-span-2' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    return h('div', { class: 'tile min-w-[118px] shrink-0 px-2.5 py-1.5 lg:min-w-0 lg:p-3 ' + (list.length % 2 && i === list.length - 1 ? 'lg:col-span-2' : '') },
+    return h('div', { class: 'tile min-w-0 overflow-hidden px-1.5 py-1 lg:p-3 ' + (list.length % 2 && i === list.length - 1 ? 'lg:col-span-2' : '') },
       h('div', { class: 'flex items-center justify-between gap-2' },
-        h('span', { class: 'text-xs font-extrabold text-gold lg:text-sm' }, n.label),
-        h('span', { class: 'num font-mono text-[10px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
-      p ? h('div', { class: 'num mt-0.5 text-[13px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
+        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
+        h('span', { class: 'num truncate font-mono text-[9px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
+      p ? h('div', { class: 'num whitespace-nowrap text-[11.5px] font-extrabold leading-tight lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
       h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
         h('span', { class: 'num font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'),
         p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
@@ -178,7 +178,7 @@ function setUsdIdr(rate) {
   if (state.usdIdr && r !== Math.round(state.usdIdr)) {
     const c = r - Math.round(state.usdIdr)
     const el = $('#usdIdrChange')
-    el.className = 'num ml-0.5 normal-case tracking-normal ' + (c > 0 ? 'text-up' : 'text-down')
+    el.className = 'num text-[9px] ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
   }
   state.usdIdr = rate
@@ -220,6 +220,12 @@ function fitChart() {
   box.style.height = Math.max(280, Math.round(window.innerHeight - top - nav - 8)) + 'px'
 }
 window.addEventListener('resize', fitChart)
+// bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(() => fitChart())
+  ;['header', '#notifs', '#sec-harga', '#nominals'].forEach(sel => { const el = $(sel); if (el) ro.observe(el) })
+}
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitChart)
 window.addEventListener('orientationchange', () => setTimeout(fitChart, 300))
 
 // ===================================================================== JAM
