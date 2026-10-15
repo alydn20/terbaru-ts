@@ -285,8 +285,8 @@ function connect() {
       case 'promo_limit_update': setChip('chipLimit', 'limitVal', d.limit); break
       case 'lowest_on_price': setChip('chipOn', 'lowestOnVal', d.price, num); break
       case 'markup_settings_update':
-        if (d.settings) { if (d.settings.minMargin != null) state.markupMin = +d.settings.minMargin; if (d.settings.maxMargin != null) state.markupMax = +d.settings.maxMargin }
-        renderMarkup(); break
+        if (d.settings) { if (d.settings.minMargin != null) state.markupMin = parseFloat(d.settings.minMargin); if (d.settings.maxMargin != null) state.markupMax = parseFloat(d.settings.maxMargin) }
+        renderMarkup(); loadHistory(); break
       case 'nominal_update': state.nominals = d.nominals || []; renderNominals(); loadHistory(); break
       case 'promo_suggestions': setPromos(d.promos || []); break
       case 'sound_update': if (d.settings) setCustomSounds(d.settings); break
@@ -361,7 +361,14 @@ async function start() {
   // data
   syncTime(); setInterval(syncTime, 5 * 60 * 1000)
   tick(); setInterval(tick, 250)
-  try { const m = await getJSON('/api/markup-settings'); if (m.success && m.settings) { state.markupMin = +m.settings.minMargin || state.markupMin; state.markupMax = +m.settings.maxMargin || state.markupMax } } catch (e) {}
+  // batas markup dari admin; 0 adalah nilai sah (jangan diganti nilai bawaan)
+  try {
+    const m = await getJSON('/api/markup-settings')
+    if (m.success && m.settings) {
+      if (m.settings.minMargin != null && !isNaN(parseFloat(m.settings.minMargin))) state.markupMin = parseFloat(m.settings.minMargin)
+      if (m.settings.maxMargin != null && !isNaN(parseFloat(m.settings.maxMargin))) state.markupMax = parseFloat(m.settings.maxMargin)
+    }
+  } catch (e) {}
   getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
   getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
   getJSON('/api/lowest-on-price').then(d => setChip('chipOn', 'lowestOnVal', d.price, num)).catch(() => {})
