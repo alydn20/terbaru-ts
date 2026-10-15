@@ -1323,16 +1323,9 @@ async function fetchEconomicCalendar() {
   }
   
   try {
-    const res = await fetch('https://nfs.faireconomy.media/ff_calendar_thisweek.json', {
-      signal: AbortSignal.timeout(5000)
-    })
-    
-    if (!res.ok) {
-      // Silent fail
-      return null
-    }
-    
-    const events = await res.json()
+    // Satu sumber data dengan menu News di website (feed membatasi permintaan yang terlalu sering)
+    const events = (await loadFFCalendar()).events
+    if (!events.length) return null
     
     // Waktu Jakarta (WIB = UTC+7)
     const jakartaNow = new Date(Date.now() + (7 * 60 * 60 * 1000))
@@ -7016,32 +7009,51 @@ app.get('/api/promo-suggestions', async (req, res) => {
 
 let cachedFFCalendar = []
 let lastFFCalendarFetch = 0
-const FF_CALENDAR_TTL = 5 * 60 * 1000 // cache 5 menit
+const FF_CALENDAR_TTL = 15 * 60 * 1000 // cache 15 menit (feed membatasi permintaan yang terlalu sering)
+const FF_CALENDAR_RETRY = 5 * 60 * 1000 // kalau gagal / kena batas, coba lagi paling cepat 5 menit kemudian
+const FF_CALENDAR_REDIS_KEY = 'gold:ff_calendar'
+let _ffCalendarLoading = null
 
-app.get('/api/ff-calendar', async (req, res) => {
-  if (!await requireSession(req, res)) return
-  try {
-    const now = Date.now()
-    if (cachedFFCalendar.length > 0 && now - lastFFCalendarFetch < FF_CALENDAR_TTL) {
-      return res.json({ success: true, events: cachedFFCalendar, cached: true })
-    }
-
-    // Fetch Forex Factory JSON feed (this week + next week)
-    const fetchJson = (url) => new Promise((resolve, reject) => {
-      https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (r) => {
+// Ambil kalender dari feed Forex Factory. Kalau feed sedang membatasi (halaman "Rate Limited")
+// atau gagal, data terakhir yang berhasil tetap dipakai (disimpan juga di Redis supaya tidak
+// hilang saat restart). Hanya satu permintaan ke feed yang berjalan pada satu waktu.
+async function loadFFCalendar() {
+  const now = Date.now()
+  if (!cachedFFCalendar.length && !lastFFCalendarFetch) {
+    try {
+      const saved = await redis.get(FF_CALENDAR_REDIS_KEY)
+      const obj = saved ? (typeof saved === 'string' ? JSON.parse(saved) : saved) : null
+      if (obj && Array.isArray(obj.events)) { cachedFFCalendar = obj.events; lastFFCalendarFetch = obj.at || 0 }
+    } catch (e) {}
+  }
+  if (cachedFFCalendar.length > 0 && now - lastFFCalendarFetch < FF_CALENDAR_TTL) return { events: cachedFFCalendar, cached: true }
+  if (_ffCalendarLoading) return _ffCalendarLoading
+  _ffCalendarLoading = (async () => {
+    // null = gagal / dibatasi; [] = feed kosong (mis. minggu depan belum terbit)
+    const fetchJson = (url) => new Promise((resolve) => {
+      const rq = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 10000 }, (r) => {
         let data = ''
         r.on('data', chunk => data += chunk)
-        r.on('end', () => { try { resolve(JSON.parse(data)) } catch(e) { resolve([]) } })
-        r.on('error', () => resolve([]))
-      }).on('error', () => resolve([]))
+        r.on('end', () => {
+          if (r.statusCode === 404) return resolve([])
+          try { const j = JSON.parse(data); resolve(Array.isArray(j) ? j : null) } catch (e) { resolve(null) }
+        })
+        r.on('error', () => resolve(null))
+      })
+      rq.on('timeout', () => rq.destroy())
+      rq.on('error', () => resolve(null))
     })
 
-    const [week1, week2] = await Promise.all([
-      fetchJson('https://nfs.faireconomy.media/ff_calendar_thisweek.json').catch(() => []),
-      fetchJson('https://nfs.faireconomy.media/ff_calendar_nextweek.json').catch(() => [])
-    ])
+    const week1 = await fetchJson('https://nfs.faireconomy.media/ff_calendar_thisweek.json')
+    if (!week1) {
+      // gagal: pakai data lama, coba lagi nanti (jangan memukul feed terus-menerus)
+      lastFFCalendarFetch = Date.now() - FF_CALENDAR_TTL + FF_CALENDAR_RETRY
+      pushLog(`📰 FF Calendar: feed sedang membatasi/gagal, memakai data terakhir (${cachedFFCalendar.length} event)`)
+      return { events: cachedFFCalendar, stale: true }
+    }
+    const week2 = (await fetchJson('https://nfs.faireconomy.media/ff_calendar_nextweek.json')) || []
 
-    const allEvents = [...(Array.isArray(week1) ? week1 : []), ...(Array.isArray(week2) ? week2 : [])]
+    const allEvents = [...week1, ...week2]
     const events = allEvents.filter(ev => ev.country === 'USD').map(ev => ({
       title: ev.title || '',
       country: ev.country || '',
@@ -7053,9 +7065,19 @@ app.get('/api/ff-calendar', async (req, res) => {
       actual: ev.actual || ''
     }))
     cachedFFCalendar = events
-    lastFFCalendarFetch = now
+    lastFFCalendarFetch = Date.now()
+    redis.set(FF_CALENDAR_REDIS_KEY, JSON.stringify({ at: lastFFCalendarFetch, events })).catch(() => {})
     pushLog(`📰 FF Calendar: ${events.length} USD events loaded`)
-    res.json({ success: true, events })
+    return { events }
+  })().finally(() => { _ffCalendarLoading = null })
+  return _ffCalendarLoading
+}
+
+app.get('/api/ff-calendar', async (req, res) => {
+  if (!await requireSession(req, res)) return
+  try {
+    const r = await loadFFCalendar()
+    res.json({ success: true, ...r })
   } catch (e) {
     pushLog(`❌ FF Calendar error: ${e.message}`)
     res.json({ success: false, error: e.message, events: cachedFFCalendar })
