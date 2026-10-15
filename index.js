@@ -1302,20 +1302,59 @@ function getClientIp(req) {
   return req.socket?.remoteAddress || req.ip || '-'
 }
 
+// Lokasi IP (kota, provinsi, negara). Hasil disimpan 7 hari per IP. Sumber utama ip-api.com,
+// cadangan ipwho.is kalau ip-api gagal / kena batas.
+const _ipLocCache = new Map() // ip -> { loc, t }
+function _ipLocal(ip) {
+  return !ip || ip === '-' || ip === '::1' || ip === '127.0.0.1' || /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)
+}
+function _ipLocRemember(ip, loc) {
+  if (!loc || loc === '-') return
+  _ipLocCache.set(ip, { loc, t: Date.now() })
+  if (_ipLocCache.size > 5000) _ipLocCache.delete(_ipLocCache.keys().next().value)
+}
 async function getIpLocation(ip) {
-  if (!ip || ip === '-' || ip === '::1' || ip === '127.0.0.1') return 'Lokal'
-  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return 'Lokal'
+  if (_ipLocal(ip)) return 'Lokal'
+  const c = _ipLocCache.get(ip)
+  if (c && Date.now() - c.t < 7 * 86400000) return c.loc
+  let loc = '-'
   try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 3000)
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=city,regionName,country,status`, { signal: ctrl.signal })
-    clearTimeout(timer)
+    const res = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?fields=city,regionName,country,status`, { signal: AbortSignal.timeout(4000) })
     const d = await res.json()
-    if (d.status !== 'success') return '-'
-    return [d.city, d.regionName, d.country].filter(Boolean).join(', ') || '-'
-  } catch {
-    return '-'
+    if (d.status === 'success') loc = [d.city, d.regionName, d.country].filter(Boolean).join(', ') || '-'
+  } catch {}
+  if (loc === '-') {
+    try {
+      const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}?fields=success,city,region,country`, { signal: AbortSignal.timeout(4000) })
+      const d = await res.json()
+      if (d.success) loc = [d.city, d.region, d.country].filter(Boolean).join(', ') || '-'
+    } catch {}
   }
+  _ipLocRemember(ip, loc)
+  return loc
+}
+
+// Lengkapi lokasi yang kosong ("-") pada daftar riwayat login, sekaligus (maks 100 IP per panggilan).
+// Hasil disimpan di cache memori, jadi IP yang sama tidak dicari ulang.
+async function fillAuthLocations(items) {
+  const need = [...new Set(items.filter(x => (!x.location || x.location === '-') && x.ip && x.ip !== '-' && !_ipLocal(x.ip)).map(x => x.ip))]
+  const ask = need.filter(ip => !_ipLocCache.has(ip)).slice(0, 100)
+  if (ask.length) {
+    try {
+      const res = await fetch('http://ip-api.com/batch?fields=query,city,regionName,country,status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ask), signal: AbortSignal.timeout(6000)
+      })
+      const rows = await res.json()
+      for (const d of Array.isArray(rows) ? rows : []) if (d.status === 'success') _ipLocRemember(d.query, [d.city, d.regionName, d.country].filter(Boolean).join(', '))
+    } catch {}
+  }
+  let changed = 0
+  for (const x of items) {
+    if (x.location && x.location !== '-') continue
+    const c = x.ip && _ipLocCache.get(x.ip)
+    if (c) { x.location = c.loc; changed++ }
+  }
+  return changed
 }
 
 function calculateDiscount(investmentAmount) {
@@ -4476,6 +4515,7 @@ app.get('/api/admin/login-history', async (req, res) => {
   try {
     let items = await readAuthLog(phone, limit)
     if (!items.length) items = [...loginHistory].reverse().filter(x => !phone || x.phone === phone).slice(0, limit)
+    await fillAuthLocations(items).catch(() => 0)
     res.json({ success: true, items, total: items.length, phone })
   } catch (e) {
     // Redis bermasalah: pakai salinan di memori
@@ -22683,6 +22723,7 @@ async function handleTelegramCallback(tg, cq) {
   // --- riwayat login / logout satu nomor ---
   if ((m = /^u:lg:(62[0-9]{8,13})$/.exec(data))) {
     const items = await readAuthLog(m[1], 15).catch(() => [])
+    await fillAuthLocations(items).catch(() => 0)
     const EV = { login: 'LOGIN', logout: 'LOGOUT', kicked: 'DITENDANG', locked: 'DIKUNCI', logout_admin: 'DIKELUARKAN ADMIN' }
     const lines = items.map(x => '<b>' + (EV[x.event] || 'LOGIN') + '</b> ' + tgEsc(String(x.time || '').substring(5, 16)) +
       (x.ua && x.ua !== '-' ? '\n   ' + tgEsc(x.ua) : '') + (x.location && x.location !== '-' ? ' · ' + tgEsc(x.location) : '') +
