@@ -6058,7 +6058,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'sesi lama dikeluarkan karena login di perangkat baru (maks 3 perangkat)' })
+      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks 3)' })
     }
   }
 
@@ -23198,7 +23198,7 @@ async function compareGroupWithUsers(phones) {
     webTotal: web.size,
     both: [...grp].filter(p => web.has(p)).length,
     groupOnly: [...grp].filter(p => !web.has(p)).sort().map(p => ({ phone: p, hasOrder: orders.some(o => o.phone === p) })),
-    webOnly: [...web.keys()].filter(p => !grp.has(p)).sort().map(info)
+    webOnly: [...web.keys()].filter(p => !grp.has(p)).sort().map(info).filter(u => u.active)
   }
 }
 
@@ -24247,6 +24247,11 @@ async function checkAndKickExpiredUsers() {
       try {
         const user = typeof userData === 'string' ? JSON.parse(userData) : userData
 
+        // Nomor admin tidak pernah dicabut aksesnya
+        if (phone === ADMIN_PHONE || ADMIN_PHONES.includes(phone)) continue
+        // Sudah dicabut untuk tanggal habis ini (data user disimpan, tidak dihapus)
+        if (user.expired && user.kickedFor === user.expired) continue
+
         // Check if expired
         if (user.expired && user.expired < now) {
           // Bot tidak mengeluarkan orangnya dari grup WA dan tidak mengirim pesan apa pun kepadanya
@@ -24254,8 +24259,11 @@ async function checkAndKickExpiredUsers() {
           // dari grup secara manual berdasarkan laporan di bawah.
           expiredNow.push({ phone, name: user.name || '', expired: user.expired })
 
-          // Delete from database
-          await redis.hdel(REDIS_KEYS.USERS, phone)
+          // Data user DISIMPAN (status jadi Expired) supaya ia bisa perpanjang sendiri dari halaman
+          // login dengan nama dan PIN yang sama. Notifikasi harga dihentikan.
+          user.kickedFor = user.expired
+          user.kickedAt = now
+          await redis.hset(REDIS_KEYS.USERS, { [phone]: JSON.stringify(user) })
           await redis.hdel(REDIS_KEYS.PUSH_SUBS, phone)
 
           // Remove sessions
