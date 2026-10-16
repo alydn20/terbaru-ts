@@ -14730,8 +14730,8 @@ app.get('/monitoring', async (req, res) => {
     @media (max-width: 480px) {
       /* baris jam / tertinggi-terendah / limit-markup-spread: jam di atas, sisanya di bawah (tidak bertumpuk) */
       .chart-bottom-row { flex-wrap: wrap; justify-content: center; row-gap: 6px; column-gap: 6px; }
-      .chart-bottom-row .chart-info-row { order: -1; width: 100%; justify-content: center; gap: 10px; }
-      .chart-bottom-row .price-highlow-group, .chart-bottom-row .limit-markup-group { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; width: 100%; }
+      .chart-bottom-row .chart-info-row { order: -1; flex: 0 0 auto; width: auto; margin: 0 auto; }
+      .chart-bottom-row .price-highlow-group, .chart-bottom-row .limit-markup-group { flex: 0 0 100%; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; }
     }
     @keyframes clkSPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
     /* Goyang layar (pengganti getar untuk iPhone/desktop) */
@@ -20403,6 +20403,8 @@ app.get('/monitoring', async (req, res) => {
           lastUpdatedAt = dataTimestamp;
         }
 
+        // lepas kerangka loading (tingginya terkunci, membuat angka terpotong) begitu harga awal ada
+        ['buyPrice', 'sellPrice', 'usdIdr', 'spreadPercent'].forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('stat-val-skeleton'); });
         if (data.buy) {
           var _bpn = document.getElementById('buyPriceNum');
           if (!_bpn) { var _bp = document.getElementById('buyPrice'); if (_bp) { _bp.innerHTML = '<span class="rp-prefix">Rp </span><span id="buyPriceNum">-</span>'; _bpn = document.getElementById('buyPriceNum'); } }
