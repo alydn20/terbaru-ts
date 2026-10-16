@@ -15,7 +15,7 @@ const changeEl = n => n
 function renderHead() {
   const th = (t, cls = '') => h('th', { class: 'px-3 py-2 font-bold ' + cls }, t)
   const row = mode === 'price'
-    ? [th('Waktu', 'sticky left-0 bg-card2'), th('Beli'), th('Jual'), th('Status'), ...visibleNominals().map(n => th(n.label, 'text-right'))]
+    ? [th('Waktu', 'sticky left-0 bg-card2'), th('Beli'), th('Jual'), th('Status', 'hist-st-col'), ...visibleNominals().map(n => th(n.label, 'text-right'))]
     : [th('Waktu'), th('USD/IDR'), th('Perubahan')]
   $('#histHead').replaceChildren(h('tr', {}, row))
 }
@@ -32,18 +32,24 @@ function renderPriceRows(items) {
     const mk = item.xauUsd && item.usdIdr ? markupOf(item.sell, item.xauUsd, item.usdIdr) : null
     const status = !mk ? h('span', { class: 'text-muted' }, '—')
       : mk.normal ? h('span', { class: 'pill-up' }, 'Normal')
-      : h('span', { class: 'pill bg-gold/15 text-gold' }, (mk.diff > 0 ? 'MARKUP ' : 'MARKDOWN ') + signed(mk.diff))
+      // panel samping (desktop, grafik + riwayat) memakai singkatan MU / MD supaya tabel muat
+      : h('span', { class: 'pill bg-gold/15 text-gold' },
+        h('span', { class: 'st-long' }, mk.diff > 0 ? 'MARKUP ' : 'MARKDOWN '),
+        h('span', { class: 'st-short' }, mk.diff > 0 ? 'MU ' : 'MD '), signed(mk.diff))
+    // HP: status ditaruh di bawah jam (kolom Status disembunyikan) supaya tabel muat selebar layar
+    const statusSmall = h('div', { class: 'hist-st-inline mt-0.5 whitespace-nowrap font-sans text-[10px] font-bold ' + (!mk ? 'text-muted' : mk.normal ? 'text-up' : 'text-gold') },
+      !mk ? '—' : mk.normal ? 'Normal' : (mk.diff > 0 ? 'MU ' : 'MD ') + signed(mk.diff))
     const priceCell = (v, ch) => h('td', { class: 'px-3 py-2' },
       h('div', { class: 'num font-mono font-bold ' + (ch > 0 ? 'text-up' : ch < 0 ? 'text-down' : '') }, num(v)), changeEl(ch))
     return h('tr', { class: 'odd:bg-transparent even:bg-card2/40' },
-      h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam),
+      h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam, statusSmall),
       priceCell(item.buy, item.buyChange || 0),
       priceCell(item.sell, item.sellChange || 0),
-      h('td', { class: 'px-3 py-2 whitespace-nowrap text-[11px]' }, status),
+      h('td', { class: 'hist-st-col px-3 py-2 whitespace-nowrap text-[11px]' }, status),
       ...visibleNominals().map(n => {
         const p = profitOf(n, item.buy, item.sell)
-        return h('td', { class: 'px-3 py-2 text-right' },
-          h('div', { class: 'num font-mono text-xs text-muted' }, p.gram.toFixed(4) + 'g'),
+        return h('td', { class: 'px-3 py-2 text-right', title: p.gram.toFixed(4) + ' gram' },
+          h('div', { class: 'hist-gram num font-mono text-xs text-muted' }, p.gram.toFixed(4) + 'g'),
           h('div', { class: 'num text-[11px] font-bold ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))))
       }))
   })

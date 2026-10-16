@@ -3736,25 +3736,16 @@ const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', 1) // trust Koyeb/Cloudflare proxy so req.ip reflects real client IP
 
-// ==================== TAMPILAN BARU (newxau.pemulaold.com) ====================
-// Alamat newxau.* memakai server, API, dan data yang SAMA; hanya halaman /login dan /monitoring
-// yang diganti dengan versi Tailwind di folder ui-baru/ (lihat ui-baru/README.md).
-// Alamat lain (xau.*) tidak berubah. Untuk mencoba di alamat lain: buka /monitoring?ui=baru
-// (diingat lewat cookie; /monitoring?ui=lama untuk kembali).
+// ==================== TAMPILAN BARU (Tailwind, folder ui-baru/) ====================
+// Halaman /login dan /monitoring memakai tampilan baru di SEMUA alamat (xau.* dan newxau.*).
+// Tampilan lama dimatikan sementara: ?ui=lama / cookie tidak berpengaruh lagi. Kode tampilan lama
+// tetap ada dan dipakai otomatis hanya kalau file tampilan baru gagal dibaca (lihat next() di bawah).
 const UI2_DIR = join(__dirname, 'ui-baru')
 const UI2_PAGES = { '/login': 'login.html', '/monitoring': 'monitoring.html' }
 const UI2_VER = Date.now().toString(36) // berubah tiap server restart (= tiap update)
 const _ui2Cache = {}
-const isUi2Request = req => {
-  // Pilihan user (tombol "Coba tampilan baru" / "Kembali ke tampilan lama") menang atas alamat:
-  // ?ui=baru / ?ui=lama lalu diingat di cookie. Tanpa pilihan: newxau.* = baru, alamat lain = lama.
-  if (req.query.ui === 'lama') return false
-  if (req.query.ui === 'baru') return true
-  const pick = parseCookies(req).ui
-  if (pick === 'lama') return false
-  if (pick === 'baru') return true
-  return /^newxau\./i.test(String(req.headers.host || ''))
-}
+// Untuk menyalakan lagi pilihan tampilan lama, kembalikan aturan ?ui= / cookie di sini.
+const isUi2Request = () => true
 // File JS tampilan baru: semua import relatif ('./api.js', '../payment.js', ...) diberi ?v=UI2_VER.
 // Cloudflare memaksa cache browser 4 jam untuk .js; dulu hanya monitoring.js?v=... yang berversi,
 // sehingga setelah update browser memakai api.js / menu.js LAMA bercampur dengan yang baru
@@ -3778,8 +3769,8 @@ for (const sub of ['dist', 'js', 'sounds']) {
   app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
 }
 app.get(['/login', '/monitoring'], async (req, res, next) => {
-  if (req.query.ui === 'baru') res.append('Set-Cookie', 'ui=baru; Path=/; Max-Age=2592000; SameSite=Lax')
-  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=lama; Path=/; Max-Age=2592000; SameSite=Lax')
+  // pilihan tampilan lama yang pernah tersimpan dihapus (tampilan lama sedang dimatikan)
+  if (parseCookies(req).ui) res.append('Set-Cookie', 'ui=; Path=/; Max-Age=0; SameSite=Lax')
   if (!isUi2Request(req)) return next()
   try {
     const file = UI2_PAGES[req.path]

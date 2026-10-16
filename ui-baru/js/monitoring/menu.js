@@ -3,7 +3,7 @@
 import { $, h, icon, rp, num, getJSON, postJSON, session, openSheet, closeAllSheets, confirmDialog, toast, toggleTheme, contactAdmin, tanggalPanjang } from '../api.js'
 import { state, setNominalVisible, isNominalVisible } from './state.js'
 import { settings as sound, setSetting, SOUND_TYPES, SHAKE_TYPES } from './sound.js'
-import { INDICATORS, activeIndicators, saveIndicators, loadChart } from './chart.js'
+import { INDICATORS, indicatorDef, activeIndicators, saveIndicators, loadChart } from './chart.js'
 import { mountPayment } from '../payment.js'
 
 let hooks = {}
@@ -13,37 +13,49 @@ export function setMenuHooks(h2) { hooks = h2 }
 // ===================================================================== LAINNYA
 export function openMore() {
   const light = document.documentElement.dataset.theme === 'light'
-  // [ikon, label, aksi, gaya kotak (HP), gaya baris (desktop)]
-  const defs = [
-    ['calc', 'Kalkulator emas', openCalc],
-    ['activity', 'Indikator grafik', openIndicators],
-    ['sound', 'Suara & getar', openSound],
-    ['sliders', 'Atur nominal', openNominalSettings],
-    [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
-    ['push', 'Notifikasi HP', enablePush],
-    state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
-    hooks.canJoinGroup && hooks.canJoinGroup() ? ['users', 'Gabung grup WA', () => joinGroup(false)] : null,
-    ['wa', 'Hubungi admin', () => contactAdmin(state.phone)],
-    isInstalled() ? null : ['download', 'Install aplikasi', install],
-    state.isAdmin ? ['shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }] : null,
-    // kembali ke tampilan lama (diingat; di tampilan lama ada tombol "Coba tampilan baru")
-    ['layout', 'Tampilan lama', () => { location.href = '/monitoring?ui=lama' }],
-    ['logout', 'Keluar', logout, 'text-down', 'text-down']
-  ].filter(Boolean)
+  // Dikelompokkan per kategori supaya tidak padat. Item: [ikon, label, aksi, gaya kotak (HP), gaya baris (desktop)]
+  const groups = [
+    ['Tampilan', [
+      hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
+      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
+      ['activity', 'Indikator grafik', openIndicators],
+      ['sliders', 'Atur nominal', openNominalSettings]
+    ]],
+    ['Notifikasi & alat', [
+      ['sound', 'Suara & getar', openSound],
+      ['push', 'Notifikasi HP', enablePush],
+      ['calc', 'Kalkulator emas', openCalc],
+      isInstalled() ? null : ['download', 'Install aplikasi', install]
+    ]],
+    ['Akun', [
+      state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
+      hooks.canJoinGroup && hooks.canJoinGroup() ? ['users', 'Gabung grup WA', () => joinGroup(false)] : null,
+      state.isAdmin ? ['shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }] : null
+    ]],
+    ['Bantuan', [
+      hooks.startTour ? ['info', 'Panduan penggunaan', () => { closeAllSheets(true); hooks.startTour() }] : null,
+      ['wa', 'Hubungi admin', () => contactAdmin(state.phone)]
+    ]]
+  ].map(([t, items]) => [t, items.filter(Boolean)]).filter(g => g[1].length)
+  const logoutItem = ['logout', 'Keluar', logout, 'text-down', 'text-down']
   const profile = () => state.phone ? h('div', { class: 'tile mb-3 flex items-center gap-3 p-3' },
     h('div', { class: 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold', html: icon('users', 'h-5 w-5') }),
     h('div', { class: 'min-w-0' },
       h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
       h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
-  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(defs, profile)
+  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(groups, logoutItem, profile)
   const tile = ([ic, label, onclick, extra = '']) =>
-    h('button', { class: 'tile flex min-h-[84px] flex-col items-center justify-center gap-2 px-2 py-3 text-center text-xs font-semibold active:scale-95 ' + extra, onclick, html: icon(ic, 'h-6 w-6') + '<span>' + label + '</span>' })
-  openSheet('Lainnya', h('div', {}, profile(), h('div', { class: 'grid grid-cols-3 gap-2' }, defs.map(tile))))
+    h('button', { class: 'tile flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1.5 py-2.5 text-center text-[11px] font-semibold leading-tight active:scale-95 ' + extra, onclick, html: icon(ic, 'h-5 w-5') + '<span>' + label + '</span>' })
+  openSheet('Lainnya', h('div', {}, profile(),
+    groups.map(([title, items]) => h('div', { class: 'mb-3' },
+      h('div', { class: 'label mb-1.5 px-0.5 text-[10px]' }, title),
+      h('div', { class: 'grid grid-cols-3 gap-2' }, items.map(tile)))),
+    h('button', { class: 'btn-ghost mt-1 w-full text-down', onclick: logoutItem[2], html: icon('logout', 'h-4 w-4') + '<span>Keluar</span>' })))
 }
 
 // Desktop: menu turun di bawah tombol Lainnya (bukan lembar dari bawah seperti di HP).
 // Tutup: klik di luar, Esc, pilih menu, atau klik tombol Lainnya lagi.
-function openMoreDropdown(defs, profile) {
+function openMoreDropdown(groups, logoutItem, profile) {
   const old = document.getElementById('moreMenu')
   if (old) { old._close(); return }
   const btn = document.querySelector('#topNav [data-nav="lainnya"]')
@@ -58,12 +70,13 @@ function openMoreDropdown(defs, profile) {
   }
   const row = ([ic, label, fn, , cls = '']) =>
     h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-card2 ' + cls, onclick: () => { close(); fn() }, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
-  const last = defs.length - 1
   const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
     profile(),
-    defs.slice(0, last).map(row),
+    groups.map(([title, items], i) => h('div', {},
+      h('div', { class: 'label px-3 pb-1 text-[10px] ' + (i ? 'mt-2 border-t border-line/[0.08] pt-2.5' : 'pt-1') }, title),
+      items.map(row))),
     h('div', { class: 'my-1 border-t border-line/[0.08]' }),
-    row(defs[last]))
+    row(logoutItem))
   menu._close = close
   document.body.append(menu)
   if (btn) btn.setAttribute('aria-expanded', 'true')
@@ -105,16 +118,39 @@ export function openCalc() {
 }
 
 // ===================================================================== INDIKATOR
+// Indikator susunan user: tambah apa saja (boleh lebih dari satu, mis. MA 9 + MA 50 + MA 200),
+// atur periodenya, hapus. Tersimpan di perangkat. Bawaan: tanpa indikator.
 export function openIndicators() {
-  const chosen = new Set(activeIndicators())
-  openSheet('Indikator grafik', h('div', {},
-    h('div', { class: 'flex flex-col divide-y divide-line/[0.06]' }, INDICATORS.map(([id, label]) => {
-      const t = h('input', { type: 'checkbox', class: 'toggle' })
-      t.checked = chosen.has(id)
-      t.addEventListener('change', () => { if (t.checked) chosen.add(id); else chosen.delete(id) })
-      return h('label', { class: 'flex items-center justify-between py-3 text-sm font-semibold' }, label, t)
-    })),
-    h('button', { class: 'btn-gold mt-3 w-full', onclick: () => { saveIndicators([...chosen]); closeAllSheets(); toast('Indikator diterapkan', 'success') } }, 'Terapkan')))
+  let list = activeIndicators().map(x => ({ ...x }))
+  const body = h('div', {})
+  const render = () => {
+    const rows = list.length ? list.map((x, i) => {
+      const d = indicatorDef(x.t)
+      const len = d[3] ? h('input', { type: 'number', min: 1, max: 500, value: x.len || d[3], class: 'input w-20 px-2 py-1.5 text-center font-mono text-sm', 'aria-label': 'Periode',
+        oninput: e => { x.len = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || d[3])) } }) : null
+      return h('div', { class: 'flex items-center gap-2 py-2' },
+        h('span', { class: 'min-w-0 flex-1 text-sm font-semibold' }, d[1]),
+        len ? h('span', { class: 'text-[11px] text-muted' }, 'Periode') : null, len,
+        h('button', { class: 'icon-btn h-8 w-8 text-down', 'aria-label': 'Hapus', html: icon('close', 'h-4 w-4'), onclick: () => { list.splice(i, 1); render() } }))
+    }) : [h('p', { class: 'py-3 text-sm text-muted' }, 'Belum ada indikator. Grafik tampil bersih.')]
+    const pick = h('select', { class: 'input min-w-0 flex-1 py-2 text-sm' },
+      INDICATORS.map(([id, label, , def]) => h('option', { value: id }, label + (def ? ' (periode ' + def + ')' : ''))))
+    body.replaceChildren(
+      h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
+      h('div', { class: 'mt-3 flex gap-2' }, pick,
+        h('button', { class: 'btn-ghost shrink-0 px-3 py-2 text-sm', onclick: () => {
+          if (list.length >= 12) return toast('Maksimal 12 indikator', 'warning')
+          const d = indicatorDef(pick.value)
+          list.push(d[3] ? { t: d[0], len: d[3] } : { t: d[0] })
+          render()
+        } }, '+ Tambah')),
+      h('div', { class: 'mt-3 flex gap-2' },
+        list.length ? h('button', { class: 'btn-ghost flex-1', onclick: () => { list = []; render() } }, 'Hapus semua') : null,
+        h('button', { class: 'btn-gold flex-1', onclick: () => { saveIndicators(list); closeAllSheets(); toast(list.length ? 'Indikator disimpan' : 'Grafik tanpa indikator', 'success') } }, 'Simpan')),
+      h('p', { class: 'mt-2 text-[11px] text-muted' }, 'Tersimpan di perangkat ini. Indikator yang ditambah lewat tombol "Indicators" di dalam grafik tidak tersimpan; pakai menu ini.'))
+  }
+  render()
+  openSheet('Indikator grafik', body)
 }
 
 // ===================================================================== SUARA & GETAR
