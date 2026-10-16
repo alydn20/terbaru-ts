@@ -421,6 +421,9 @@ let lastPromoStatus = null // 'ON' atau 'OFF'
 // Saat promo OFF, website menampilkan "Terakhir ON dd-mm-yyyy" di kotak Titik ON.
 const PROMO_LAST_ON_KEY = 'gold:promo_last_on'
 let promoLastOnAt = null   // null = belum dimuat dari Redis, 0 = belum pernah tercatat
+// Harga Titik ON terakhir (harga beli terendah selama promo ON terakhir; kalau belum ada, harga beli saat ON)
+const PROMO_LAST_ON_PRICE_KEY = 'gold:promo_last_on_price'
+let promoLastOnPrice = null
 let _promoLastOnSavedAt = 0
 let lowestOnPriceCache = undefined // undefined = belum diload, null = belum ada nilai
 let lowestOnDateWIB = null        // Tanggal WIB (YYYY-MM-DD) saat lowestOnPriceCache dicatat
@@ -2354,12 +2357,22 @@ async function doPromoBroadcast() {
     // Catat waktu terakhir ON (disimpan paling sering tiap 1 menit, dan langsung saat berubah ke OFF)
     if (promoLastOnAt === null) {
       try { const v = await redis.get(PROMO_LAST_ON_KEY); promoLastOnAt = v ? parseInt(v, 10) || 0 : 0 } catch (e) { promoLastOnAt = 0 }
+      try { const v = await redis.get(PROMO_LAST_ON_PRICE_KEY); promoLastOnPrice = v ? parseInt(v, 10) || null : null } catch (e) {}
     }
     if (currentStatus === 'ON') {
       promoLastOnAt = now
-      if (now - _promoLastOnSavedAt > 60000) { _promoLastOnSavedAt = now; redis.set(PROMO_LAST_ON_KEY, String(now)).catch(() => {}) }
+      const titik = (lowestOnPriceCache !== undefined && lowestOnPriceCache !== null) ? lowestOnPriceCache : null
+      const p = titik || (lastKnownPrice && lastKnownPrice.buy) || null
+      // satu sesi ON: simpan harga terendah yang terlihat
+      if (p && (lastPromoStatus !== 'ON' || !promoLastOnPrice || p < promoLastOnPrice || titik === p)) promoLastOnPrice = p
+      if (now - _promoLastOnSavedAt > 60000) {
+        _promoLastOnSavedAt = now
+        redis.set(PROMO_LAST_ON_KEY, String(now)).catch(() => {})
+        if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
+      }
     } else if (lastPromoStatus === 'ON' && promoLastOnAt) {
       redis.set(PROMO_LAST_ON_KEY, String(promoLastOnAt)).catch(() => {})
+      if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
     }
 
     // Detect status change
@@ -2530,6 +2543,7 @@ async function doPromoBroadcast() {
       status: currentStatus,
       message: message,
       lastOnAt: promoLastOnAt || null,
+      lastOnPrice: promoLastOnPrice || null,
       time: new Date().toISOString()
     })
 
@@ -4881,6 +4895,7 @@ app.get('/sse', async (req, res) => {
       type: 'promo_status',
       status: lastPromoStatus,
       lastOnAt: promoLastOnAt || null,
+      lastOnPrice: promoLastOnPrice || null,
       message: lastPromoStatus === 'ON' ? '✅ ON' : '❌ OFF'
     })}\n\n`)
   }
@@ -7181,8 +7196,12 @@ app.get('/api/lowest-on-price', async (req, res) => {
     const val = await redis.get(REDIS_KEYS.LOWEST_ON_PRICE)
     const price = val !== null ? parseInt(val, 10) : null
     let lastOnAt = promoLastOnAt || null
-    if (promoLastOnAt === null) { try { const v = await redis.get(PROMO_LAST_ON_KEY); lastOnAt = v ? parseInt(v, 10) || null : null } catch (e) {} }
-    res.json({ success: true, price, status: lastPromoStatus, lastOnAt })
+    let lastOnPrice = promoLastOnPrice || null
+    if (promoLastOnAt === null) {
+      try { const v = await redis.get(PROMO_LAST_ON_KEY); lastOnAt = v ? parseInt(v, 10) || null : null } catch (e) {}
+      try { const v = await redis.get(PROMO_LAST_ON_PRICE_KEY); lastOnPrice = v ? parseInt(v, 10) || null : null } catch (e) {}
+    }
+    res.json({ success: true, price, status: lastPromoStatus, lastOnAt, lastOnPrice })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
@@ -20820,7 +20839,7 @@ app.get('/monitoring', async (req, res) => {
     loadAndShowPromoLimit();
 
     // Kotak Titik ON: promo ON -> harga terendah saat ON; promo OFF -> "Terakhir ON dd-mm-yyyy"
-    var _titikOnPrice = null, _promoStatusNow = null, _promoLastOnAt = null, _titikOnLabelHtml = null;
+    var _titikOnPrice = null, _promoStatusNow = null, _promoLastOnAt = null, _promoLastOnPrice = null, _titikOnLabelHtml = null;
     function _tglWib(ms) {
       var d = new Date(Number(ms) + 7 * 3600000);
       var p = function(n) { return (n < 10 ? '0' : '') + n; };
@@ -20833,8 +20852,8 @@ app.get('/monitoring', async (req, res) => {
       var lbl = card.querySelector('.stat-label');
       if (lbl && _titikOnLabelHtml === null) _titikOnLabelHtml = lbl.innerHTML;
       if (_promoStatusNow === 'OFF' && _promoLastOnAt) {
-        if (lbl) lbl.textContent = 'Terakhir ON';
-        val.textContent = _tglWib(_promoLastOnAt);
+        if (lbl) lbl.textContent = 'Terakhir ON ' + _tglWib(_promoLastOnAt);
+        val.textContent = _promoLastOnPrice ? formatRupiahShort(_promoLastOnPrice) : '-';
         val.style.color = '#9ca3af';
         card.title = 'Promo terakhir ON pada ' + new Date(Number(_promoLastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB';
         card.style.display = '';
@@ -20856,6 +20875,7 @@ app.get('/monitoring', async (req, res) => {
           _titikOnPrice = (data.price !== null && data.price !== undefined) ? data.price : null;
           if (data.status && !_promoStatusNow) _promoStatusNow = data.status;
           if (data.lastOnAt) _promoLastOnAt = data.lastOnAt;
+          if (data.lastOnPrice) _promoLastOnPrice = data.lastOnPrice;
           _renderTitikOn();
         })
         .catch(() => {});
@@ -21063,6 +21083,7 @@ app.get('/monitoring', async (req, res) => {
         if (data.type === 'promo_status') {
           _promoStatusNow = data.status;
           if (data.lastOnAt) _promoLastOnAt = data.lastOnAt;
+          if (data.lastOnPrice) _promoLastOnPrice = data.lastOnPrice;
           _renderTitikOn();
 
           // Update badge UI (selalu update, tidak perlu soundEnabled)
