@@ -17741,15 +17741,14 @@ app.get('/monitoring', async (req, res) => {
     function _newsFloat(title, lines, ms) {
       var box = document.getElementById('newsFloatBox');
       if (!box) {
-        // diselipkan di bawah info harga, tepat di atas grafik (rata kiri) — tidak menutupi grafik
+        // melayang di pojok kiri bawah, kotak kecil
         box = document.createElement('div');
         box.id = 'newsFloatBox';
-        box.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;max-width:260px;align-self:flex-start;margin-top:6px;';
-        var host = document.querySelector('.chart-header');
-        if (host) host.appendChild(box); else document.body.appendChild(box);
+        box.style.cssText = 'position:fixed;left:10px;bottom:12px;z-index:9000;display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:min(240px,calc(100% - 20px));pointer-events:none;';
+        document.body.appendChild(box);
       }
       var card = document.createElement('div');
-      card.style.cssText = 'cursor:pointer;position:relative;max-width:100%;background:rgba(17,17,17,0.94);color:#f3f4f6;border:1px solid rgba(239,68,68,0.5);border-left:3px solid #ef4444;border-radius:10px;padding:5px 22px 5px 8px;font-size:11px;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,0.3);opacity:0;transition:opacity .25s;';
+      card.style.cssText = 'pointer-events:auto;cursor:pointer;position:relative;max-width:100%;background:rgba(17,17,17,0.94);color:#f3f4f6;border:1px solid rgba(239,68,68,0.5);border-left:3px solid #ef4444;border-radius:10px;padding:5px 22px 5px 8px;font-size:11px;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,0.3);opacity:0;transition:opacity .25s;';
       var t = document.createElement('div');
       t.style.cssText = 'font-weight:800;color:#fca5a5;margin-bottom:2px;';
       t.textContent = title;
