@@ -13908,10 +13908,15 @@ app.get('/monitoring', async (req, res) => {
       transform: scale(0.93);
     }
     /* Elemen besar/kartu yang bisa diklik: efek tekan lebih halus */
-    .stat-item[onclick]:active, .promo-card:active, .news-card:active,
+    .stat-item[onclick]:active,
     .nav-menu-item:active, .page-btn:active {
       transform: scale(0.97);
     }
+    /* Latar jendela (overlay) dan kartu isi jendela bukan tombol: jangan ikut mengecil saat
+       disentuh/digulir (dulu seluruh jendela News/Promo mengecil-membesar ketika digulir) */
+    [class*="overlay"][onclick], [class*="overlay"][onclick]:active,
+    [class*="modal"][onclick], [class*="modal"][onclick]:active,
+    .promo-card:active, .news-card:active { transform: none !important; transition: none; }
     @media (hover: none) {
       /* Di layar sentuh: cursor tidak relevan, biarkan efek tekan saja */
       button, [onclick] { cursor: default; }
@@ -17730,16 +17735,82 @@ app.get('/monitoring', async (req, res) => {
     }
 
     // Auto-fetch news di background saat load untuk tampilkan badge
-    setTimeout(function() {
+    // ---- Pengingat news berdampak tinggi (3 batang): kecil, melayang, tidak menghalangi ----
+    //  * saat membuka website: daftar news tinggi hari ini yang belum lewat (sekali sehari)
+    //  * 30 menit sebelum tiap news tinggi: "30 menit lagi ..." (sekali per news), lalu hilang sendiri
+    function _newsFloat(title, lines, ms) {
+      var box = document.getElementById('newsFloatBox');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'newsFloatBox';
+        box.style.cssText = 'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9000;display:flex;flex-direction:column;gap:6px;width:min(340px,calc(100% - 24px));pointer-events:none;';
+        document.body.appendChild(box);
+      }
+      var card = document.createElement('div');
+      card.style.cssText = 'pointer-events:auto;position:relative;background:rgba(17,17,17,0.94);color:#f3f4f6;border:1px solid rgba(239,68,68,0.55);border-left:4px solid #ef4444;border-radius:12px;padding:8px 30px 8px 10px;font-size:12px;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,0.35);opacity:0;transition:opacity .25s;';
+      var t = document.createElement('div');
+      t.style.cssText = 'font-weight:800;color:#fca5a5;margin-bottom:2px;';
+      t.textContent = title;
+      card.appendChild(t);
+      lines.forEach(function(l) { var d = document.createElement('div'); d.textContent = l; card.appendChild(d); });
+      var x = document.createElement('button');
+      x.type = 'button';
+      x.textContent = String.fromCharCode(215);
+      x.setAttribute('aria-label', 'Tutup');
+      x.style.cssText = 'position:absolute;top:4px;right:6px;background:none;border:none;color:#9ca3af;font-size:18px;line-height:1;cursor:pointer;padding:2px 4px;';
+      var close = function() { card.style.opacity = '0'; setTimeout(function() { card.remove(); }, 260); };
+      x.onclick = close;
+      card.appendChild(x);
+      card.onclick = function(e) { if (e.target !== x && typeof openNewsModal === 'function') { close(); openNewsModal(); } };
+      box.appendChild(card);
+      requestAnimationFrame(function() { card.style.opacity = '1'; });
+      setTimeout(close, ms || 12000);
+    }
+    function _newsJam(ev) { return ev._wib ? String(ev._wib.getUTCHours()).padStart(2, '0') + ':' + String(ev._wib.getUTCMinutes()).padStart(2, '0') : '--:--'; }
+    function _newsReminderCheck() {
+      if (!_newsEventsCache.length) return;
+      var now = Date.now();
+      var nowW = new Date(now + 7 * 3600000);
+      var today = nowW.toISOString().slice(0, 10);
+      var high = _newsEventsCache.filter(function(ev) {
+        if (ev.impact !== 'High' || !ev._wib) return false;
+        return ev._wib.toISOString().slice(0, 10) === today;
+      });
+      var store = {};
+      try { store = JSON.parse(localStorage.getItem('newsRemind') || '{}'); } catch (e) {}
+      if (store.day !== today) store = { day: today, list: false, soon: {} };
+      // daftar news tinggi hari ini (sekali sehari, hanya yang belum lewat)
+      var upcoming = high.filter(function(ev) { return new Date(ev.date).getTime() > now; });
+      if (!store.list && upcoming.length) {
+        store.list = true;
+        _newsFloat('News dampak tinggi hari ini (' + upcoming.length + ')', upcoming.slice(0, 4).map(function(ev) { return _newsJam(ev) + ' WIB  ' + ev.title; }).concat(upcoming.length > 4 ? ['...dan ' + (upcoming.length - 4) + ' lagi'] : []), 15000);
+      }
+      // 30 menit sebelum news tinggi
+      high.forEach(function(ev) {
+        var at = new Date(ev.date).getTime();
+        var key = ev.title + '|' + ev.date;
+        var left = at - now;
+        if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
+          store.soon[key] = 1;
+          _newsFloat(Math.max(1, Math.round(left / 60000)) + ' menit lagi: news dampak tinggi', [_newsJam(ev) + ' WIB  ' + ev.title], 20000);
+        }
+      });
+      try { localStorage.setItem('newsRemind', JSON.stringify(store)); } catch (e) {}
+    }
+    function _loadNewsBg() {
       monFetch('/api/ff-calendar').then(r => r.json()).then(data => {
         if (data.success && data.events && data.events.length > 0) {
           data.events.forEach(ev => { ev._wib = _toWIB(ev.date); });
           data.events.sort((a,b) => (a._wib||0) - (b._wib||0));
           _newsEventsCache = data.events;
           _updateNewsBadge();
+          _newsReminderCheck();
         }
       }).catch(() => {});
-    }, 3000);
+    }
+    setTimeout(_loadNewsBg, 3000);
+    setInterval(_loadNewsBg, 30 * 60000);       // data news diperbarui tiap 30 menit
+    setInterval(_newsReminderCheck, 30000);      // cek pengingat tiap 30 detik
     const _fmtDate = (d) => { if (!d) return ''; return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear(); };
     const _fmtTime = (d) => { if (!d) return 'All Day'; return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+' WIB'; };
     const _fmtDayDate = (d) => { if (!d) return ''; return _HARI[d.getUTCDay()]+', '+_fmtDate(d); };

@@ -25,6 +25,49 @@ function predictGold(ev) {
   return null
 }
 
+// ---- Pengingat news dampak tinggi (3 batang): kecil, melayang di atas navigasi, tidak menghalangi ----
+function floatNote(title, lines, ms) {
+  let box = document.getElementById('newsFloat')
+  if (!box) {
+    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed inset-x-0 z-[35] mx-auto flex w-[min(340px,calc(100%-24px))] flex-col gap-1.5', style: 'bottom:calc(76px + env(safe-area-inset-bottom))' })
+    document.body.append(box)
+  }
+  const close = () => { card.style.opacity = '0'; setTimeout(() => card.remove(), 260) }
+  const card = h('div', { class: 'pointer-events-auto relative rounded-xl border border-down/50 border-l-4 border-l-down bg-card/95 py-2 pl-2.5 pr-8 text-xs shadow-xl backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
+    h('div', { class: 'mb-0.5 font-extrabold text-down' }, title),
+    lines.map(l => h('div', {}, l)),
+    h('button', { class: 'absolute right-1.5 top-1 px-1 text-lg leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
+  box.append(card)
+  requestAnimationFrame(() => { card.style.opacity = '1' })
+  setTimeout(close, ms || 12000)
+}
+export function checkNewsReminders() {
+  if (!state.news.length) return
+  const now = Date.now()
+  const today = dayKey(toWib(new Date(now).toISOString()))
+  const high = state.news.filter(ev => ev.impact === 'High' && dayKey(ev._wib) === today)
+  let store = {}
+  try { store = JSON.parse(localStorage.getItem('newsRemind') || '{}') } catch (e) {}
+  if (store.day !== today) store = { day: today, list: false, soon: {} }
+  const upcoming = high.filter(ev => new Date(ev.date).getTime() > now)
+  if (!store.list && upcoming.length) {
+    store.list = true
+    floatNote('News dampak tinggi hari ini (' + upcoming.length + ')',
+      upcoming.slice(0, 4).map(ev => jamWib(ev._wib) + '  ' + ev.title).concat(upcoming.length > 4 ? ['...dan ' + (upcoming.length - 4) + ' lagi'] : []), 15000)
+  }
+  high.forEach(ev => {
+    const left = new Date(ev.date).getTime() - now
+    const key = ev.title + '|' + ev.date
+    if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
+      store.soon[key] = 1
+      floatNote(Math.max(1, Math.round(left / 60000)) + ' menit lagi: news dampak tinggi', [jamWib(ev._wib) + '  ' + ev.title], 20000)
+    }
+  })
+  try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
+}
+setInterval(checkNewsReminders, 30000)
+setInterval(() => loadNews(), 30 * 60000)
+
 export async function loadNews() {
   try {
     const d = await getJSON('/api/ff-calendar')
@@ -35,6 +78,7 @@ export async function loadNews() {
     }
   } catch (e) {}
   updateNewsBadge()
+  checkNewsReminders()
 }
 export function updateNewsBadge() {
   const today = dayKey(toWib(new Date().toISOString()))
