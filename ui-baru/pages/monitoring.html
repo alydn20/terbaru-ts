@@ -7,7 +7,8 @@
   <title>Harga Emas Realtime | PemulaOLD</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/favicon.ico?v=2">
-  <link rel="apple-touch-icon" href="/icon.png?v=2">
+  <link rel="apple-touch-icon" href="/icon.png?v=3">
+  <meta name="apple-mobile-web-app-title" content="Harga PemulaOLD">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap">
@@ -15,11 +16,11 @@
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
-<body class="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))]">
+<body class="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))] lg:pb-0">
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
-    <div class="mx-auto flex max-w-6xl items-center gap-2.5 px-3 py-1.5 lg:gap-3 lg:px-4 lg:py-2.5">
+    <div class="mx-auto flex max-w-[1400px] items-center gap-2.5 px-3 py-1.5 lg:gap-3 lg:px-4 lg:py-2.5">
       <div class="relative shrink-0">
         <svg viewBox="0 0 24 24" class="h-7 w-7 lg:h-8 lg:w-8" aria-hidden="true"><rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/></svg>
         <span id="liveDot" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-up ring-2 ring-bg" title="Data live"></span>
@@ -28,21 +29,23 @@
         <div class="truncate text-sm font-extrabold lg:text-[15px]">Harga PemulaOLD</div>
         <button id="sisaHari" class="hidden items-center gap-1.5 text-[11px] font-semibold"></button>
       </div>
+      <!-- desktop: Promo / News / Lainnya pindah ke sini (menu bawah disembunyikan) -->
+      <div id="topNav" class="hidden items-center gap-1 lg:flex"></div>
       <button id="btnAdminWa" class="icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
     </div>
   </header>
 
-  <main class="mx-auto max-w-6xl px-2.5 pt-2 lg:px-4 lg:pt-3">
+  <main class="mx-auto max-w-[1400px] px-2.5 pt-2 lg:px-4 lg:pt-3">
     <!-- pemberitahuan dari admin -->
     <div id="notifs" class="mb-2 flex flex-col gap-2 empty:hidden"></div>
 
-    <!-- HP: harga + nominal + grafik muat dalam satu layar; layar lebar: dua kolom -->
-    <div class="grid grid-cols-1 gap-2 lg:grid-cols-[420px_1fr] lg:items-start lg:gap-4">
+    <!-- HP: harga + nominal + grafik muat dalam satu layar. Desktop: harga di atas, grafik selebar layar, lalu riwayat -->
+    <div class="grid grid-cols-1 gap-2 lg:gap-4">
       <!-- ============================== KOLOM KIRI ============================== -->
-      <div class="flex min-w-0 flex-col gap-2 lg:sticky lg:top-[72px] lg:gap-4">
+      <div class="flex min-w-0 flex-col gap-2 lg:gap-4">
 
         <!-- HARGA UTAMA: semua isi kartu rata tengah dan kotak kecil berukuran sama -->
-        <section id="sec-harga" class="card min-w-0 p-2 lg:p-4" aria-label="Harga emas">
+        <section id="sec-harga" class="card min-w-0 p-2 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:p-4" aria-label="Harga emas">
           <div class="grid grid-cols-2 gap-1.5 lg:gap-2">
             <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:p-3">
               <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
@@ -73,7 +76,7 @@
           </div>
 
           <!-- untung per nominal -->
-          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5">
+          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:mt-0 lg:self-center lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
             <div class="relative mb-1 text-center">
               <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
               <button id="btnNominal" class="absolute right-0.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gold">Atur</button>
@@ -94,7 +97,7 @@
             <h2 class="label">Grafik XAU/USD</h2>
             <button id="btnIndicator" class="text-xs font-semibold text-gold">Indikator</button>
           </div>
-          <div id="tvChart" class="h-[360px] bg-card2 lg:h-[min(62vh,520px)] lg:border-t lg:border-line/[0.07]"></div>
+          <div id="tvChart" class="h-[360px] bg-card2 lg:h-[calc(100vh-190px)] lg:border-t lg:border-line/[0.07]"></div>
         </section>
 
         <!-- RIWAYAT -->
@@ -124,13 +127,13 @@
   </main>
 
   <!-- ============================== NAVIGASI BAWAH ============================== -->
-  <nav id="bottomNav" class="fixed inset-x-0 bottom-0 z-30 border-t border-line/[0.08] bg-card/95 backdrop-blur-xl" style="padding-bottom: env(safe-area-inset-bottom)" aria-label="Navigasi">
+  <nav id="bottomNav" class="fixed inset-x-0 bottom-0 z-30 lg:hidden border-t border-line/[0.08] bg-card/95 backdrop-blur-xl" style="padding-bottom: env(safe-area-inset-bottom)" aria-label="Navigasi">
     <div class="mx-auto grid h-16 max-w-xl grid-cols-5">
       <button data-nav="harga" class="nav-item">Harga</button>
       <button data-nav="grafik" class="nav-item">Grafik</button>
-      <button data-nav="promo" class="nav-item">Promo<span id="badgePromo" class="badge hidden"></span></button>
-      <button data-nav="news" class="nav-item">News<span id="badgeNews" class="badge hidden bg-gold text-bg"></span></button>
-      <button data-nav="lainnya" class="nav-item">Lainnya</button>
+      <button data-nav="promo" class="nav-item lg:h-12 lg:w-16 lg:rounded-xl lg:hover:bg-card2 lg:hover:text-ink">Promo<span id="badgePromo" class="badge hidden"></span></button>
+      <button data-nav="news" class="nav-item lg:h-12 lg:w-16 lg:rounded-xl lg:hover:bg-card2 lg:hover:text-ink">News<span id="badgeNews" class="badge hidden bg-gold text-bg"></span></button>
+      <button data-nav="lainnya" class="nav-item lg:h-12 lg:w-16 lg:rounded-xl lg:hover:bg-card2 lg:hover:text-ink">Lainnya</button>
     </div>
   </nav>
 

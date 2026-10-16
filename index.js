@@ -5092,8 +5092,8 @@ app.get('/favicon.ico', (_req, res) => {
 app.get('/manifest.json', (req, res) => {
   const host = req.get('host') || 'xau.pemulaold.com'
   res.json({
-    name: 'PemulaOLD Price',
-    short_name: 'PemulaOLD',
+    name: 'Harga PemulaOLD',
+    short_name: 'Harga PemulaOLD',
     description: 'Real-time PemulaOLD Gold Price Monitor',
     start_url: '/monitoring',
     display: 'standalone',
@@ -5101,19 +5101,19 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#f7931a',
     icons: [
       {
-        src: '/icon-rounded.svg',
+        src: '/icon-rounded.svg?v=3',
         sizes: 'any',
         type: 'image/svg+xml',
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png?v=2',
+        src: '/icon.png?v=3',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png?v=2',
+        src: '/icon.png?v=3',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any maskable'
@@ -13738,10 +13738,10 @@ app.get('/monitoring', async (req, res) => {
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="PemulaOLD">
+  <meta name="apple-mobile-web-app-title" content="Harga PemulaOLD">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon.png?v=2">
+  <link rel="apple-touch-icon" href="/icon.png?v=3">
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
   <link rel="icon" type="image/png" href="/icon.png?v=2">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-synthesis:none;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>

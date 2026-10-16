@@ -232,10 +232,17 @@ async function fetchPrices() {
 // ===================================================================== GRAFIK MUAT SATU LAYAR (HP)
 const wide = () => matchMedia('(min-width: 1024px)').matches
 /** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
+// chartFull = menu Grafik ditekan: grafik setinggi layar (antara bar atas dan menu bawah)
+let chartFull = false, chartFullAt = 0
 function fitChart() {
   const box = $('#tvChart')
   if (!box) return
-  if (wide()) { box.style.height = ''; return }
+  if (wide() || chartFull) {
+    const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+    // desktop: dikurangi baris judul grafik + jarak
+    box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - (wide() ? 70 : 12))) + 'px'
+    return
+  }
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
   box.style.height = Math.max(220, Math.round(window.innerHeight - top - nav - 8)) + 'px'
@@ -321,28 +328,43 @@ setInterval(() => { if (Date.now() - lastData > 60000) { lastData = Date.now(); 
 
 // ===================================================================== NAVIGASI BAWAH
 const NAV = {
-  harga: ['home', () => scrollTo('#sec-harga')],
-  grafik: ['chart', () => scrollTo('#sec-grafik')],
+  // Harga: kembali ke atas (grafik kembali ke ukuran biasa). Grafik: grafik setinggi layar.
+  harga: ['home', () => { chartFull = false; setActive('harga'); window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => { fitChart(); setActive('harga') }, 700) }],
+  grafik: ['chart', () => { chartFull = true; chartFullAt = Date.now(); setActive('grafik'); fitChart(); requestAnimationFrame(() => scrollTo('#sec-grafik')) }],
   promo: ['tag', openPromos],
   news: ['bell', openNews],
   lainnya: ['grid', openMore]
 }
 function scrollTo(sel) {
   const el = $(sel)
-  window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' })
+  const hdr = $('header').offsetHeight
+  window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + scrollY - hdr - 6), behavior: 'smooth' })
 }
+// Desktop: menu bawah disembunyikan; Promo / News / Lainnya dipindah ke bar atas (Harga & Grafik
+// tidak perlu karena semuanya satu halaman). HP: kembali ke menu bawah.
+function placeNav() {
+  const top = $('#topNav'), grid = $('#bottomNav > div')
+  if (!top || !grid) return
+  const to = wide() ? top : grid
+  ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
+}
+window.addEventListener('resize', placeNav)
+// tab aktif mengikuti bagian yang sedang terlihat
+const setActive = key => $$('[data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
 function initNav() {
   $$('#bottomNav [data-nav]').forEach(b => {
     const [ic, fn] = NAV[b.dataset.nav]
     b.insertAdjacentHTML('afterbegin', icon(ic, 'h-[22px] w-[22px]'))
     b.addEventListener('click', fn)
   })
-  // tab aktif mengikuti bagian yang sedang terlihat
-  const setActive = key => $$('#bottomNav [data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
+  placeNav()
   setActive('harga')
   window.addEventListener('scroll', () => {
     const g = $('#sec-grafik').getBoundingClientRect().top
-    setActive(g < innerHeight * 0.45 ? 'grafik' : 'harga')
+    setActive(scrollY > 4 && g < innerHeight * 0.45 ? 'grafik' : 'harga')
+    // HP: kembali ke paling atas = tampilan biasa (harga + grafik dalam satu layar)
+    // (bukan saat baru menekan Grafik: guliran ke grafik baru dimulai dari atas)
+    if (chartFull && scrollY < 4 && !wide() && Date.now() - chartFullAt > 1500) { chartFull = false; fitChart() }
   }, { passive: true })
 }
 
