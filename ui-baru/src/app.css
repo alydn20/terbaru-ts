@@ -142,7 +142,8 @@ body.idr-merge #histMode { display: none; }
    "BELI Rp... JUAL Rp... jam PROMO", di bawahnya satu baris kecil USD/IDR, Limit, Spread, Titik ON. */
 body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
 body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
-body.price-compact .price-tile { display: flex !important; align-items: center; gap: 0.4rem; padding: 0 !important; background: none !important; border: none !important; overflow: visible; container-type: normal; }
+/* Beli/Jual tetap berkotak (warna naik/turun ikut), hanya lebih kecil dan tipis */
+body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
 body.price-compact #clockRow > .num { font-size: 1rem; }
@@ -155,11 +156,10 @@ body.price-compact #chips .stat-v { font-size: 11px; }
 /* HP: baris ringkas muat selebar layar. Badge naik/turun tetap tampil (lebih kecil), tulisan "Rp"
    disembunyikan; kalau tetap tidak muat, Jual turun ke baris berikutnya (tidak meluber). */
 @media (max-width: 767px) {
-  body.price-compact #sec-harga > div:first-child { gap: 0.25rem 0.75rem; flex-wrap: wrap; justify-content: center; }
+  body.price-compact #sec-harga > div:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; width: 100%; }
   body.price-compact #buyChange, body.price-compact #sellChange { font-size: 9px !important; padding: 0 0.3rem !important; }
-  body.price-compact .price-tile .price-big { font-size: 0.92rem !important; }
-  body.price-compact .price-tile .price-big > span:first-child { display: none; }
-  body.price-compact .price-tile { gap: 0.25rem; }
+  body.price-compact .price-tile { padding: 0.1rem 0.4rem !important; }
+  body.price-compact .price-tile .price-big { font-size: 1rem !important; }
 }
 
 /* 'Harga saja': kotak harga memenuhi layar (tinggi diatur JS), angka besar, menyesuaikan HP
