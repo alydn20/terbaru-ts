@@ -438,7 +438,9 @@ function fitChartBox() {
     box.style.height = Math.max(180, Math.round(rest - histH - gap)) + 'px'
     return
   }
-  box.style.height = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest)) + 'px'
+  const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
+  // monitor sangat tinggi: grafik maksimal 1000px supaya tidak terlalu panjang
+  box.style.height = (wide() ? Math.min(1000, h0) : h0) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
