@@ -17809,9 +17809,52 @@ app.get('/monitoring', async (req, res) => {
         }
       }).catch(() => {});
     }
+    // 3 menit sebelum news dampak tinggi: kotak TIDAK bisa ditutup, hitung mundur per detik,
+    // tetap tampil sampai news rilis (lalu "Rilis sekarang" sebentar dan hilang)
+    var _newsUrgentCards = {};
+    function _newsUrgentTick() {
+      if (!_newsEventsCache.length) return;
+      var now = Date.now();
+      var nowW = new Date(now + 7 * 3600000).toISOString().slice(0, 10);
+      _newsEventsCache.forEach(function(ev) {
+        if (ev.impact !== 'High' || !ev._wib || ev._wib.toISOString().slice(0, 10) !== nowW) return;
+        var at = new Date(ev.date).getTime();
+        var key = ev.title + '|' + ev.date;
+        var left = at - now;
+        var c = _newsUrgentCards[key];
+        if (left > 0 && left <= 3 * 60000) {
+          if (!c) {
+            var box = document.getElementById('newsFloatBox');
+            if (!box) {
+              box = document.createElement('div');
+              box.id = 'newsFloatBox';
+              box.style.cssText = 'position:fixed;left:10px;bottom:12px;z-index:9000;display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:min(240px,calc(100% - 20px));pointer-events:none;';
+              document.body.appendChild(box);
+            }
+            c = document.createElement('div');
+            c.style.cssText = 'pointer-events:auto;cursor:pointer;max-width:100%;background:rgba(127,29,29,0.95);color:#fff;border:1px solid #ef4444;border-left:3px solid #fca5a5;border-radius:10px;padding:5px 8px;font-size:11px;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,0.35);';
+            var t = document.createElement('div');
+            t.style.cssText = 'font-weight:800;';
+            var l = document.createElement('div');
+            l.textContent = _newsJam(ev) + ' WIB  ' + ev.title;
+            c.appendChild(t); c.appendChild(l);
+            c.onclick = function() { if (typeof openNewsModal === 'function') openNewsModal(); };
+            box.appendChild(c);
+            _newsUrgentCards[key] = c;
+          }
+          var sec = Math.ceil(left / 1000);
+          c.firstChild.textContent = 'News dampak tinggi ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi';
+        } else if (c && left <= 0 && !c._done) {
+          c._done = true;
+          c.firstChild.textContent = 'Rilis sekarang';
+          setTimeout(function() { c.remove(); delete _newsUrgentCards[key]; }, 8000);
+        }
+      });
+    }
     setTimeout(_loadNewsBg, 3000);
     setInterval(_loadNewsBg, 30 * 60000);       // data news diperbarui tiap 30 menit
     setInterval(_newsReminderCheck, 30000);      // cek pengingat tiap 30 detik
+    setInterval(_newsUrgentTick, 1000);          // 3 menit terakhir: hitung mundur per detik
     const _fmtDate = (d) => { if (!d) return ''; return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear(); };
     const _fmtTime = (d) => { if (!d) return 'All Day'; return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+' WIB'; };
     const _fmtDayDate = (d) => { if (!d) return ''; return _HARI[d.getUTCDay()]+', '+_fmtDate(d); };

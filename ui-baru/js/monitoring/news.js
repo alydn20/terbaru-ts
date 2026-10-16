@@ -67,6 +67,40 @@ export function checkNewsReminders() {
   try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
 }
 setInterval(checkNewsReminders, 30000)
+
+// 3 menit sebelum news dampak tinggi: tidak bisa ditutup, hitung mundur per detik, sampai rilis
+const urgent = {}
+function urgentTick() {
+  if (!state.news.length) return
+  const now = Date.now()
+  const today = dayKey(toWib(new Date(now).toISOString()))
+  state.news.forEach(ev => {
+    if (ev.impact !== 'High' || dayKey(ev._wib) !== today) return
+    const key = ev.title + '|' + ev.date
+    const left = new Date(ev.date).getTime() - now
+    let c = urgent[key]
+    if (left > 0 && left <= 3 * 60000) {
+      if (!c) {
+        let box = document.getElementById('newsFloat')
+        if (!box) {
+          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1', style: 'bottom:calc(74px + env(safe-area-inset-bottom))' })
+          document.body.append(box)
+        }
+        c = h('div', { class: 'pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
+          h('div', { class: 'font-extrabold' }, ''), h('div', {}, jamWib(ev._wib) + '  ' + ev.title))
+        box.append(c)
+        urgent[key] = c
+      }
+      const sec = Math.ceil(left / 1000)
+      c.firstChild.textContent = 'News dampak tinggi ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi'
+    } else if (c && left <= 0 && !c.dataset.done) {
+      c.dataset.done = '1'
+      c.firstChild.textContent = 'Rilis sekarang'
+      setTimeout(() => { c.remove(); delete urgent[key] }, 8000)
+    }
+  })
+}
+setInterval(urgentTick, 1000)
 setInterval(() => loadNews(), 30 * 60000)
 
 export async function loadNews() {
