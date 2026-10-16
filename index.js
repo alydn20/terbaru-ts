@@ -2193,7 +2193,7 @@ ${nominalLines}
 ${calendarSection}${highLowLine}
 🌐 Via website: https://xau.pemulaold.com`
 }
-async function fetchTreasury() {
+async function fetchTreasuryOnce(timeoutMs) {
   const res = await fetch(TREASURY_URL, {
     method: 'POST',
     headers: {
@@ -2201,7 +2201,7 @@ async function fetchTreasury() {
       'Connection': 'keep-alive'
     },
     agent: httpsAgent, // Reuse TCP connection
-    signal: AbortSignal.timeout(5000) // 5 detik timeout (lebih toleran untuk network latency)
+    signal: AbortSignal.timeout(timeoutMs)
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const json = await res.json()
@@ -2209,6 +2209,37 @@ async function fetchTreasury() {
     throw new Error('Invalid data')
   }
   return json
+}
+
+// Server Treasury sering MENGGANTUNG (tidak membalas sama sekali) untuk sebagian permintaan dari
+// IP server ini; balasan normal < 1 detik. Satu permintaan yang menggantung dulu menahan harga baru
+// sampai 5 detik (berulang -> telat sampai 58 detik). Sekarang: kalau belum dibalas 1,2 detik,
+// kirim permintaan cadangan secara paralel (maks 3), dan pakai balasan yang paling dulu datang.
+const TREASURY_HEDGE_MS = 1200
+const TREASURY_MAX_PARALLEL = 3
+function fetchTreasury() {
+  return new Promise((resolve, reject) => {
+    let done = false, started = 0, failed = 0, lastErr = null, timer = null
+    const launch = () => {
+      if (done || started >= TREASURY_MAX_PARALLEL) return
+      started++
+      fetchTreasuryOnce(4000).then(json => {
+        if (done) return
+        done = true
+        if (timer) clearTimeout(timer)
+        resolve(json)
+      }).catch(e => {
+        lastErr = e
+        failed++
+        if (done) return
+        if (failed >= started && started >= TREASURY_MAX_PARALLEL) { done = true; if (timer) clearTimeout(timer); reject(lastErr) }
+        else if (failed >= started) { if (timer) clearTimeout(timer); launch(); schedule() }   // gagal cepat -> langsung coba lagi
+      })
+    }
+    const schedule = () => { timer = setTimeout(() => { if (!done) { launch(); schedule() } }, TREASURY_HEDGE_MS) }
+    launch()
+    schedule()
+  })
 }
 
 // 🎁 PROMO ON/OFF FUNCTIONS
@@ -3365,7 +3396,17 @@ let lastFetchMs = null       // berapa ms request ke Treasury API
 let lastDataAgeMs = null     // berapa ms sejak Treasury update datanya
 let latencyHistory = []      // rolling 10 sample terakhir untuk avg
 
+let _lastPollStart = 0
+let _lastNewTsAt = 0
 async function fastPoll() {
+  // Treasury memperbarui harga sekali per menit di detik :01-:05. Polling cepat (tiap 0,5 detik)
+  // hanya di detik 0-25 setiap menit, atau kalau harga terakhir sudah > 65 detik (jadwal Treasury
+  // bergeser). Di luar itu cukup tiap 3 detik -> permintaan ke Treasury jauh lebih sedikit
+  // (IP yang terlalu sering meminta cenderung tidak dibalas).
+  const _nowMs = Date.now()
+  // (_lastNewTsAt = jam server saat timestamp baru diterima; updated_at Treasury tanpa zona waktu)
+  const _hot = new Date(_nowMs).getSeconds() <= 25 || !_lastNewTsAt || _nowMs - _lastNewTsAt > 65000
+  if (!_hot && _nowMs - _lastPollStart < 3000) return
   // Deadlock detection: jika isFastPolling stuck > 10 detik, force reset
   if (isFastPolling) {
     if (isFastPollingSince && Date.now() - isFastPollingSince > 10000) {
@@ -3377,6 +3418,7 @@ async function fastPoll() {
   }
   isFastPolling = true
   isFastPollingSince = Date.now()
+  _lastPollStart = isFastPollingSince
 
   try {
     const _fetchStart = Date.now()
@@ -3414,6 +3456,7 @@ async function fastPoll() {
 
     if (isNewTimestamp) {
       lastKnownTimestamp = updateTime
+      _lastNewTsAt = Date.now()
       lastApiUpdateTime = treasuryData.data.updated_at
       const _usdIdrLog = cachedMarketData.usdIdr?.rate ? ` | USD/IDR Rp${formatRupiah(cachedMarketData.usdIdr.rate)}` : ''
       pushLog(`TREASURY | Timestamp baru: ${treasuryData.data.updated_at} | Buy Rp${formatRupiah(currentPrice.buy)} | Sell Rp${formatRupiah(currentPrice.sell)}${_usdIdrLog} | latency ${_fetchMs}ms`)
