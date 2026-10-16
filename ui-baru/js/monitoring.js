@@ -239,7 +239,7 @@ async function fetchPrices() {
 }
 
 // ===================================================================== GRAFIK MUAT SATU LAYAR (HP)
-const wide = () => matchMedia('(min-width: 1024px)').matches
+const wide = () => matchMedia('(min-width: 768px)').matches
 /** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
 // chartFull = menu Grafik ditekan: grafik setinggi layar (antara bar atas dan menu bawah)
 let chartFull = false, chartFullAt = 0
@@ -248,7 +248,7 @@ let chartFull = false, chartFullAt = 0
 const LAYOUT_KEY = 'monitorLayout'
 export const LAYOUTS = [
   ['def', 'Bawaan', 'Harga + grafik, riwayat di bawah (digulir)', { p: 1, c: 1, h: 1, s: 0 }],
-  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
+  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus (kotak harga ringkas)', { p: 1, c: 1, h: 1, s: 1 }],
   ['pc', 'Harga + Grafik', 'Tanpa riwayat', { p: 1, c: 1, h: 0, s: 0 }],
   ['ch', 'Grafik + Riwayat', 'Tanpa kotak harga', { p: 0, c: 1, h: 1, s: 1 }],
   ['ph', 'Harga + Riwayat', 'Tanpa grafik', { p: 1, c: 0, h: 1, s: 0 }],
@@ -268,6 +268,7 @@ function applyLayout() {
   b.toggle('hide-grafik', !L.c)
   b.toggle('hide-riwayat', !L.h)
   b.toggle('lay-split', !!(L.s && L.c && L.h))
+  b.toggle('price-compact', !!(L.s && L.p && L.c && L.h))
   fitHistPanel()
 }
 // Desktop + grafik & riwayat berdampingan: lebar panel riwayat = lebar alami tabelnya (supaya
@@ -295,15 +296,30 @@ function applyHistSize() {
   if (sc) sc.style.setProperty('--hist-zoom', histSize())
   fitHistPanel()
 }
+// USD/IDR di riwayat: 'auto' (desktop & tablet digabung ke tabel harga, HP terpisah) | 'on' | 'off'
+const IDR_MODES = [['auto', 'Otomatis', 'Desktop & tablet: digabung. HP: tabel terpisah'], ['on', 'Gabung di tabel harga', 'Kolom USD/IDR di tabel riwayat harga'], ['off', 'Tabel terpisah', 'Pilih lewat tombol Harga emas | USD/IDR']]
+function idrMode() { try { const v = localStorage.getItem('histIdrMode'); return IDR_MODES.some(x => x[0] === v) ? v : 'auto' } catch (e) { return 'auto' } }
+function applyIdrMode() {
+  const m = idrMode()
+  const merge = m === 'on' || (m === 'auto' && wide())
+  const was = document.body.classList.contains('idr-merge')
+  document.body.classList.toggle('idr-merge', merge)
+  if (merge !== was) { loadHistory(); fitHistPanel() }
+}
+window.addEventListener('resize', () => applyIdrMode())
+// Pengaturan riwayat (tombol Aa): ukuran teks + USD/IDR digabung / terpisah. Diingat per perangkat.
 function openHistSize() {
-  const cur = histSize()
-  const sheet = openSheet('Ukuran teks riwayat', h('div', { class: 'flex flex-col gap-1.5' },
-    HIST_SIZES.map(([v, label]) => h('button', {
-      class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (v === cur ? 'border-gold/60 bg-gold/10' : ''),
-      onclick: () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }
-    },
-      h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (v === cur ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: v === cur ? icon('check', 'h-3 w-3') : '' }),
-      h('span', { class: 'font-bold', style: 'font-size:' + Math.round(14 * Number(v)) + 'px' }, label)))))
+  const opt = (active, label, note, onclick, style) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), onclick },
+    h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (active ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: active ? icon('check', 'h-3 w-3') : '' }),
+    h('span', { class: 'min-w-0' },
+      h('span', { class: 'block font-bold', style: style || '' }, label),
+      note ? h('span', { class: 'block text-[11px] text-muted' }, note) : null))
+  const cur = histSize(), im = idrMode()
+  const sheet = openSheet('Pengaturan riwayat', h('div', { class: 'flex flex-col gap-1.5' },
+    h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
+    HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
+    h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
+    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
 }
 export function getLayout() { return layout }
 export function setLayout(v) {
@@ -499,6 +515,7 @@ async function start() {
   $('#btnLayout').innerHTML = icon('panels', 'h-4 w-4') + '<span class="hidden lg:inline">Tata letak</span>'
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
+  applyIdrMode()
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
   setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })

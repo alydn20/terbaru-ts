@@ -43,7 +43,7 @@ export function openMore() {
     h('div', { class: 'min-w-0' },
       h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
       h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
-  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(groups, logoutItem, profile)
+  if (matchMedia('(min-width: 768px)').matches) return openMoreDropdown(groups, logoutItem, profile)
   const tile = ([ic, label, onclick, extra = '']) =>
     h('button', { class: 'tile flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1.5 py-2.5 text-center text-[11px] font-semibold leading-tight active:scale-95 ' + extra, onclick, html: icon(ic, 'h-5 w-5') + '<span>' + label + '</span>' })
   openSheet('Lainnya', h('div', {}, profile(),

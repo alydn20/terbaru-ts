@@ -53,7 +53,7 @@ function renderPriceRows(items) {
       h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam, statusSmall),
       priceCell(item.buy, item.buyChange || 0),
       priceCell(item.sell, item.sellChange || 0),
-      // Desktop: kurs USD/IDR jadi satu kolom di tabel harga (HP tetap tabel terpisah lewat tombol USD/IDR).
+      // Kolom USD/IDR (tampil kalau digabung: pengaturan riwayat, bawaan desktop & tablet).
       // Perubahan dibanding baris sebelumnya (lebih lama, di bawahnya).
       idrCell(item.usdIdr, items[idx + 1] && items[idx + 1].usdIdr),
       h('td', { class: 'hist-st-col px-3 py-2 whitespace-nowrap text-[11px]' }, status),
@@ -84,7 +84,8 @@ function renderPager(total) {
 }
 
 export async function loadHistory() {
-  if (mode !== 'price' && matchMedia('(min-width: 1024px)').matches) {
+  // USD/IDR digabung ke tabel harga (pengaturan riwayat): tabel USD/IDR terpisah tidak dipakai
+  if (mode !== 'price' && document.body.classList.contains('idr-merge')) {
     mode = 'price'
     $$('#histMode button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.mode === 'price')))
   }

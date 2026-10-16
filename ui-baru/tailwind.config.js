@@ -4,6 +4,8 @@ const v = name => `rgb(var(--${name}) / <alpha-value>)`
 module.exports = {
   content: ['./pages/**/*.html', './js/**/*.js'],
   theme: {
+    // Tablet (>= 768px) memakai susunan desktop: semua kelas lg: berlaku mulai 768px
+    screens: { sm: '640px', md: '768px', lg: '768px', xl: '1280px', '2xl': '1536px' },
     extend: {
       colors: {
         bg: v('bg'),

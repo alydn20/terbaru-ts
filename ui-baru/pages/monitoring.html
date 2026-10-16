@@ -59,7 +59,7 @@
           </div>
 
           <!-- jam + status promo -->
-          <div class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
+          <div id="clockRow" class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
             <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
             <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
@@ -77,7 +77,7 @@
           </div>
 
           <!-- untung per nominal -->
-          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+          <div id="nomWrap" class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
             <div class="relative mb-1 text-center">
               <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
               <button id="btnNominal" class="absolute right-0.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gold">Atur</button>
@@ -107,7 +107,7 @@
         <section id="sec-riwayat" class="card overflow-hidden" aria-label="Riwayat perubahan harga">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3">
             <h2 class="label mr-auto">Riwayat perubahan</h2>
-            <button id="btnHistSize" class="icon-btn h-8 w-8 text-xs font-extrabold text-muted" title="Ukuran teks riwayat" aria-label="Ukuran teks riwayat">Aa</button>
+            <button id="btnHistSize" class="icon-btn h-8 w-8 text-xs font-extrabold text-muted" title="Pengaturan riwayat (ukuran teks, USD/IDR)" aria-label="Pengaturan riwayat">Aa</button>
             <div class="seg" id="histMode">
               <button data-mode="price" aria-pressed="true">Harga emas</button>
               <button data-mode="usdidr" aria-pressed="false">USD/IDR</button>
