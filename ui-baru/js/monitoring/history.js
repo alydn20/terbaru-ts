@@ -4,14 +4,27 @@ import { state, markupOf, visibleNominals, profitOf } from './state.js'
 
 // Jumlah baris per halaman: pengaturan riwayat ('auto' = 10, atau 1-30)
 let PER_PAGE = 10
-export function histRowsSetting() { try { const v = parseInt(localStorage.getItem('histRows'), 10); return v >= 1 && v <= 30 ? v : 0 } catch (e) { return 0 } }
+// HP (< 768px): tanpa tombol halaman; riwayat digulir di dalam kotak dan data lama dimuat otomatis
+// (CHUNK baris sekali muat). Bawaan HP 3 baris terlihat supaya grafik besar.
+const narrow = () => !matchMedia('(min-width: 768px)').matches
+const CHUNK = 30
+let loadedPages = 0, loadingMore = false
+export function histRowsSetting() {
+  try {
+    const raw = localStorage.getItem('histRows')
+    const v = parseInt(raw, 10)
+    if (v >= 1 && v <= 30) return v
+    if (raw === 'auto') return 0
+  } catch (e) {}
+  return narrow() ? 3 : 0
+}
 export function setHistRows(n) {
   try { localStorage.setItem('histRows', n ? String(n) : 'auto') } catch (e) {}
-  PER_PAGE = n || 10
+  PER_PAGE = (narrow() ? 0 : n) || 10
   page = 1
   loadHistory()
 }
-PER_PAGE = histRowsSetting() || 10
+PER_PAGE = (narrow() ? 0 : histRowsSetting()) || 10
 let mode = 'price'
 let page = 1
 let totalPages = 1
@@ -41,8 +54,8 @@ function idrCell(rate, prev) {
     ch ? h('div', { class: 'num text-[11px] font-bold ' + (ch > 0 ? 'text-up' : 'text-down') }, (ch > 0 ? '▲ ' : '▼ ') + signed(ch)) : null)
 }
 
-function renderPriceRows(items) {
-  if (!items.length) return empty('Belum ada data perubahan harga')
+function renderPriceRows(items, append) {
+  if (!items.length) { if (!append) empty('Belum ada data perubahan harga'); return }
   const rows = items.map((item, idx) => {
     const t = new Date(typeof item.time === 'string' ? item.time.replace(' ', 'T') : item.time)
     const jam = isNaN(t) ? String(item.time).substring(11, 19) : t.toTimeString().substring(0, 8)
@@ -73,13 +86,14 @@ function renderPriceRows(items) {
           h('div', { class: 'num text-[11px] font-bold ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))))
       }))
   })
-  $('#histBody').replaceChildren(...rows)
+  if (append) $('#histBody').append(...rows)
+  else $('#histBody').replaceChildren(...rows)
 }
 
 function renderUsdRows() {
   if (!usdItems.length) return empty('Belum ada data perubahan USD/IDR')
-  const start = (page - 1) * PER_PAGE
-  const rows = usdItems.slice(start, start + PER_PAGE).map(item => h('tr', {},
+  const start = narrow() ? 0 : (page - 1) * PER_PAGE
+  const rows = usdItems.slice(start, narrow() ? usdItems.length : start + PER_PAGE).map(item => h('tr', {},
     h('td', { class: 'px-3 py-2 font-mono text-xs text-muted' }, typeof item.time === 'string' ? item.time.substring(11, 19) : '—'),
     h('td', { class: 'num px-3 py-2 font-mono font-bold' }, 'Rp' + num(item.rate)),
     h('td', { class: 'px-3 py-2' }, changeEl(Math.round(item.change || 0)) || h('span', { class: 'text-muted' }, '—'))))
@@ -100,7 +114,17 @@ export async function loadHistory() {
   }
   renderHead()
   try {
-    if (mode === 'price') {
+    if (mode === 'price' && narrow()) {
+      // HP: muat bagian pertama; bagian berikutnya dimuat saat digulir ke bawah (loadMore)
+      page = 1
+      const d = await getJSON('/price-history?page=1&perPage=' + CHUNK)
+      totalPages = d.totalPages || 1
+      loadedPages = 1
+      if (d.currentUsdIdr) state.usdIdr = state.usdIdr || d.currentUsdIdr
+      renderPriceRows(d.items || [])
+      const sc = document.getElementById('histScroll')
+      if (sc) sc.scrollTop = 0
+    } else if (mode === 'price') {
       const d = await getJSON('/price-history?page=' + page + '&perPage=' + PER_PAGE)
       totalPages = d.totalPages || 1
       if (d.currentUsdIdr) state.usdIdr = state.usdIdr || d.currentUsdIdr
@@ -116,8 +140,25 @@ export async function loadHistory() {
   } catch (e) { empty('Gagal memuat data') }
 }
 
-/** Ada harga baru: kembali ke halaman pertama hanya kalau user sedang di halaman pertama */
-export function onNewPrice() { if (mode === 'price' && page === 1) loadHistory() }
+// HP: gulir mendekati bawah -> muat riwayat yang lebih lama dan tambahkan di bawah
+async function loadMore() {
+  if (!narrow() || mode !== 'price' || loadingMore || !loadedPages || loadedPages >= totalPages) return
+  loadingMore = true
+  try {
+    const d = await getJSON('/price-history?page=' + (loadedPages + 1) + '&perPage=' + CHUNK)
+    loadedPages++
+    renderPriceRows(d.items || [], true)
+  } catch (e) {}
+  loadingMore = false
+}
+
+/** Ada harga baru: muat ulang hanya kalau user sedang melihat bagian paling baru
+ *  (desktop: halaman pertama; HP: kotak riwayat sedang di paling atas) */
+export function onNewPrice() {
+  if (mode !== 'price') return
+  if (narrow()) { const sc = document.getElementById('histScroll'); if (!sc || sc.scrollTop < 20) loadHistory(); return }
+  if (page === 1) loadHistory()
+}
 export function onUsdIdr(item) {
   if (mode !== 'usdidr' || !item || !item.time) return
   usdItems.unshift({ time: item.time, rate: item.rate, change: item.change || 0 })
@@ -133,5 +174,9 @@ export function initHistory() {
   }))
   $('#histNewer').addEventListener('click', () => { if (page > 1) { page--; loadHistory() } })
   $('#histOlder').addEventListener('click', () => { if (page < totalPages) { page++; loadHistory() } })
+  $('#histScroll').addEventListener('scroll', e => {
+    const sc = e.currentTarget
+    if (sc.scrollTop + sc.clientHeight > sc.scrollHeight - 80) loadMore()
+  }, { passive: true })
   loadHistory()
 }
