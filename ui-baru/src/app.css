@@ -80,4 +80,10 @@
   /* angka harga: berkedip hijau/merah saat berubah */
   .flash-up { @apply animate-flash-up; }
   .flash-down { @apply animate-flash-down; }
+  /* kotak Beli/Jual setelah harga berubah: naik hijau penuh, turun merah penuh */
+  #buyCard, #sellCard { transition: background-color 0.3s, border-color 0.3s; }
+  .tile-up { background-color: rgb(var(--up) / 0.2); border-color: rgb(var(--up) / 0.65); }
+  .tile-down { background-color: rgb(var(--down) / 0.2); border-color: rgb(var(--down) / 0.65); }
+  .tile-up .num { color: rgb(var(--up)); }
+  .tile-down .num { color: rgb(var(--down)); }
 }

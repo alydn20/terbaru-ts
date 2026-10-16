@@ -98,10 +98,11 @@ function setChange(id, change) {
   el.className = pillHtml(change) + ' px-1.5 py-0 text-[10px] lg:text-xs'
   el.textContent = (change > 0 ? '▲' : '▼') + signed(change)
 }
+// Kotak Beli/Jual: hijau penuh saat naik, merah penuh saat turun (bertahan sampai harga berubah lagi)
 function flash(id, change) {
   const el = $('#' + id)
-  el.classList.remove('flash-up', 'flash-down'); void el.offsetWidth
-  el.classList.add(change > 0 ? 'flash-up' : 'flash-down')
+  el.classList.remove('flash-up', 'flash-down', 'tile-up', 'tile-down'); void el.offsetWidth
+  el.classList.add(change > 0 ? 'tile-up' : 'tile-down')
 }
 function updateDayRange(buy) {
   if (state.high === null || buy > state.high) { state.high = buy; $('#dayHigh').textContent = num(buy) }
