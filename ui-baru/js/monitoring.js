@@ -27,7 +27,7 @@ async function endSession(message, title, extra) {
 }
 function handleInvalid(d) {
   if (d.reason === 'kicked_other_device') {
-    return endSession('Akun Anda baru saja login di perangkat lain. Maksimal 3 perangkat aktif, jadi sesi di perangkat ini dikeluarkan.', 'Login di perangkat lain',
+    return endSession('Akun Anda baru saja login di perangkat lain. Jumlah perangkat aktif per akun dibatasi, jadi sesi di perangkat ini dikeluarkan.', 'Login di perangkat lain',
       () => { try { localStorage.setItem('gold_kicked_notice', String(Date.now())) } catch (e) {} })
   }
   if (d.reason === 'expired') return endSession('Masa aktif akun Anda sudah habis. Perpanjang dari halaman login.', 'Masa aktif habis')
@@ -101,8 +101,9 @@ function setChange(id, change) {
 // Kotak Beli/Jual: hijau penuh saat naik, merah penuh saat turun (bertahan sampai harga berubah lagi)
 function flash(id, change) {
   const el = $('#' + id)
-  el.classList.remove('flash-up', 'flash-down', 'tile-up', 'tile-down'); void el.offsetWidth
-  el.classList.add(change > 0 ? 'tile-up' : 'tile-down')
+  el.classList.remove('flash-up', 'flash-down', 'tile-up', 'tile-down', 'tile-blink'); void el.offsetWidth
+  // + berkedip +-3 detik supaya terlihat itu harga terbaru
+  el.classList.add(change > 0 ? 'tile-up' : 'tile-down', 'tile-blink')
 }
 function updateDayRange(buy) {
   if (state.high === null || buy > state.high) { state.high = buy; $('#dayHigh').textContent = num(buy) }
@@ -375,6 +376,9 @@ function initNav() {
 let canJoin = false
 async function start() {
   $('#btnAdminWa').innerHTML = icon('wa', 'h-5 w-5')
+  // kembali ke tampilan lama (diingat 30 hari; di tampilan lama ada tombol "Baru")
+  $('#btnUiLama').innerHTML = icon('layout', 'h-4 w-4') + '<span class="hidden lg:inline">Tampilan lama</span>'
+  $('#btnUiLama').addEventListener('click', () => { location.href = '/monitoring?ui=lama' })
   $('#btnAdminWa').addEventListener('click', () => contactAdmin(state.phone))
   $('#btnIndicator').addEventListener('click', openIndicators)
   $('#btnNominal').addEventListener('click', openNominalSettings)

@@ -85,5 +85,8 @@
   .tile-up { background-color: rgb(var(--up) / 0.2); border-color: rgb(var(--up) / 0.65); }
   .tile-down { background-color: rgb(var(--down) / 0.2); border-color: rgb(var(--down) / 0.65); }
   .tile-up .num { color: rgb(var(--up)); }
+  /* harga baru berubah: angka berkedip +-3 detik */
+  @keyframes tileBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .tile-blink .num { animation: tileBlink 0.5s ease-in-out 6; }
   .tile-down .num { color: rgb(var(--down)); }
 }
