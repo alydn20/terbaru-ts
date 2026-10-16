@@ -2,7 +2,16 @@
 import { $, $$, h, getJSON, num, signed } from '../api.js'
 import { state, markupOf, visibleNominals, profitOf } from './state.js'
 
-const PER_PAGE = 10
+// Jumlah baris per halaman: pengaturan riwayat ('auto' = 10, atau 1-30)
+let PER_PAGE = 10
+export function histRowsSetting() { try { const v = parseInt(localStorage.getItem('histRows'), 10); return v >= 1 && v <= 30 ? v : 0 } catch (e) { return 0 } }
+export function setHistRows(n) {
+  try { localStorage.setItem('histRows', n ? String(n) : 'auto') } catch (e) {}
+  PER_PAGE = n || 10
+  page = 1
+  loadHistory()
+}
+PER_PAGE = histRowsSetting() || 10
 let mode = 'price'
 let page = 1
 let totalPages = 1
