@@ -330,7 +330,7 @@ function openHistSize() {
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
     HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
-    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 3 baris; geser riwayat untuk melihat yang lebih lama.'),
+    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 2 baris; geser riwayat untuk melihat yang lebih lama.'),
     (() => {
       // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
       let n = histRowsSetting() || 10
@@ -396,7 +396,17 @@ function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
 function navH() { return document.body.classList.contains('nav-idle') ? 0 : $('#bottomNav').offsetHeight }
 // Tinggi kotak riwayat untuk n baris: judul + kepala tabel + n baris + tombol halaman (kalau tampil)
 function histRowsHeight(n) {
-  const sec = $('#sec-riwayat'), tr = $('#histBody tr'), pager = $('#histPager')
+  const sec = $('#sec-riwayat'), tr = $('#histBody tr'), pager = $('#histPager'), scroll = $('#histScroll')
+  // Tepat: tinggi kotak sekarang dikoreksi dengan selisih antara tinggi n baris pertama yang
+  // sebenarnya dan area baris yang sedang terlihat (tidak ada potongan baris berikutnya)
+  const trs = document.querySelectorAll('#histBody tr')
+  if (sec && sec.offsetHeight && scroll && trs.length) {
+    let need = 0
+    for (let i = 0; i < Math.min(n, trs.length); i++) need += trs[i].offsetHeight
+    if (trs.length < n) need += trs[0].offsetHeight * (n - trs.length)
+    const headH = $('#histHead') ? $('#histHead').offsetHeight : 0
+    return Math.round(sec.offsetHeight + need - (scroll.clientHeight - headH))
+  }
   const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
   const head = $('#histHead') ? $('#histHead').offsetHeight : 28
   const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 44)
