@@ -8841,7 +8841,7 @@ app.get('/login', async (req, res) => {
           showMessage(data.error, 'error');
           const payResult = await startPaymentFlow(phone);
           if (payResult === 'redirect') {
-            window.location.href = 'https://wa.me/62895701692525?text=' + encodeURIComponent('Halo admin, saya mau perpanjang masa aktif. Nomor WA saya: +62' + phone);
+            window.location.href = '/go/wa-admin?text=' + encodeURIComponent('Halo admin, saya mau perpanjang masa aktif. Nomor WA saya: +62' + phone);
             return;
           }
         } else if (data.needRegister) {
@@ -8850,7 +8850,7 @@ app.get('/login', async (req, res) => {
           const payResult = await startPaymentFlow(phone);
           if (payResult === 'redirect') {
             const message = encodeURIComponent('Halo, saya ingin daftar grup harga PemulaOLD.\\n\\nNomor WA saya: +62' + phone);
-            window.location.href = 'https://wa.me/62895701692525?text=' + message;
+            window.location.href = '/go/wa-admin?text=' + message;
             return;
           }
         } else {
@@ -8996,7 +8996,7 @@ app.get('/login', async (req, res) => {
     function contactAdminRejected() {
       var nomor = (document.getElementById('phoneInput') || {}).value || '';
       var pesan = 'Hallo saya' + (nomor ? ' (' + nomor + ')' : '') + ' bukti pembayaran saya ditolak, mohon dicek';
-      window.open('https://wa.me/62895701692525?text=' + encodeURIComponent(pesan), '_blank');
+      window.open('/go/wa-admin?text=' + encodeURIComponent(pesan), '_blank');
     }
     function _hideReject() {
       _payRejectShown = false;
@@ -20352,7 +20352,7 @@ app.get('/monitoring', async (req, res) => {
     function contactAdmin() {
       var nomor = _myPhone && /^[0-9]+$/.test(_myPhone) ? ' (+' + _myPhone + ')' : '';
       var pesan = 'Hallo saya' + nomor + ' butuh bantuan';
-      window.open('https://wa.me/62895701692525?text=' + encodeURIComponent(pesan), '_blank');
+      window.open('/go/wa-admin?text=' + encodeURIComponent(pesan), '_blank');
     }
 
     // Logout function
@@ -20577,7 +20577,7 @@ app.get('/monitoring', async (req, res) => {
         if (cfg) {
           var wa = _renewEl('button', 'width:100%;padding:11px;border:none;border-radius:10px;background:#22c55e;color:#fff;font-weight:700;cursor:pointer;', 'Chat Admin');
           wa.type = 'button';
-          wa.onclick = function() { window.open('https://wa.me/62895701692525?text=' + encodeURIComponent('Hallo saya (+' + (_myPhone || '') + ') mau perpanjang masa aktif'), '_blank'); };
+          wa.onclick = function() { window.open('/go/wa-admin?text=' + encodeURIComponent('Hallo saya (+' + (_myPhone || '') + ') mau perpanjang masa aktif'), '_blank'); };
           body.appendChild(wa);
         }
         return;
@@ -24206,6 +24206,15 @@ const _groupTickets = new Map()   // tiket sekali pakai -> { phone, until }
 // Halaman ini langsung membuka aplikasi WhatsApp; link grupnya tidak ditampilkan di layar.
 // Catatan: ini mempersulit, bukan mustahil - orang yang paham teknis tetap bisa mengambil link dari
 // lalu lintas browsernya. Pengaman sebenarnya adalah "Setujui anggota baru" di grup.
+// Tombol "hubungi admin" di halaman: nomor WA admin TIDAK ditulis di halaman (login / monitoring),
+// halaman hanya membuka /go/wa-admin?text=..., lalu server meneruskan ke WhatsApp admin.
+const WA_ADMIN_NUMBER = String(process.env.WA_ADMIN_NUMBER || ADMIN_PHONE).replace(/[^0-9]/g, '')
+app.get('/go/wa-admin', rateLimit(30, 60000), (req, res) => {
+  const text = String(req.query.text || '').slice(0, 600)
+  res.setHeader('Cache-Control', 'no-store')
+  res.redirect(302, 'https://wa.me/' + WA_ADMIN_NUMBER + (text ? '?text=' + encodeURIComponent(text) : ''))
+})
+
 app.get('/go/grup/:ticket', rateLimit(20, 60000), async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
   res.setHeader('Referrer-Policy', 'no-referrer')
