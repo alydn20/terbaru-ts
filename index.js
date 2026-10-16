@@ -3755,6 +3755,25 @@ const isUi2Request = req => {
   if (pick === 'baru') return true
   return /^newxau\./i.test(String(req.headers.host || ''))
 }
+// File JS tampilan baru: semua import relatif ('./api.js', '../payment.js', ...) diberi ?v=UI2_VER.
+// Cloudflare memaksa cache browser 4 jam untuk .js; dulu hanya monitoring.js?v=... yang berversi,
+// sehingga setelah update browser memakai api.js / menu.js LAMA bercampur dengan yang baru
+// (ikon hilang, bahkan bisa error). Sekarang seluruh rantai import ikut berganti versi.
+const _ui2JsCache = new Map()
+app.get(/^\/ui-baru\/js\/[A-Za-z0-9_\/-]+\.js$/, (req, res, next) => {
+  const rel = req.path.slice('/ui-baru/js/'.length)
+  if (rel.includes('..')) return next()
+  try {
+    let code = _ui2JsCache.get(rel)
+    if (code === undefined) {
+      code = readFileSync(join(UI2_DIR, 'js', rel), 'utf8')
+        .replace(/(\bfrom\s*|\bimport\s*\(\s*)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, (m, a, q, f) => a + q + f + '?v=' + UI2_VER + q)
+      _ui2JsCache.set(rel, code)
+    }
+    res.setHeader('Cache-Control', req.query.v === UI2_VER ? 'public, max-age=31536000, immutable' : 'no-cache')
+    res.type('application/javascript').send(code)
+  } catch (e) { next() }
+})
 for (const sub of ['dist', 'js', 'sounds']) {
   app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
 }

@@ -129,16 +129,17 @@ function renderNominals() {
   if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    // ukuran kotak sama berapa pun jumlahnya (1 nominal tidak dibuat melebar), rata tengah
-    const size = 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.25rem)/2)]'
-    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
-      // HP: satu baris "10jt +Rp1.426" (gram di tooltip); layar lebar: label, gram, untung
+    // HP: 3 per baris; desktop: 2 per baris. Hanya 1 nominal: satu kotak lebar di tengah.
+    const one = list.length === 1
+    const size = one ? 'basis-1/2 lg:basis-full lg:max-w-[300px]' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.25rem)/2)]'
+    const untung = p ? (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit)) : ''
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-3 lg:py-2 lg:text-left ' + size },
+      // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
-        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-[13px]' }, n.label),
-        p ? h('span', { class: 'num text-[11.5px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
-      h('div', { class: 'mt-0.5 hidden items-center justify-between gap-2 lg:flex' },
-        h('span', { class: 'num whitespace-nowrap font-mono text-[11px] text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
-        p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
+        h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
+        p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down') }, untung) : null,
+        p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : '') }, untung) : null),
+      h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, p ? p.gram.toFixed(4) + ' gram' : '—'))
   }))
   fitChart()
 }
