@@ -3,7 +3,7 @@
 import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
-import { initHistory, onNewPrice, onUsdIdr, loadHistory } from './monitoring/history.js'
+import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHistRows } from './monitoring/history.js'
 import { initChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
 import { startTour, tourDone } from './monitoring/tour.js'
@@ -324,6 +324,20 @@ function openHistSize() {
   const sheet = openSheet('Pengaturan riwayat', h('div', { class: 'flex flex-col gap-1.5' },
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
     HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
+    h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
+    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus).'),
+    (() => {
+      // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
+      let n = histRowsSetting() || 10
+      const val = h('span', { class: 'num w-14 text-center font-mono text-lg font-extrabold' }, histRowsSetting() ? String(n) : 'Auto')
+      const apply = v => { n = Math.max(1, Math.min(30, v)); val.textContent = String(n); setHistRows(n); setTimeout(fitChart, 400) }
+      const auto = h('button', { class: 'tile px-3 py-2 text-sm font-bold ' + (!histRowsSetting() ? 'border-gold/60 bg-gold/10 text-gold' : ''),
+        onclick: () => { setHistRows(0); sheet.close(); setTimeout(fitChart, 400) } }, 'Otomatis')
+      return h('div', { class: 'flex items-center gap-2' },
+        h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n - 1) }, '−'), val,
+        h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n + 1) }, '+'),
+        h('span', { class: 'text-xs text-muted' }, 'baris'), h('span', { class: 'flex-1' }), auto)
+    })(),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
     IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
 }
@@ -411,7 +425,22 @@ function fitChartBox() {
   // Grafik & riwayat sekaligus tetapi bertumpuk (HP, atau desktop dengan riwayat di bawah):
   // grafik +-setengah sisa layar supaya riwayat langsung terlihat
   const hpSplit = document.body.classList.contains('lay-stack')
-  box.style.height = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest)) + 'px'
+  // Jumlah baris riwayat dipilih (1-30): riwayat setinggi baris itu saja, grafik mengambil sisanya
+  // (baris sedikit -> grafik lebih besar)
+  const nRows = histRowsSetting()
+  if (hpSplit && nRows) {
+    const sec = $('#sec-riwayat'), tr = $('#histBody tr'), scroll = $('#histScroll')
+    const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 40)
+    const head = $('#histHead') ? $('#histHead').offsetHeight : 28
+    const extra = sec && scroll ? sec.offsetHeight - scroll.clientHeight : 90   // judul + tombol halaman + garis
+    const histH = Math.round((sec && sec.offsetHeight ? extra : 90) + head + rowH * nRows + 4)
+    const gap = wide() ? 16 : 8
+    box.style.height = Math.max(180, Math.round(rest - histH - gap)) + 'px'
+    return
+  }
+  const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
+  // monitor sangat tinggi: grafik maksimal 1000px supaya tidak terlalu panjang
+  box.style.height = (wide() ? Math.min(1000, h0) : h0) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
