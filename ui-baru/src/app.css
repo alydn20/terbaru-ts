@@ -76,6 +76,8 @@
   .nav-item[aria-current='true'] { @apply text-gold; }
   /* HP: menu bawah hanya ikon (tulisan disembunyikan, tetap terbaca pembaca layar lewat aria-label) */
   #bottomNav .nav-item { font-size: 0; gap: 0; }
+  /* HP: Promo / News / Lainnya di bar atas sebagai ikon kecil (tanpa tulisan) */
+  @media (max-width: 767px) { #topNav .nav-item { font-size: 0; gap: 0; width: 2.1rem; height: 2.25rem; } }
   .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[2px] w-6 rounded-b bg-gold; }
   .badge { @apply absolute left-1/2 top-0.5 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
 

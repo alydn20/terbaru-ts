@@ -582,10 +582,11 @@ function scrollTo(sel) {
 }
 // Desktop: menu bawah disembunyikan; Promo / News / Lainnya dipindah ke bar atas (Harga & Grafik
 // tidak perlu karena semuanya satu halaman). HP: kembali ke menu bawah.
+// Promo / News / Lainnya selalu di bar atas (HP: ikon saja). Menu bawah tidak dipakai lagi.
 function placeNav() {
-  const top = $('#topNav'), grid = $('#bottomNav > div')
-  if (!top || !grid) return
-  const to = wide() ? top : grid
+  const top = $('#topNav')
+  if (!top) return
+  const to = top
   ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
 }
 window.addEventListener('resize', placeNav)
