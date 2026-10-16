@@ -19,7 +19,8 @@ export function openMore() {
       hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
       [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
       ['activity', 'Indikator grafik', openIndicators],
-      ['sliders', 'Atur nominal', openNominalSettings]
+      ['sliders', 'Atur nominal', openNominalSettings],
+      hooks.openChipSettings ? ['activity', 'Atur info harga', () => hooks.openChipSettings()] : null
     ]],
     ['Notifikasi & alat', [
       ['sound', 'Suara & getar', openSound],
@@ -174,14 +175,19 @@ export function openSound() {
 // ===================================================================== NOMINAL
 export function openNominalSettings() {
   openSheet('Nominal yang dipantau', h('div', {},
-    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih nominal yang tampil di kartu untung dan tabel riwayat.'),
+    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih nominal yang tampil di kartu untung dan tabel riwayat. Boleh tidak memilih sama sekali.'),
     h('div', { class: 'divide-y divide-line/[0.06]' }, state.nominals.map(n => {
-      const t = h('input', { type: 'checkbox', class: 'toggle' })
+      const t = h('input', { type: 'checkbox', class: 'toggle nom-t', 'data-id': n.id })
       t.checked = isNominalVisible(n.id)
       t.addEventListener('change', () => { setNominalVisible(n.id, t.checked); if (hooks.refreshNominals) hooks.refreshNominals() })
       return h('label', { class: 'flex items-center justify-between py-3 text-sm font-semibold' },
         h('span', {}, n.label, h('span', { class: 'ml-2 text-xs font-normal text-muted' }, rp(n.amount))), t)
-    }))))
+    })),
+    h('div', { class: 'mt-3 flex gap-2' },
+      ...[[false, 'Hapus semua'], [true, 'Pilih semua']].map(([on, label]) => h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: e => {
+        e.currentTarget.closest('.sheet').querySelectorAll('.nom-t').forEach(t => { t.checked = on; setNominalVisible(t.dataset.id, on) })
+        if (hooks.refreshNominals) hooks.refreshNominals()
+      } }, label)))))
 }
 
 // ===================================================================== NOTIFIKASI HP

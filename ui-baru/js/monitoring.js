@@ -127,7 +127,9 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  // 0 nominal dipilih: bagian untung per nominal disembunyikan (atur lagi dari Lainnya > Atur nominal)
+  $('#nomWrap').classList.toggle('nom-off', !list.length)
+  if (!list.length) { box.replaceChildren(); fitChart(); return }
   // Desktop: grid, jumlah kolom menyesuaikan jumlah nominal supaya kotak harga tidak memanjang:
   // 1 -> 1 (kotak lebar di tengah), 2 -> 2, 3 -> 3, 4 -> 2x2, 5+ -> 3 kolom. HP: 3 per baris, rata tengah.
   const cols = list.length === 1 ? 'lg:grid-cols-1' : list.length === 2 || list.length === 4 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
@@ -348,6 +350,34 @@ function openHistSize() {
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
+// Info harga yang ditampilkan (pilihan user, diingat per perangkat). Semua dimatikan = baris info hilang.
+const CHIP_DEFS = [['chipUsd', 'USD/IDR'], ['chipHigh', 'Tertinggi'], ['chipLow', 'Terendah'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown'], ['chipSpread', 'Spread'], ['chipOn', 'Titik ON']]
+function chipPrefs() { try { return JSON.parse(localStorage.getItem('chipPrefs') || '{}') || {} } catch (e) { return {} } }
+function applyChipPrefs() {
+  const pr = chipPrefs()
+  CHIP_DEFS.forEach(([id]) => { const el = document.getElementById(id); if (el) el.classList.toggle('chip-off', pr[id] === false) })
+  $('#chips').classList.toggle('chips-off', CHIP_DEFS.every(([id]) => pr[id] === false))
+  fitChart()
+}
+export function openChipSettings() {
+  const pr = chipPrefs()
+  const save = () => { try { localStorage.setItem('chipPrefs', JSON.stringify(pr)) } catch (e) {} applyChipPrefs() }
+  const toggles = []
+  const rows = CHIP_DEFS.map(([id, label]) => {
+    const t = h('input', { type: 'checkbox', class: 'toggle' })
+    t.checked = pr[id] !== false
+    t.addEventListener('change', () => { pr[id] = t.checked; save() })
+    toggles.push([id, t])
+    return h('label', { class: 'flex items-center justify-between py-2.5 text-sm font-semibold' }, label, t)
+  })
+  const all = on => { toggles.forEach(([id, t]) => { t.checked = on; pr[id] = on }); save() }
+  openSheet('Atur info harga', h('div', {},
+    h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih info yang tampil di kotak harga. Diingat di perangkat ini.'),
+    h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
+    h('div', { class: 'mt-3 flex gap-2' },
+      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(false) }, 'Sembunyikan semua'),
+      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(true) }, 'Tampilkan semua'))))
+}
 export function getLayout() { return layout }
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
@@ -628,10 +658,11 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
+  applyChipPrefs()
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, openChipSettings, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()

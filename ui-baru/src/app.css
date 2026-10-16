@@ -251,3 +251,6 @@ body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
 @keyframes clkTick { 0% { opacity: 0.35; transform: translateY(-2px); } 100% { opacity: 1; transform: none; } }
 .clk-tick { display: inline-block; }
 .clk-tick.clk-tick-on { animation: clkTick 0.35s ease-out; }
+
+/* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
+#chips .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
