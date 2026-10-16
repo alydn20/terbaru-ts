@@ -2361,11 +2361,12 @@ async function doPromoBroadcast() {
     }
     if (currentStatus === 'ON') {
       promoLastOnAt = now
-      const titik = (lowestOnPriceCache !== undefined && lowestOnPriceCache !== null) ? lowestOnPriceCache : null
-      const p = titik || (lastKnownPrice && lastKnownPrice.buy) || null
-      // satu sesi ON: simpan harga terendah yang terlihat
-      if (p && (lastPromoStatus !== 'ON' || !promoLastOnPrice || p < promoLastOnPrice || titik === p)) promoLastOnPrice = p
-      if (now - _promoLastOnSavedAt > 60000) {
+      // Harga beli pada saat TERAKHIR status ON (mis. ON di ...71 lalu OFF di ...70 -> tetap ...71).
+      // Tidak pernah dihapus; hanya diganti oleh ON berikutnya.
+      const p = (lastKnownPrice && lastKnownPrice.buy) || null
+      const changed = p && p !== promoLastOnPrice
+      if (p) promoLastOnPrice = p
+      if (changed || now - _promoLastOnSavedAt > 60000) {
         _promoLastOnSavedAt = now
         redis.set(PROMO_LAST_ON_KEY, String(now)).catch(() => {})
         if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
@@ -6673,14 +6674,8 @@ app.post('/api/admin/users/kick', express.json(), async (req, res) => {
       await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'remove')
       kickedFromGroup = true
       pushLog(`WA | Kicked +${normalizedPhone} from group`)
-
-      // Send kick notification to user
-      try {
-        await sock.sendMessage(jid, {
-          text: `❌ *ANDA TELAH DI-KICK*\n\nAnda telah dikeluarkan dari grup Gold Price Monitor.\n\nJika ada pertanyaan, hubungi admin:\nhttps://wa.me/62895701692525`
-        })
-      } catch (msgErr) {
-      }
+      // Bot tidak mengirim pesan apa pun ke user (hanya ke nomor admin) supaya nomor bot aman
+      await resetGroupAfterRemoval(normalizedPhone, 'dikeluarkan admin (panel)')
     } catch (kickError) {
       // User might not be in group, or bot is not admin
       pushLog(`WA | Failed to kick +${normalizedPhone}: ${kickError.message}`)
@@ -7905,15 +7900,7 @@ app.post('/api/approve-registration', async (req, res) => {
     // Remove from pending (Redis)
     await redis.hdel(REDIS_KEYS.PENDING_REGISTRATIONS, phone)
 
-    // Send approval message to user
-    if (isReady && sock) {
-      try {
-        const userJid = phone + '@s.whatsapp.net'
-        await sock.sendMessage(userJid, {
-          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://xau.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
-        })
-      } catch (e) {}
-    }
+    // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
 
     pushLog(`REGISTER | Approved: ${registration.name} (${phone})`)
 
@@ -7941,15 +7928,7 @@ app.post('/api/reject-registration', async (req, res) => {
     // Remove from pending (Redis)
     await redis.hdel(REDIS_KEYS.PENDING_REGISTRATIONS, phone)
 
-    // Send rejection message to user
-    if (isReady && sock) {
-      try {
-        const userJid = phone + '@s.whatsapp.net'
-        await sock.sendMessage(userJid, {
-          text: `❌ *PENDAFTARAN DITOLAK*\n\nMaaf ${registration.name},\n\nPendaftaran Anda tidak disetujui.${reason ? '\nAlasan: ' + reason : ''}\n\nSilakan hubungi admin untuk informasi lebih lanjut.`
-        })
-      } catch (e) {}
-    }
+    // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
 
     pushLog(`REGISTER | Rejected: ${registration.name} (${phone})`)
 
@@ -9895,6 +9874,115 @@ ${authScript}
     .pro-modal-btn.confirm:hover { transform: translateY(-1px); }
     .pro-modal-btn.danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
     .pro-modal-btn.danger:hover { transform: translateY(-1px); }
+
+    /* =====================================================================
+       PANEL ADMIN v2 — tata letak & gaya baru (fungsi tidak berubah)
+       Desktop: menu samping kiri. HP: menu geser di atas, tabel user jadi kartu.
+       ===================================================================== */
+    body.adm-v2 { background: #000; color: #e7e9ea; padding: 0; margin: 0; }
+    body.adm-v2 .container { max-width: none; margin: 0; padding: 0; }
+    body.adm-v2 #mainContent { padding: 18px 22px 40px; max-width: 1280px; margin: 0 auto; }
+
+    /* ---- menu samping ---- */
+    .adm-side { position: fixed; inset: 0 auto 0 0; width: 236px; z-index: 50; display: flex; flex-direction: column; gap: 6px; padding: 16px 12px; background: #070707; border-right: 1px solid #1c1c1c; overflow-y: auto; }
+    .adm-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; border-bottom: 1px solid #1c1c1c; margin-bottom: 6px; }
+    .adm-brand svg { width: 30px; height: 30px; flex-shrink: 0; }
+    .adm-brand b { display: block; font-size: 0.95em; color: #fff; }
+    .adm-brand span { display: block; font-size: 0.72em; color: #8b8b8b; }
+    body.adm-v2 .adm-side .section-tabs { display: flex; flex-direction: column; gap: 2px; padding: 0; margin: 0; background: none; border: none; box-shadow: none; flex-wrap: nowrap; }
+    body.adm-v2 .adm-side .section-tab { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid transparent; color: #a3a3a3; font-size: 0.86em; font-weight: 600; white-space: nowrap; background: none; transition: background 0.15s, color 0.15s; }
+    body.adm-v2 .adm-side .section-tab:hover { background: #141414; color: #fff; }
+    body.adm-v2 .adm-side .section-tab.active { background: rgba(247,147,26,0.12); border-color: rgba(247,147,26,0.35); color: #f7931a; }
+    body.adm-v2 .adm-side .section-tab svg { width: 17px; height: 17px; flex-shrink: 0; }
+    body.adm-v2 .adm-side .section-tab span[id$="Badge"] { margin-left: auto !important; }
+    .adm-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid #1c1c1c; }
+    body.adm-v2 .adm-side-foot a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; color: #a3a3a3; font-size: 0.85em; font-weight: 600; text-decoration: none; border: none; background: none; }
+    body.adm-v2 .adm-side-foot a:hover { background: #141414; color: #fff; }
+    body.adm-v2 .adm-side-foot a.action-monitoring { color: #f7931a; background: none; box-shadow: none; }
+    body.adm-v2 .adm-side-foot a.logout { color: #f87171; }
+    @media (min-width: 1024px) { body.adm-v2 { padding-left: 236px; } }
+
+    /* ---- header halaman ---- */
+    body.adm-v2 .header { position: static; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 0 0 14px; background: none; border: none; border-bottom: 1px solid #1c1c1c; border-radius: 0; box-shadow: none; }
+    body.adm-v2 .header::before { display: none; }
+    body.adm-v2 .header { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; }
+    body.adm-v2 .header h1 { justify-content: flex-start; text-align: left; width: auto; }
+    body.adm-v2 .header h1 { font-size: 1.3em; margin: 0; color: #fff; }
+    body.adm-v2 .header h1 svg { color: #f7931a; }
+    body.adm-v2 .header .header-actions { display: none; }
+
+    /* ---- ringkasan angka ---- */
+    body.adm-v2 .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    body.adm-v2 .stat-card { padding: 14px 16px; text-align: left; background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 14px; box-shadow: none; transform: none !important; }
+    body.adm-v2 .stat-card::after { display: none; }
+    body.adm-v2 .stat-card .stat-value { font-size: 1.6em; color: #f7931a; }
+    body.adm-v2 .stat-card .stat-label { font-size: 0.75em; color: #8b8b8b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ---- kartu, form, tombol ---- */
+    body.adm-v2 .card { background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 16px; padding: 18px; box-shadow: none; }
+    body.adm-v2 .card:hover { border-color: #262626; transform: none; }
+    body.adm-v2 .card h2 { font-size: 1.02em; color: #fff; margin-bottom: 14px; }
+    body.adm-v2 .card h2 svg { color: #f7931a; }
+    body.adm-v2 .form-group input, body.adm-v2 .form-group select, body.adm-v2 .form-group textarea,
+    body.adm-v2 input[type="text"], body.adm-v2 input[type="number"], body.adm-v2 input[type="date"], body.adm-v2 input[type="password"], body.adm-v2 select, body.adm-v2 textarea {
+      background: #111 !important; border: 1px solid #262626 !important; border-radius: 10px; color: #e7e9ea !important;
+    }
+    body.adm-v2 .form-group input:focus, body.adm-v2 select:focus, body.adm-v2 textarea:focus, body.adm-v2 input:focus { border-color: #f7931a !important; outline: none; box-shadow: 0 0 0 3px rgba(247,147,26,0.15); }
+    body.adm-v2 .btn { border-radius: 10px; font-weight: 700; }
+    body.adm-v2 .btn-primary { background: #f7931a; color: #000; box-shadow: none; }
+    body.adm-v2 .btn-primary:hover { background: #ffa53a; transform: none; }
+    body.adm-v2 .btn-secondary { background: #161616; border: 1px solid #2a2a2a; color: #e7e9ea; }
+
+    /* ---- tabel ---- */
+    body.adm-v2 .user-table-wrapper, body.adm-v2 .pay-table-wrap { border: 1px solid #1c1c1c; border-radius: 12px; background: #070707; }
+    body.adm-v2 .user-table th { position: sticky; top: 0; z-index: 1; background: #101010; color: #8b8b8b; font-size: 0.7em; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid #1c1c1c; }
+    body.adm-v2 .user-table td { border-bottom: 1px solid #141414; }
+    body.adm-v2 .user-table tbody tr:hover { background: #0f0f0f; }
+    body.adm-v2 .action-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+    body.adm-v2 .action-btn { border-radius: 8px; padding: 5px 9px; font-size: 0.74em; font-weight: 700; }
+
+    /* =========================== HP & tablet =========================== */
+    @media (max-width: 1023px) {
+      .adm-side { position: sticky; top: 0; inset: auto; width: auto; flex-direction: row; align-items: center; padding: 8px 10px; border-right: none; border-bottom: 1px solid #1c1c1c; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; background: rgba(7,7,7,0.96); backdrop-filter: blur(12px); }
+      .adm-side::-webkit-scrollbar { display: none; }
+      .adm-brand { display: none; }
+      .adm-side-foot { flex-direction: row; margin: 0; padding: 0 0 0 8px; border-top: none; border-left: 1px solid #1c1c1c; gap: 6px; flex-shrink: 0; }
+      body.adm-v2 .adm-side-foot a { padding: 7px 11px; border: 1px solid #222; border-radius: 999px; font-size: 0.8em; white-space: nowrap; background: #0d0d0d; }
+      body.adm-v2 .adm-side-foot a svg { margin-right: 0 !important; }
+      body.adm-v2 .adm-side .section-tabs { flex-direction: row; gap: 6px; }
+      body.adm-v2 .adm-side .section-tab { padding: 7px 11px; border: 1px solid #222; border-radius: 999px; font-size: 0.8em; background: #0d0d0d; }
+      body.adm-v2 .adm-side .section-tab svg { width: 15px; height: 15px; }
+      body.adm-v2 .adm-side .section-tab span[id$="Badge"] { margin-left: 4px !important; }
+      body.adm-v2 #mainContent { padding: 12px 12px 30px; }
+      body.adm-v2 .header { margin-bottom: 12px; padding-bottom: 10px; }
+      body.adm-v2 .header h1 { font-size: 1.1em; }
+      body.adm-v2 .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      body.adm-v2 .stat-card { padding: 10px 12px; }
+      body.adm-v2 .stat-card .stat-value { font-size: 1.3em; }
+      body.adm-v2 .card { padding: 14px 12px; border-radius: 14px; }
+      body.adm-v2 #mainContent input, body.adm-v2 #mainContent select, body.adm-v2 #mainContent textarea { min-width: 0; max-width: 100%; }
+      body.adm-v2 #mainContent [style*="grid-template-columns"] > *, body.adm-v2 #mainContent [style*="display:flex"] > * { min-width: 0; }
+
+      /* tabel Daftar User jadi kartu per user (tidak perlu geser ke samping) */
+      body.adm-v2 #section-users .user-table-wrapper { border: none; background: none; overflow: visible; }
+      body.adm-v2 #section-users .user-table, body.adm-v2 #section-users .user-table tbody { display: block; width: 100%; min-width: 0; }
+      body.adm-v2 #section-users .user-table thead { display: none; }
+      body.adm-v2 #userList tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 12px; margin-bottom: 8px; background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 12px; }
+      body.adm-v2 #userList td { display: block; padding: 0; border: none; font-size: 0.85em; min-width: 0; }
+      body.adm-v2 #userList td::before { display: block; font-size: 0.68em; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6b6b; margin-bottom: 2px; }
+      body.adm-v2 #userList td:nth-child(1)::before { content: 'No WA'; }
+      body.adm-v2 #userList td:nth-child(2)::before { content: 'Nama'; }
+      body.adm-v2 #userList td:nth-child(3) { grid-column: 1 / -1; }
+      body.adm-v2 #userList td:nth-child(3)::before { content: 'Status'; }
+      body.adm-v2 #userList td:nth-child(4)::before { content: 'Push'; }
+      body.adm-v2 #userList td:nth-child(5)::before { content: 'PIN'; }
+      body.adm-v2 #userList td:nth-child(6)::before { content: 'Expired'; }
+      body.adm-v2 #userList td:nth-child(7) { grid-column: 1 / -1; padding-top: 6px; border-top: 1px solid #1a1a1a; }
+      body.adm-v2 #userList td:nth-child(7)::before { content: 'Aksi'; }
+      body.adm-v2 #userList td[colspan] { grid-column: 1 / -1; }
+      body.adm-v2 #userList td[colspan]::before { content: none; }
+      body.adm-v2 #userList .action-btn { flex: 1 1 calc(25% - 4px); text-align: center; padding: 7px 4px; }
+    }
   </style>
 </head>
 <body>
@@ -11010,6 +11098,68 @@ ${authScript}
         document.getElementById('section-' + tab.dataset.section).classList.add('active');
       });
     });
+
+    // ===== PANEL ADMIN v2: menu samping (desktop) / menu geser (HP) =====
+    // Tab bagian yang lama DIPINDAH (bukan disalin) ke menu baru, jadi semua fungsi & badge tetap jalan.
+    (function() {
+      var ICON = {
+        users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'want-join': '<path d="M12 19V5"/><path d="M5 12h14"/>',
+        online: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+        add: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+        pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        whatsapp: '<path d="M3 21l1.65-4.9A8.5 8.5 0 1 1 8 19.3L3 21z"/>',
+        nominal: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+        broadcast: '<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/>',
+        settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+        logs: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'
+      };
+      var svg = function(p) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>'; };
+      function build() {
+        var tabs = document.querySelector('.section-tabs');
+        if (!tabs || document.querySelector('.adm-side')) return;
+        var side = document.createElement('aside');
+        side.className = 'adm-side';
+        side.innerHTML = '<div class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/></svg><div><b>PemulaOLD</b><span>Panel Admin</span></div></div>';
+        side.appendChild(tabs);
+        // ikon + label tanpa emoji di setiap tab
+        tabs.querySelectorAll('.section-tab').forEach(function(t) {
+          var ic = ICON[t.dataset.section];
+          t.childNodes.forEach(function(n) { if (n.nodeType === 3) n.textContent = n.textContent.replace(/[🙋📋]/g, '').trim() + ' '; });
+          if (ic) t.insertAdjacentHTML('afterbegin', svg(ic));
+        });
+        var foot = document.createElement('div');
+        foot.className = 'adm-side-foot';
+        var acts = document.querySelector('.header-actions');
+        if (acts) acts.querySelectorAll('a').forEach(function(a) {
+          var c = a.cloneNode(true);
+          c.removeAttribute('style');
+          if (/logout/i.test(c.getAttribute('href') || '')) c.className = 'logout';
+          foot.appendChild(c);
+        });
+        side.appendChild(foot);
+        document.body.insertBefore(side, document.body.firstChild);
+        document.body.classList.add('adm-v2');
+        // judul halaman = bagian yang sedang dibuka
+        var h1 = document.querySelector('.header h1');
+        var setTitle = function(t) {
+          if (!h1) return;
+          var label = t.textContent.replace(/[0-9]+ *$/, '').trim();
+          var last = h1.lastChild;
+          if (last && last.nodeType === 3) last.textContent = ' ' + label; else h1.appendChild(document.createTextNode(' ' + label));
+        };
+        tabs.querySelectorAll('.section-tab').forEach(function(t) {
+          t.addEventListener('click', function() {
+            setTitle(t);
+            if (window.innerWidth < 1024) t.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        });
+        var act = tabs.querySelector('.section-tab.active');
+        if (act) setTitle(act);
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+    })();
 
     // Load data langsung saat halaman dibuka
     document.addEventListener('DOMContentLoaded', function() {
@@ -12870,8 +13020,12 @@ ${authScript}
       if (!info || !box) return;
       if (!d || !d.syncedAt) { info.textContent = '(belum pernah dicocokkan)'; box.innerHTML = ''; return; }
       const kapan = new Date(d.syncedAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-      info.textContent = '(terakhir ' + kapan + ': ' + d.groupTotal + ' anggota, ' + d.groupOnly.length + ' tidak terdaftar, ' + d.webOnly.length + ' belum di grup)';
+      const byAns = a => d.webOnly.filter(r => (r.answer || 'belum') === a);
+      const jwbTidak = byAns('tidak_mau'), jwbBelum = byAns('belum'), jwbMau = byAns('mau');
+      info.textContent = '(terakhir ' + kapan + ': ' + d.groupTotal + ' anggota, ' + d.groupOnly.length + ' tidak terdaftar, ' + d.webOnly.length + ' belum di grup: ' +
+        jwbTidak.length + ' jawab Tidak, ' + jwbBelum.length + ' belum menjawab, ' + jwbMau.length + ' mau masuk)';
       const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      const rowTxt = r => '+' + _escHtml(r.phone) + ' <span style="color:#9ca3af;">' + _escHtml(r.name || '') + ' &middot; ' + (r.expired ? (r.active ? 'aktif s/d ' + tgl(r.expired) : 'EXPIRED') : 'Lifetime') + '</span>';
       const list = (rows, fn) => rows.length
         ? '<div style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px;font-family:monospace;font-size:0.9em;line-height:1.7;">' + rows.map(fn).join('<br>') + '</div>'
         : '<div style="color:#22c55e;">Tidak ada.</div>';
@@ -12880,7 +13034,12 @@ ${authScript}
         '<div style="font-weight:600;color:#ef4444;margin:8px 0 4px;">Di grup WA tapi TIDAK terdaftar di web (' + d.groupOnly.length + ') - keluarkan dari grup atau daftarkan</div>' +
         list(d.groupOnly, r => '+' + _escHtml(r.phone) + (r.hasOrder ? ' <span style="color:#9ca3af;">(pernah membuat order)</span>' : '')) +
         '<div style="font-weight:600;color:#f59e0b;margin:12px 0 4px;">Terdaftar di web tapi BELUM di grup WA (' + d.webOnly.length + ')</div>' +
-        list(d.webOnly, r => '+' + _escHtml(r.phone) + ' <span style="color:#9ca3af;">' + _escHtml(r.name || '') + ' &middot; ' + (r.expired ? (r.active ? 'aktif s/d ' + tgl(r.expired) : 'EXPIRED') : 'Lifetime') + '</span>');
+        '<div style="font-weight:600;color:#9ca3af;margin:8px 0 4px;">Menjawab TIDAK mau masuk grup (' + jwbTidak.length + ')</div>' +
+        list(jwbTidak, r => rowTxt(r) + ' <span style="color:#f87171;">' + (r.askAgainAt ? 'ditanya lagi ' + tgl(r.askAgainAt) : 'jangan ditanya lagi') + '</span>') +
+        '<div style="font-weight:600;color:#60a5fa;margin:10px 0 4px;">Belum menjawab Ya/Tidak (' + jwbBelum.length + ') - ditanya saat membuka monitoring</div>' +
+        list(jwbBelum, rowTxt) +
+        '<div style="font-weight:600;color:#22c55e;margin:10px 0 4px;">Menjawab YA, belum dimasukkan (' + jwbMau.length + ')</div>' +
+        list(jwbMau, rowTxt);
     }
 
     function loadGroupCompare() {
@@ -14759,6 +14918,11 @@ app.get('/monitoring', async (req, res) => {
       .header-right .nav-icon-btn { width: 30px; height: 30px; min-width: 30px; }
       .header-title-text { font-size: 0.74em; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; }
       .info-time { font-size: 1.05em; letter-spacing: 0; }
+    }
+    @media (max-width: 768px) {
+      /* harga Beli/Jual harus lebih menonjol daripada angka perubahannya */
+      #buyPrice, #sellPrice { font-size: 1.2em !important; }
+      #buyChange, #sellChange { font-size: 0.8em !important; padding: 2px 6px !important; }
     }
     @media (max-width: 480px) {
       /* baris jam / tertinggi-terendah / limit-markup-spread: jam di atas, sisanya di bawah (tidak bertumpuk) */
@@ -19910,7 +20074,7 @@ app.get('/monitoring', async (req, res) => {
       if (!d.show) return;
       if (silent) {
         // Server yang menentukan kapan user perlu ditanya (belum menjawab / waktunya ditanya lagi)
-        if (d.ask) _askJoinGroup();
+        if (d.ask) _askJoinGroup(d.maxDays);
         return;
       }
       // Menekan menu = memang ingin bergabung. Cukup dicatat dan admin diberi tahu;
@@ -19922,7 +20086,9 @@ app.get('/monitoring', async (req, res) => {
     }
 
     // Pertanyaan saat masuk: ingin bergabung grup WA? Kalau tidak, pilih kapan ditanya lagi.
-    function _askJoinGroup() {
+    function _askJoinGroup(maxDays) {
+      // batas hari = sisa masa aktif user (dari server); Lifetime 365
+      var maxD = Math.max(1, Math.min(365, parseInt(maxDays, 10) || 365));
       var old = document.getElementById('joinGroupModal');
       if (old) old.remove();
       var wrap = document.createElement('div');
@@ -19954,18 +20120,19 @@ app.get('/monitoring', async (req, res) => {
       var render2 = function() {
         box.textContent = '';
         box.appendChild(mk('div', 'Tanya lagi nanti?', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
-        box.appendChild(mk('div', 'Tanya lagi setelah berapa hari?', 'color:#9ca3af;margin-bottom:10px;'));
+        box.appendChild(mk('div', 'Tanya lagi setelah berapa hari? (maks ' + maxD + ' hari, sesuai masa aktif)', 'color:#9ca3af;margin-bottom:10px;'));
         var row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;';
         var stepCss = 'width:42px;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#e7e9ea;font-size:20px;cursor:pointer;';
         var minus = mk('button', '-', stepCss);
         var plus = mk('button', '+', stepCss);
         var inp = document.createElement('input');
-        inp.type = 'number'; inp.min = '1'; inp.max = '365'; inp.value = '1';
+        inp.type = 'number'; inp.min = '1'; inp.max = String(maxD); inp.value = '1';
         inp.style.cssText = 'width:80px;height:42px;text-align:center;font-size:18px;font-weight:700;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:#0b0e12;color:#fff;';
-        var val = function() { var n = parseInt(inp.value, 10); if (isNaN(n) || n < 1) n = 1; if (n > 365) n = 365; return n; };
+        var val = function() { var n = parseInt(inp.value, 10); if (isNaN(n) || n < 1) n = 1; if (n > maxD) n = maxD; return n; };
         minus.onclick = function() { inp.value = Math.max(1, val() - 1); };
-        plus.onclick = function() { inp.value = Math.min(365, val() + 1); };
+        plus.onclick = function() { inp.value = Math.min(maxD, val() + 1); };
+        inp.onchange = function() { inp.value = val(); };
         row.appendChild(minus); row.appendChild(inp); row.appendChild(mk('span', 'hari', 'color:#9ca3af;')); row.appendChild(plus);
         box.appendChild(row);
         var simpan = mk('button', 'Tanya lagi nanti', btn + 'background:#f7931a;color:#000;');
@@ -21870,10 +22037,35 @@ async function activateUserFromPayment(phone, name, days) {
   return user
 }
 
+// User dikeluarkan dari grup WA: hapus dari daftar anggota dan reset jawabannya soal grup,
+// supaya saat ia aktif lagi (bayar / diperpanjang) ia ditanya lagi "mau gabung grup?".
+async function resetGroupAfterRemoval(phone, reason) {
+  try { await setGroupMember(phone, false) } catch (e) {}
+  try {
+    const pref = (await getGroupPref(phone)) || {}
+    delete pref.choice; delete pref.askAgainAt; delete pref.days; delete pref.adminMark
+    pref.removedAt = Date.now()
+    if (reason) pref.removedReason = reason
+    await saveGroupPref(phone, pref)
+  } catch (e) {}
+}
+
 async function completePaymentOrder(order, via) {
   const settings = await getPaymentSettings()
   const days = order.days || settings.days
   const user = await activateUserFromPayment(order.phone, order.name, days)
+  // Belum / tidak lagi di grup WA (misalnya dikeluarkan saat masa aktif habis): jawaban lama soal
+  // grup dihapus supaya ia ditanya lagi "mau gabung grup?" saat membuka website
+  try {
+    const grp = await getGroupMembers()
+    if (!grp.phones.has(order.phone)) {
+      const pref = (await getGroupPref(order.phone)) || {}
+      if (pref.choice || pref.adminMark) {
+        delete pref.choice; delete pref.askAgainAt; delete pref.days; delete pref.adminMark
+        await saveGroupPref(order.phone, pref)
+      }
+    }
+  } catch (e) {}
   order.status = 'paid'
   order.paidAt = Date.now()
   order.via = via
@@ -22578,6 +22770,7 @@ async function tgUserAction(act, phone) {
         await sock.groupParticipantsUpdate(monitoredGroupId, [phone + '@s.whatsapp.net'], 'remove')
         kicked = true
         pushLog(`WA | Kicked +${phone} from group`)
+        await resetGroupAfterRemoval(phone, 'dikeluarkan admin (Telegram)')
       } catch (e) {
         pushLog(`WA | Failed to kick +${phone}: ${e.message}`)
       }
@@ -23467,8 +23660,9 @@ function parseMemberList(text) {
 // Bandingkan daftar anggota grup dengan Daftar User
 async function compareGroupWithUsers(phones) {
   const grp = new Set(phones)
-  const [users, orders] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), loadPaymentOrders()])
+  const [users, orders, prefs] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), loadPaymentOrders(), redis.hgetall(GROUP_PREF_KEY).catch(() => ({}))])
   const now = Date.now()
+  const prefOf = p => { try { const v = (prefs || {})[p]; return v ? (typeof v === 'string' ? JSON.parse(v) : v) : null } catch (e) { return null } }
   const web = new Map()
   for (const [k, v] of Object.entries(users || {})) {
     if (!/^62[0-9]{8,13}$/.test(k)) continue
@@ -23476,7 +23670,11 @@ async function compareGroupWithUsers(phones) {
   }
   const info = p => {
     const u = web.get(p)
-    return { phone: p, name: u ? (u.name || '') : '', expired: u ? (u.expired || null) : null, active: !!u && (!u.expired || u.expired > now) }
+    const pref = prefOf(p)
+    // Jawaban pertanyaan "ingin bergabung grup WA?": mau | tidak_mau | belum
+    const answer = pref && pref.choice === 'yes' ? 'mau' : pref && pref.choice === 'no' ? 'tidak_mau' : 'belum'
+    return { phone: p, name: u ? (u.name || '') : '', expired: u ? (u.expired || null) : null, active: !!u && (!u.expired || u.expired > now),
+      answer, answeredAt: pref ? (pref.at || 0) : 0, askAgainAt: pref && pref.choice === 'no' ? (pref.askAgainAt || 0) : 0 }
   }
   return {
     groupTotal: grp.size,
@@ -23766,6 +23964,13 @@ const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
 //   choice 'no', days N (>=1) -> ditanya lagi setelah N hari
 //   choice 'no', days 0       -> tidak ditanya lagi (masih bisa berubah pikiran lewat menu)
 const _groupWantNotified = new Map()   // nomor -> waktu notifikasi terakhir (cegah dobel)
+// Batas "tanya lagi setelah N hari" = sisa masa aktif user (Lifetime: 365 hari)
+function groupAskMaxDays(user) {
+  const exp = user && user.expired ? Number(user.expired) : 0
+  if (!exp) return 365
+  return Math.max(1, Math.min(365, Math.ceil((exp - Date.now()) / 86400000)))
+}
+
 app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
@@ -23773,7 +23978,7 @@ app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, re
     const check = await isUserValid(phone)
     if (!check.valid) return res.json({ success: false, error: 'Sesi tidak valid' })
     const choice = req.body.choice === 'yes' ? 'yes' : 'no'
-    const days = Math.max(0, Math.min(3650, parseInt(req.body.days, 10) || 0))
+    const days = Math.max(0, Math.min(groupAskMaxDays(check.user), parseInt(req.body.days, 10) || 0))
     const now = Date.now()
     const old = (await getGroupPref(phone)) || {}
     const pref = { ...old, choice, at: now, askAgainAt: choice === 'no' && days > 0 ? now + days * 86400000 : 0, days: choice === 'no' ? days : 0 }
@@ -23895,7 +24100,8 @@ async function reportGroupLinkOpened(phone, user, openedAt) {
 app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
-    if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
+    const valid = phone ? await isUserValid(phone) : null
+    if (!valid || !valid.valid) return res.json({ success: false, error: 'Sesi tidak valid' })
     const grp = await getGroupMembers()
     // Sudah di grup (ada di daftar anggota) -> menu dan pertanyaan tidak ditampilkan sama sekali
     if (grp.phones.has(phone)) return res.json({ success: true, inGroup: true, show: false, ask: false })
@@ -23910,7 +24116,7 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
     const now = Date.now()
     for (const [k, v] of _groupTickets) if (v.until < now) _groupTickets.delete(k)
     _groupTickets.set(ticket, { phone, until: now + 10 * 60 * 1000 })
-    res.json({ success: true, inGroup: false, show: true, ask, wants: !!(pref && pref.choice === 'yes'), ticket, phone, suggest: pending })
+    res.json({ success: true, inGroup: false, show: true, ask, wants: !!(pref && pref.choice === 'yes'), ticket, phone, suggest: pending, maxDays: groupAskMaxDays(valid.user) })
   } catch (e) {
     res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
   }
@@ -23965,8 +24171,9 @@ let _ocrWorker = null
 let _ocrIdleTimer = null
 let _ocrQueue = Promise.resolve()
 
-// Satu worker dipakai bergantian (antri); dimatikan setelah 5 menit menganggur
-function ocrImageText(buffer) {
+// Satu worker dipakai bergantian (antri); dimatikan setelah 5 menit menganggur.
+// rotate = sudut putar gambar (radian) sebelum dibaca, untuk foto yang diambil menyamping / terbalik.
+function ocrImageText(buffer, rotate) {
   const job = _ocrQueue.then(async () => {
     if (_ocrIdleTimer) { clearTimeout(_ocrIdleTimer); _ocrIdleTimer = null }
     try {
@@ -23981,7 +24188,7 @@ function ocrImageText(buffer) {
       let text = ''
       for (const method of ['1', '0']) {
         await _ocrWorker.setParameters({ thresholding_method: method })
-        const { data } = await _ocrWorker.recognize(buffer)
+        const { data } = await _ocrWorker.recognize(buffer, rotate ? { rotateRadians: rotate } : {})
         text += (data.text || '') + '\n'
       }
       return text
@@ -24079,10 +24286,23 @@ function analyzeProofText(text, order, merchantName, now) {
   // tengah malam) dan ia mengirim bukti pembayaran yang sama. Bukti bulan lalu tetap ditolak.
   const dates = extractProofDates(text)
   const from = wibDateStr(order.createdAt - 2 * 24 * 3600 * 1000), to = wibDateStr(now)
-  const dateOk = dates.some(d => d >= from && d <= to)
+  // OCR sering salah membaca digit terakhir tahun (2026 -> 2020 / 2028). Kalau tanggal & bulannya
+  // masuk rentang dan tahunnya masih dekade yang sama, tahun dianggap tahun berjalan / sebelumnya.
+  const inRange = d => d >= from && d <= to
+  const yearFix = d => {
+    if (inRange(d)) return d
+    const y = Number(d.substring(0, 4))
+    for (const yy of [Number(to.substring(0, 4)), Number(from.substring(0, 4))]) {
+      if (Math.floor(y / 10) === Math.floor(yy / 10)) { const c = yy + d.substring(4); if (inRange(c)) return c }
+    }
+    return d
+  }
+  const fixedDates = dates.map(yearFix)
+  const dateOk = fixedDates.some(inRange)
   const dateWrong = !dateOk && dates.length > 0
   const tampil = d => d.substring(8, 10) + '/' + d.substring(5, 7) + '/' + d.substring(0, 4)
-  checks.push('Tanggal: ' + (dateOk ? 'cocok (' + tampil(dates.find(d => d >= from && d <= to)) + ')' : dateWrong ? 'TIDAK cocok, terbaca ' + dates.slice(0, 2).map(tampil).join(', ') : 'tidak terbaca'))
+  const okIdx = fixedDates.findIndex(inRange)
+  checks.push('Tanggal: ' + (dateOk ? 'cocok (' + tampil(dates[okIdx]) + (dates[okIdx] !== fixedDates[okIdx] ? ', tahun terbaca salah' : '') + ')' : dateWrong ? 'TIDAK cocok, terbaca ' + dates.slice(0, 2).map(tampil).join(', ') : 'tidak terbaca'))
 
   // 5. ID / nomor referensi transaksi: deret angka panjang (15+ digit, supaya nomor HP tidak ikut)
   const ids = [...new Set(text.replace(/[ \t]/g, '').match(/[0-9]{15,}/g) || [])].slice(0, 5)
@@ -24161,12 +24381,25 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     // Gambar yang persis sama pernah dipakai order lain?
     const imgOwner = await redis.hget(PAYMENT_PROOF_IDS_KEY, imgKey)
     if (imgOwner && imgOwner !== order.id) dupReason = 'Foto bukti ini sudah pernah dipakai untuk pembayaran lain'
+    const merchant = qrisMerchantName(settings.qrisStatic)
     const text = await ocrImageText(buffer)
-    result = analyzeProofText(text, order, qrisMerchantName(settings.qrisStatic), Date.now())
+    result = analyzeProofText(text, order, merchant, Date.now())
+    // Foto layar HP sering diambil menyamping / terbalik sehingga tulisannya tidak terbaca.
+    // Kalau nominal belum terbaca, gambar dibaca ulang setelah diputar 90 / -90 / 180 derajat.
+    if (!result.amountOk) {
+      for (const [rot, label] of [[-Math.PI / 2, 'diputar 90 derajat'], [Math.PI / 2, 'diputar -90 derajat'], [Math.PI, 'diputar 180 derajat']]) {
+        const r2 = analyzeProofText(await ocrImageText(buffer, rot), order, merchant, Date.now())
+        if (r2.amountOk) { r2.checks.push('Gambar: ' + label + ' (foto miring)'); result = r2; break }
+      }
+    }
     if (!dupReason) {
       for (const id of result.ids) {
         const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, id)
-        if (owner && owner !== order.id) { dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break }
+        if (!owner || owner === order.id) continue
+        const ownerOrder = await readPaymentOrder(owner).catch(() => null)
+        // angka yang sama di bukti dengan nominal berbeda bukan bukti ganda (contoh: nomor merchant + tanggal)
+        if (ownerOrder && ownerOrder.amount !== order.amount) continue
+        dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break
       }
     }
     // Bukti yang sama difoto / dipotong ulang: gambarnya beda, tetapi nominal + tanggal + jam sama
@@ -25301,13 +25534,8 @@ _Ganti 08xxx dengan nomor WA target_`
             try {
               await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'remove')
               kickedFromGroup = true
-
-              // Send notification to kicked user
-              try {
-                await sock.sendMessage(jid, {
-                  text: '❌ *ANDA TELAH DI-KICK*\\n\\nAnda telah dikeluarkan dari grup Gold Price Monitor.\\n\\nJika ada pertanyaan, hubungi admin:\\nhttps://wa.me/6289654454210'
-                })
-              } catch (_) {}
+              // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
+              await resetGroupAfterRemoval(phone, 'dikeluarkan admin (perintah WA)')
             } catch (e) {
               pushLog(`WA CMD | Failed to kick ${phone} from group: ${e.message}`)
             }

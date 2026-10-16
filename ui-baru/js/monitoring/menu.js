@@ -189,31 +189,43 @@ export async function joinGroup(silent) {
   if (hooks.setCanJoinGroup) hooks.setCanJoinGroup(!!(d && d.success && d.show))
   if (!d || !d.success) { if (!silent) toast((d && d.error) || 'Link grup belum tersedia. Coba lagi nanti.', 'warning'); return }
   if (!d.show) return
-  if (silent) { if (d.ask) askJoin(); return }
+  if (silent) { if (d.ask) askJoin(d.maxDays); return }
   closeAllSheets()
   if (!d.wants) savePref('yes', 0)
   await confirmDialog(d.wants ? 'Permintaan Anda sudah tercatat. Admin akan memasukkan Anda ke grup WhatsApp.' : 'Permintaan terkirim. Admin akan memasukkan Anda ke grup WhatsApp.', { title: 'Gabung grup WA', ok: 'OK', cancel: null })
 }
-function askJoin() {
+// Wajib dijawab: tidak ada tombol tutup, klik di luar / Esc tidak menutup. Halaman baru bisa
+// dipakai lagi setelah user memilih Ya atau Tidak (sama seperti tampilan lama).
+function askJoin(maxDays) {
+  // batas hari = sisa masa aktif user (dari server); Lifetime 365
+  const maxD = Math.max(1, Math.min(365, parseInt(maxDays, 10) || 365))
+  closeAllSheets(true)
+  const old = document.getElementById('askJoinModal')
+  if (old) old.remove()
   const body = h('div', {})
+  const wrap = h('div', { id: 'askJoinModal', class: 'fixed inset-0 z-[90] flex items-center justify-center bg-black/80 p-5', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'card w-full max-w-sm p-5 text-center shadow-2xl' },
+      h('h2', { class: 'mb-3 text-base font-extrabold' }, 'Grup notifikasi WhatsApp'), body))
+  const sheet = { close: () => { wrap.remove(); document.body.style.overflow = '' } }
   const step1 = () => body.replaceChildren(
     h('p', { class: 'mb-4 text-sm text-muted' }, 'Ingin bergabung ke grup notifikasi harga di WhatsApp?'),
     h('button', { class: 'btn-green w-full', onclick: () => { savePref('yes', 0); body.replaceChildren(h('p', { class: 'mb-4 text-sm text-muted' }, 'Permintaan terkirim. Admin akan memasukkan Anda ke grup WhatsApp.'), h('button', { class: 'btn-gold w-full', onclick: () => sheet.close() }, 'OK')) } }, 'Ya, gabung'),
     h('button', { class: 'btn-ghost mt-2 w-full', onclick: step2 }, 'Tidak'))
   const step2 = () => {
-    const inp = h('input', { type: 'number', min: 1, max: 365, value: 7, class: 'input w-24 text-center font-mono text-lg' })
-    const val = () => Math.min(365, Math.max(1, parseInt(inp.value, 10) || 1))
+    const inp = h('input', { type: 'number', min: 1, max: maxD, value: Math.min(7, maxD), class: 'input w-24 text-center font-mono text-lg', onchange: () => { inp.value = val() } })
+    const val = () => Math.min(maxD, Math.max(1, parseInt(inp.value, 10) || 1))
     body.replaceChildren(
-      h('p', { class: 'mb-3 text-sm text-muted' }, 'Tanya lagi setelah berapa hari?'),
+      h('p', { class: 'mb-3 text-sm text-muted' }, 'Tanya lagi setelah berapa hari? (maks ' + maxD + ' hari, sesuai masa aktif)'),
       h('div', { class: 'mb-4 flex items-center justify-center gap-2' },
-        h('button', { class: 'icon-btn', onclick: () => { inp.value = val() - 1 } }, '−'), inp, h('span', { class: 'text-sm text-muted' }, 'hari'),
-        h('button', { class: 'icon-btn', onclick: () => { inp.value = val() + 1 } }, '+')),
+        h('button', { class: 'icon-btn', onclick: () => { inp.value = Math.max(1, val() - 1) } }, '−'), inp, h('span', { class: 'text-sm text-muted' }, 'hari'),
+        h('button', { class: 'icon-btn', onclick: () => { inp.value = Math.min(maxD, val() + 1) } }, '+')),
       h('button', { class: 'btn-gold w-full', onclick: () => { savePref('no', val()); sheet.close() } }, 'Tanya lagi nanti'),
       h('button', { class: 'btn-ghost mt-2 w-full', onclick: () => { savePref('no', 0); sheet.close() } }, 'Jangan tanya lagi'),
       h('button', { class: 'mt-2 w-full py-2 text-xs text-muted', onclick: step1 }, 'Kembali'))
   }
   step1()
-  const sheet = openSheet('Grup notifikasi WhatsApp', body)
+  document.body.append(wrap)
+  document.body.style.overflow = 'hidden'
 }
 
 // ===================================================================== KELUAR

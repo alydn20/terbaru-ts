@@ -129,12 +129,12 @@ function renderNominals() {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
     const size = list.length === 1 ? 'basis-1/2 lg:basis-2/3' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.5rem)/2)]'
     return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:p-3 lg:text-left ' + size },
-      h('div', { class: 'flex items-center justify-center gap-1.5 lg:justify-between lg:gap-2' },
+      // HP: satu baris "10jt +Rp1.426" (gram di tooltip); layar lebar: label, gram, untung
+      h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
-        h('span', { class: 'num truncate font-mono text-[9px] text-muted lg:hidden' }, p ? p.gram.toFixed(3) + 'g' : '')),
-      p ? h('div', { class: 'num whitespace-nowrap text-[11.5px] font-extrabold leading-tight lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null,
+        p ? h('span', { class: 'num text-[11.5px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
       h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
-        h('span', { class: 'num font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' gram' : '—'),
+        h('span', { class: 'num whitespace-nowrap font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
         p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
   }))
   fitChart()
