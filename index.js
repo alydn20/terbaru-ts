@@ -13019,8 +13019,12 @@ ${authScript}
       if (!info || !box) return;
       if (!d || !d.syncedAt) { info.textContent = '(belum pernah dicocokkan)'; box.innerHTML = ''; return; }
       const kapan = new Date(d.syncedAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-      info.textContent = '(terakhir ' + kapan + ': ' + d.groupTotal + ' anggota, ' + d.groupOnly.length + ' tidak terdaftar, ' + d.webOnly.length + ' belum di grup)';
+      const byAns = a => d.webOnly.filter(r => (r.answer || 'belum') === a);
+      const jwbTidak = byAns('tidak_mau'), jwbBelum = byAns('belum'), jwbMau = byAns('mau');
+      info.textContent = '(terakhir ' + kapan + ': ' + d.groupTotal + ' anggota, ' + d.groupOnly.length + ' tidak terdaftar, ' + d.webOnly.length + ' belum di grup: ' +
+        jwbTidak.length + ' jawab Tidak, ' + jwbBelum.length + ' belum menjawab, ' + jwbMau.length + ' mau masuk)';
       const tgl = t => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      const rowTxt = r => '+' + _escHtml(r.phone) + ' <span style="color:#9ca3af;">' + _escHtml(r.name || '') + ' &middot; ' + (r.expired ? (r.active ? 'aktif s/d ' + tgl(r.expired) : 'EXPIRED') : 'Lifetime') + '</span>';
       const list = (rows, fn) => rows.length
         ? '<div style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:8px;font-family:monospace;font-size:0.9em;line-height:1.7;">' + rows.map(fn).join('<br>') + '</div>'
         : '<div style="color:#22c55e;">Tidak ada.</div>';
@@ -13029,7 +13033,12 @@ ${authScript}
         '<div style="font-weight:600;color:#ef4444;margin:8px 0 4px;">Di grup WA tapi TIDAK terdaftar di web (' + d.groupOnly.length + ') - keluarkan dari grup atau daftarkan</div>' +
         list(d.groupOnly, r => '+' + _escHtml(r.phone) + (r.hasOrder ? ' <span style="color:#9ca3af;">(pernah membuat order)</span>' : '')) +
         '<div style="font-weight:600;color:#f59e0b;margin:12px 0 4px;">Terdaftar di web tapi BELUM di grup WA (' + d.webOnly.length + ')</div>' +
-        list(d.webOnly, r => '+' + _escHtml(r.phone) + ' <span style="color:#9ca3af;">' + _escHtml(r.name || '') + ' &middot; ' + (r.expired ? (r.active ? 'aktif s/d ' + tgl(r.expired) : 'EXPIRED') : 'Lifetime') + '</span>');
+        '<div style="font-weight:600;color:#9ca3af;margin:8px 0 4px;">Menjawab TIDAK mau masuk grup (' + jwbTidak.length + ')</div>' +
+        list(jwbTidak, r => rowTxt(r) + ' <span style="color:#f87171;">' + (r.askAgainAt ? 'ditanya lagi ' + tgl(r.askAgainAt) : 'jangan ditanya lagi') + '</span>') +
+        '<div style="font-weight:600;color:#60a5fa;margin:10px 0 4px;">Belum menjawab Ya/Tidak (' + jwbBelum.length + ') - ditanya saat membuka monitoring</div>' +
+        list(jwbBelum, rowTxt) +
+        '<div style="font-weight:600;color:#22c55e;margin:10px 0 4px;">Menjawab YA, belum dimasukkan (' + jwbMau.length + ')</div>' +
+        list(jwbMau, rowTxt);
     }
 
     function loadGroupCompare() {
@@ -23647,8 +23656,9 @@ function parseMemberList(text) {
 // Bandingkan daftar anggota grup dengan Daftar User
 async function compareGroupWithUsers(phones) {
   const grp = new Set(phones)
-  const [users, orders] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), loadPaymentOrders()])
+  const [users, orders, prefs] = await Promise.all([redis.hgetall(REDIS_KEYS.USERS), loadPaymentOrders(), redis.hgetall(GROUP_PREF_KEY).catch(() => ({}))])
   const now = Date.now()
+  const prefOf = p => { try { const v = (prefs || {})[p]; return v ? (typeof v === 'string' ? JSON.parse(v) : v) : null } catch (e) { return null } }
   const web = new Map()
   for (const [k, v] of Object.entries(users || {})) {
     if (!/^62[0-9]{8,13}$/.test(k)) continue
@@ -23656,7 +23666,11 @@ async function compareGroupWithUsers(phones) {
   }
   const info = p => {
     const u = web.get(p)
-    return { phone: p, name: u ? (u.name || '') : '', expired: u ? (u.expired || null) : null, active: !!u && (!u.expired || u.expired > now) }
+    const pref = prefOf(p)
+    // Jawaban pertanyaan "ingin bergabung grup WA?": mau | tidak_mau | belum
+    const answer = pref && pref.choice === 'yes' ? 'mau' : pref && pref.choice === 'no' ? 'tidak_mau' : 'belum'
+    return { phone: p, name: u ? (u.name || '') : '', expired: u ? (u.expired || null) : null, active: !!u && (!u.expired || u.expired > now),
+      answer, answeredAt: pref ? (pref.at || 0) : 0, askAgainAt: pref && pref.choice === 'no' ? (pref.askAgainAt || 0) : 0 }
   }
   return {
     groupTotal: grp.size,
@@ -24145,8 +24159,9 @@ let _ocrWorker = null
 let _ocrIdleTimer = null
 let _ocrQueue = Promise.resolve()
 
-// Satu worker dipakai bergantian (antri); dimatikan setelah 5 menit menganggur
-function ocrImageText(buffer) {
+// Satu worker dipakai bergantian (antri); dimatikan setelah 5 menit menganggur.
+// rotate = sudut putar gambar (radian) sebelum dibaca, untuk foto yang diambil menyamping / terbalik.
+function ocrImageText(buffer, rotate) {
   const job = _ocrQueue.then(async () => {
     if (_ocrIdleTimer) { clearTimeout(_ocrIdleTimer); _ocrIdleTimer = null }
     try {
@@ -24161,7 +24176,7 @@ function ocrImageText(buffer) {
       let text = ''
       for (const method of ['1', '0']) {
         await _ocrWorker.setParameters({ thresholding_method: method })
-        const { data } = await _ocrWorker.recognize(buffer)
+        const { data } = await _ocrWorker.recognize(buffer, rotate ? { rotateRadians: rotate } : {})
         text += (data.text || '') + '\n'
       }
       return text
@@ -24354,8 +24369,17 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     // Gambar yang persis sama pernah dipakai order lain?
     const imgOwner = await redis.hget(PAYMENT_PROOF_IDS_KEY, imgKey)
     if (imgOwner && imgOwner !== order.id) dupReason = 'Foto bukti ini sudah pernah dipakai untuk pembayaran lain'
+    const merchant = qrisMerchantName(settings.qrisStatic)
     const text = await ocrImageText(buffer)
-    result = analyzeProofText(text, order, qrisMerchantName(settings.qrisStatic), Date.now())
+    result = analyzeProofText(text, order, merchant, Date.now())
+    // Foto layar HP sering diambil menyamping / terbalik sehingga tulisannya tidak terbaca.
+    // Kalau nominal belum terbaca, gambar dibaca ulang setelah diputar 90 / -90 / 180 derajat.
+    if (!result.amountOk) {
+      for (const [rot, label] of [[-Math.PI / 2, 'diputar 90 derajat'], [Math.PI / 2, 'diputar -90 derajat'], [Math.PI, 'diputar 180 derajat']]) {
+        const r2 = analyzeProofText(await ocrImageText(buffer, rot), order, merchant, Date.now())
+        if (r2.amountOk) { r2.checks.push('Gambar: ' + label + ' (foto miring)'); result = r2; break }
+      }
+    }
     if (!dupReason) {
       for (const id of result.ids) {
         const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, id)
