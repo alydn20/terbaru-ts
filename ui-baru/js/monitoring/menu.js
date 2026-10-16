@@ -44,13 +44,14 @@ export function openMore() {
       h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
       h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
   if (matchMedia('(min-width: 768px)').matches) return openMoreDropdown(groups, logoutItem, profile)
-  const tile = ([ic, label, onclick, extra = '']) =>
-    h('button', { class: 'tile flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1.5 py-2.5 text-center text-[11px] font-semibold leading-tight active:scale-95 ' + extra, onclick, html: icon(ic, 'h-5 w-5') + '<span>' + label + '</span>' })
+  // HP: daftar ringkas seperti menu desktop (ikon kecil + nama, per kategori)
+  const row = ([ic, label, onclick, , cls = '']) =>
+    h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm font-semibold active:bg-card2 ' + cls, onclick, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
   openSheet('Lainnya', h('div', {}, profile(),
-    groups.map(([title, items]) => h('div', { class: 'mb-3' },
-      h('div', { class: 'label mb-1.5 px-0.5 text-[10px]' }, title),
-      h('div', { class: 'grid grid-cols-3 gap-2' }, items.map(tile)))),
-    h('button', { class: 'btn-ghost mt-1 w-full text-down', onclick: logoutItem[2], html: icon('logout', 'h-4 w-4') + '<span>Keluar</span>' })))
+    groups.map(([title, items], i) => h('div', { class: i ? 'mt-1.5 border-t border-line/[0.08] pt-1.5' : '' },
+      h('div', { class: 'label px-2.5 pb-0.5 pt-1 text-[10px]' }, title),
+      items.map(row))),
+    h('div', { class: 'mt-1.5 border-t border-line/[0.08] pt-1.5' }, row(logoutItem))))
 }
 
 // Desktop: menu turun di bawah tombol Lainnya (bukan lembar dari bawah seperti di HP).
