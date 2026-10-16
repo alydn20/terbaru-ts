@@ -145,20 +145,24 @@ body.idr-merge #histMode { display: none; }
 body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
 body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
 /* Beli/Jual tetap berkotak (warna naik/turun ikut), hanya lebih kecil dan tipis */
-body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-type: normal !important; min-width: 10.5rem; }
+body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-type: normal !important; }
+@media (min-width: 768px) { body.price-compact .price-tile { min-width: 10.5rem; } }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
 body.price-compact #clockRow > .num { font-size: 1rem; }
 body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
 body.price-compact #nomWrap, body.price-compact #chipHigh, body.price-compact #chipLow, body.price-compact #chipMarkup { display: none !important; }
-body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.15rem 0.9rem; }
-body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0; background: none; border: none; }
+body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.25rem; }
+body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 0.4rem; }
 body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
 /* HP: baris ringkas muat selebar layar. Badge naik/turun tetap tampil (lebih kecil), tulisan "Rp"
    disembunyikan; kalau tetap tidak muat, Jual turun ke baris berikutnya (tidak meluber). */
 @media (max-width: 767px) {
-  body.price-compact #sec-harga > div:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; width: 100%; }
+  body.price-compact #sec-harga { overflow: visible; }
+  body.price-compact #sec-harga > div:first-child { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.4rem; width: 100%; }
+  body.price-compact .price-tile { min-width: 0; overflow: hidden; }
+  body.price-compact .price-tile .price-big { font-size: clamp(0.78rem, 4.3vw, 1rem) !important; }
   body.price-compact #buyChange, body.price-compact #sellChange { font-size: 9px !important; padding: 0 0.3rem !important; }
   body.price-compact .price-tile { padding: 0.1rem 0.4rem !important; }
   body.price-compact .price-tile .price-big { font-size: 1rem !important; }
@@ -187,3 +191,14 @@ body.price-only:not(.price-compact) .stat-k { font-size: clamp(8px, 1.5vmin, 12p
 
 /* Ukuran teks riwayat pilihan user (tombol Aa): seluruh isi tabel diperbesar / diperkecil */
 #histScroll table { zoom: var(--hist-zoom, 1); }
+
+/* USD/IDR berubah: kotaknya hijau / merah sebentar dan angkanya berkedip (seperti Beli/Jual) */
+#chipUsd { transition: background-color 0.3s, border-color 0.3s; }
+#chipUsd.chip-up { background-color: rgb(var(--up) / 0.15); border-color: rgb(var(--up) / 0.55); }
+#chipUsd.chip-down { background-color: rgb(var(--down) / 0.15); border-color: rgb(var(--down) / 0.55); }
+.stat.tile-blink .stat-v { animation: tileBlink 0.5s ease-in-out 6; }
+
+/* HP: menu bawah disembunyikan saat layar lama tidak disentuh (body.nav-idle) */
+#bottomNav { transition: transform 0.25s ease; }
+body.nav-idle #bottomNav { transform: translateY(110%); }
+body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }

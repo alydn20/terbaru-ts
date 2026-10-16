@@ -192,6 +192,11 @@ function setUsdIdr(rate) {
     const el = $('#usdIdrChange')
     el.className = 'num text-[9px] ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
+    const chip = $('#chipUsd')
+    if (chip) {
+      chip.classList.remove('chip-up', 'chip-down', 'tile-blink'); void chip.offsetWidth
+      chip.classList.add(c > 0 ? 'chip-up' : 'chip-down', 'tile-blink')
+    }
   }
   state.usdIdr = rate
   $('#usdIdr').textContent = num(r)
@@ -292,7 +297,7 @@ function fitHistPanel() {
 window.addEventListener('resize', () => { fitHistPanel(); fitHist() })
 if ('MutationObserver' in window) {
   const hb = document.getElementById('histBody')
-  if (hb) new MutationObserver(() => { fitHistPanel(); fitHist() }).observe(hb, { childList: true })
+  if (hb) new MutationObserver(() => { fitHistPanel(); fitChart() }).observe(hb, { childList: true })
 }
 // Ukuran teks riwayat (tombol Aa di judul riwayat), diingat per perangkat
 const HIST_SIZES = [['0.85', 'Kecil'], ['1', 'Sedang (bawaan)'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
@@ -387,12 +392,35 @@ export function openLayoutPicker() {
     })() : null))
 }
 function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
+// Tinggi menu bawah (0 di desktop, dan saat disembunyikan karena layar lama tidak disentuh)
+function navH() { return document.body.classList.contains('nav-idle') ? 0 : $('#bottomNav').offsetHeight }
+// Tinggi kotak riwayat untuk n baris: judul + kepala tabel + n baris + tombol halaman (kalau tampil)
+function histRowsHeight(n) {
+  const sec = $('#sec-riwayat'), tr = $('#histBody tr'), pager = $('#histPager')
+  const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
+  const head = $('#histHead') ? $('#histHead').offsetHeight : 28
+  const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 44)
+  const pg = pager && pager.offsetParent ? pager.offsetHeight : 0
+  return Math.round(title + head + rowH * n + pg + 3)
+}
+// HP: menu bawah disembunyikan setelah 5 detik layar tidak disentuh -> grafik lebih besar.
+// Sentuh / geser / gerak mouse -> menu muncul lagi.
+let idleTimer = null
+function wake() {
+  if (document.body.classList.contains('nav-idle')) { document.body.classList.remove('nav-idle'); fitChart() }
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (wide() || document.querySelector('.sheet, #tourRoot, #askJoinModal')) return
+    document.body.classList.add('nav-idle'); fitChart()
+  }, 5000)
+}
+;['touchstart', 'scroll', 'mousemove', 'keydown', 'click'].forEach(ev => window.addEventListener(ev, wake, { passive: true, capture: true }))
 // 'Harga saja': kotak harga setinggi layar (di antara bar atas dan menu bawah)
 function fitPriceOnly() {
   const sec = $('#sec-harga')
   if (!sec) return
   if (!document.body.classList.contains('price-only') || document.body.classList.contains('price-compact')) { sec.style.minHeight = ''; return }
-  sec.style.minHeight = Math.max(240, window.innerHeight - $('header').offsetHeight - $('#bottomNav').offsetHeight - (wide() ? 32 : 20)) + 'px'
+  sec.style.minHeight = Math.max(240, window.innerHeight - $('header').offsetHeight - navH() - (wide() ? 32 : 20)) + 'px'
 }
 // Kotak riwayat setinggi layar (isi digulir di dalam): kalau muat di layar pertama, isi sisa layar;
 // kalau letaknya di bawah (setelah grafik), setinggi satu layar. Panel samping desktop diatur CSS.
@@ -401,11 +429,13 @@ function fitHist() {
   if (!sec) return
   const b = document.body.classList
   if (b.contains('hide-riwayat') || (wide() && b.contains('lay-split'))) { sec.classList.remove('hist-fit'); sec.style.height = ''; return }
-  const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+  const hdr = $('header').offsetHeight, nav = navH()
   const avail = window.innerHeight - hdr - nav - (wide() ? 32 : 16)
   const rest = window.innerHeight - (sec.getBoundingClientRect().top + window.scrollY) - nav - (wide() ? 16 : 8)
   sec.classList.add('hist-fit')
   // grafik & riwayat sekaligus (bertumpuk): riwayat cukup mengisi sisa layar di bawah grafik
+  // jumlah baris dipilih: kotak tepat n baris (sisanya digeser di dalam kotak)
+  if (b.contains('lay-stack') && histRowsSetting()) { sec.style.height = histRowsHeight(histRowsSetting()) + 'px'; return }
   if (b.contains('lay-stack')) { sec.style.height = Math.max(200, rest) + 'px'; return }
   sec.style.height = Math.max(320, rest >= 320 ? rest : avail) + 'px'
 }
@@ -413,14 +443,14 @@ function fitChartBox() {
   const box = $('#tvChart')
   if (!box) return
   if (chartFull && !wide()) {
-    const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+    const hdr = $('header').offsetHeight, nav = navH()
     box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - 12)) + 'px'
     return
   }
   // HP & desktop: grafik mengisi sisa layar di bawah harga, jadi harga + grafik muat satu layar
   // dan riwayat baru terlihat saat digulir (di desktop menu bawah tersembunyi, tingginya 0)
   const top = box.getBoundingClientRect().top + window.scrollY
-  const nav = $('#bottomNav').offsetHeight
+  const nav = navH()
   const rest = window.innerHeight - top - nav - (wide() ? 16 : 8)
   // Grafik & riwayat sekaligus tetapi bertumpuk (HP, atau desktop dengan riwayat di bawah):
   // grafik +-setengah sisa layar supaya riwayat langsung terlihat
@@ -429,13 +459,8 @@ function fitChartBox() {
   // (baris sedikit -> grafik lebih besar)
   const nRows = histRowsSetting()
   if (hpSplit && nRows) {
-    const sec = $('#sec-riwayat'), tr = $('#histBody tr'), scroll = $('#histScroll')
-    const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 40)
-    const head = $('#histHead') ? $('#histHead').offsetHeight : 28
-    const extra = sec && scroll ? sec.offsetHeight - scroll.clientHeight : 90   // judul + tombol halaman + garis
-    const histH = Math.round((sec && sec.offsetHeight ? extra : 90) + head + rowH * nRows + 4)
     const gap = wide() ? 16 : 8
-    box.style.height = Math.max(180, Math.round(rest - histH - gap)) + 'px'
+    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(nRows) - gap)) + 'px'
     return
   }
   const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
