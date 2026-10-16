@@ -150,6 +150,7 @@ function applyPrice(d, fromSse) {
     const change = prev ? d.buy - prev : 0
     $('#buyPrice').textContent = num(d.buy)
     if (change) {
+      state.arrow = change > 0 ? '▲ ' : '▼ '
       setChange('buyChange', change); flash('buyCard', change)
       if (fromSse) {
         priceSound(change)
@@ -171,7 +172,8 @@ function applyPrice(d, fromSse) {
   }
   if (d.usdIdr) setUsdIdr(d.usdIdr)
   if (d.xauUsd) state.xauUsd = d.xauUsd
-  if (state.buy) document.title = 'B ' + num(state.buy) + ' · J ' + num(state.sell) + ' — PemulaOLD'
+  // judul tab: arah perubahan terakhir + harga beli & jual
+  if (state.buy && state.sell) document.title = (state.arrow || '') + 'Beli ' + num(state.buy) + ' · Jual ' + num(state.sell) + ' | PemulaOLD'
   renderSpread(); renderMarkup(); renderNominals()
 }
 function setUsdIdr(rate) {
