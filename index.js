@@ -3666,15 +3666,21 @@ const UI2_PAGES = { '/login': 'login.html', '/monitoring': 'monitoring.html' }
 const UI2_VER = Date.now().toString(36) // berubah tiap server restart (= tiap update)
 const _ui2Cache = {}
 const isUi2Request = req => {
+  // Pilihan user (tombol "Coba tampilan baru" / "Kembali ke tampilan lama") menang atas alamat:
+  // ?ui=baru / ?ui=lama lalu diingat di cookie. Tanpa pilihan: newxau.* = baru, alamat lain = lama.
   if (req.query.ui === 'lama') return false
-  return /^newxau\./i.test(String(req.headers.host || '')) || req.query.ui === 'baru' || parseCookies(req).ui === 'baru'
+  if (req.query.ui === 'baru') return true
+  const pick = parseCookies(req).ui
+  if (pick === 'lama') return false
+  if (pick === 'baru') return true
+  return /^newxau\./i.test(String(req.headers.host || ''))
 }
 for (const sub of ['dist', 'js', 'sounds']) {
   app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
 }
 app.get(['/login', '/monitoring'], async (req, res, next) => {
   if (req.query.ui === 'baru') res.append('Set-Cookie', 'ui=baru; Path=/; Max-Age=2592000; SameSite=Lax')
-  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=; Path=/; Max-Age=0; SameSite=Lax')
+  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=lama; Path=/; Max-Age=2592000; SameSite=Lax')
   if (!isUi2Request(req)) return next()
   try {
     const file = UI2_PAGES[req.path]
@@ -17222,6 +17228,10 @@ app.get('/monitoring', async (req, res) => {
       <button class="nav-menu-item" id="joinGroupBtn" style="display:none;" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
         <i data-lucide="users" style="width:14px;height:14px;"></i>
         Gabung Grup WA
+      </button>
+      <button class="nav-menu-item" id="uiBaruBtn" onclick="window.location.href='/monitoring?ui=baru'" title="Pindah ke tampilan baru (bisa kembali lagi)">
+        <i data-lucide="sparkles" style="width:14px;height:14px;color:#f7931a;"></i>
+        Coba Tampilan Baru
       </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
