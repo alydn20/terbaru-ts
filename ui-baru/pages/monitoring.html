@@ -16,7 +16,7 @@
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
-<body class="min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))] lg:pb-0">
+<body class="min-h-screen pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0">
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
@@ -31,7 +31,7 @@
       </div>
       <!-- desktop: Promo / News / Lainnya pindah ke sini (menu bawah disembunyikan) -->
       <div id="topNav" class="hidden items-center gap-1 lg:flex"></div>
-      <button id="btnUiLama" class="icon-btn h-9 w-9 text-muted lg:h-10 lg:w-auto lg:gap-1.5 lg:px-3 lg:text-xs lg:font-semibold" title="Kembali ke tampilan lama" aria-label="Kembali ke tampilan lama"></button>
+      <button id="btnLayout" class="icon-btn h-9 w-9 text-muted lg:h-10 lg:w-auto lg:gap-1.5 lg:px-3 lg:text-xs lg:font-semibold" title="Tata letak: pilih harga / grafik / riwayat" aria-label="Tata letak"></button>
       <button id="btnAdminWa" class="icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
     </div>
   </header>
@@ -48,18 +48,18 @@
         <!-- HARGA UTAMA: semua isi kartu rata tengah dan kotak kecil berukuran sama -->
         <section id="sec-harga" class="card min-w-0 p-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)_minmax(0,1.25fr)] lg:items-center lg:gap-x-5 lg:px-4 lg:py-3" aria-label="Harga emas">
           <div class="grid grid-cols-2 gap-1.5 lg:col-start-1 lg:row-start-1 lg:gap-2">
-            <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
+            <div id="buyCard" class="price-tile tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
               <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
-              <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
+              <div class="price-big num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
             </div>
-            <div id="sellCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
+            <div id="sellCard" class="price-tile tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
               <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-sky"></span>Jual</span><span id="sellChange" class="hidden"></span></div>
-              <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
+              <div class="price-big num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
             </div>
           </div>
 
           <!-- jam + status promo -->
-          <div class="mt-2 flex items-center justify-center gap-3 lg:col-start-1 lg:row-start-2">
+          <div class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
             <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
             <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
@@ -90,27 +90,30 @@
 
       </div>
 
-      <!-- ============================== KOLOM KANAN ============================== -->
-      <div class="flex min-w-0 flex-col gap-2 lg:gap-4">
+      <!-- ============================== GRAFIK + RIWAYAT ============================== -->
+      <!-- Tata letak dipilih user (diingat per perangkat), lihat LAYOUTS di monitoring.js -->
+      <div id="chartHistWrap" class="flex min-w-0 flex-col gap-2 lg:gap-4">
         <!-- GRAFIK: di HP mengisi sisa layar (diatur monitoring.js) -->
         <section id="sec-grafik" class="card overflow-hidden" aria-label="Grafik XAU/USD">
           <div class="hidden items-center justify-between px-4 py-3 lg:flex">
-            <h2 class="label">Grafik XAU/USD</h2>
+            <h2 class="label mr-auto">Grafik XAU/USD</h2>
             <button id="btnIndicator" class="text-xs font-semibold text-gold">Indikator</button>
           </div>
           <div id="tvChart" class="h-[360px] bg-card2 lg:h-[calc(100vh-190px)] lg:border-t lg:border-line/[0.07]"></div>
         </section>
 
         <!-- RIWAYAT -->
+        <div id="histWrap" class="min-w-0">
         <section id="sec-riwayat" class="card overflow-hidden" aria-label="Riwayat perubahan harga">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3">
             <h2 class="label mr-auto">Riwayat perubahan</h2>
+            <button id="btnHistSize" class="icon-btn h-8 w-8 text-xs font-extrabold text-muted" title="Ukuran teks riwayat" aria-label="Ukuran teks riwayat">Aa</button>
             <div class="seg" id="histMode">
               <button data-mode="price" aria-pressed="true">Harga emas</button>
               <button data-mode="usdidr" aria-pressed="false">USD/IDR</button>
             </div>
           </div>
-          <div class="overflow-x-auto border-t border-line/[0.07]">
+          <div id="histScroll" class="overflow-x-auto border-t border-line/[0.07]">
             <table class="w-full min-w-[440px] text-sm">
               <thead id="histHead" class="bg-card2 text-left text-[10px] uppercase tracking-wider text-muted"></thead>
               <tbody id="histBody" class="divide-y divide-line/[0.06]"></tbody>
@@ -122,14 +125,14 @@
             <button id="histOlder" class="btn-ghost px-3 py-2 text-xs">Lebih lama</button>
           </div>
         </section>
+        </div>
       </div>
     </div>
-    <p class="py-6 text-center text-[11px] text-muted">PemulaOLD · Harga emas realtime</p>
   </main>
 
   <!-- ============================== NAVIGASI BAWAH ============================== -->
   <nav id="bottomNav" class="fixed inset-x-0 bottom-0 z-30 lg:hidden border-t border-line/[0.08] bg-card/95 backdrop-blur-xl" style="padding-bottom: env(safe-area-inset-bottom)" aria-label="Navigasi">
-    <div class="mx-auto grid h-16 max-w-xl grid-cols-5">
+    <div class="mx-auto grid h-[54px] max-w-xl grid-cols-5">
       <button data-nav="harga" class="nav-item">Harga</button>
       <button data-nav="grafik" class="nav-item">Grafik</button>
       <button data-nav="promo" class="nav-item lg:h-12 lg:w-16 lg:rounded-xl lg:hover:bg-card2 lg:hover:text-ink">Promo<span id="badgePromo" class="badge hidden"></span></button>

@@ -13,37 +13,49 @@ export function setMenuHooks(h2) { hooks = h2 }
 // ===================================================================== LAINNYA
 export function openMore() {
   const light = document.documentElement.dataset.theme === 'light'
-  // [ikon, label, aksi, gaya kotak (HP), gaya baris (desktop)]
-  const defs = [
-    ['calc', 'Kalkulator emas', openCalc],
-    ['activity', 'Indikator grafik', openIndicators],
-    ['sound', 'Suara & getar', openSound],
-    ['sliders', 'Atur nominal', openNominalSettings],
-    [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
-    ['push', 'Notifikasi HP', enablePush],
-    state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
-    hooks.canJoinGroup && hooks.canJoinGroup() ? ['users', 'Gabung grup WA', () => joinGroup(false)] : null,
-    ['wa', 'Hubungi admin', () => contactAdmin(state.phone)],
-    isInstalled() ? null : ['download', 'Install aplikasi', install],
-    state.isAdmin ? ['shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }] : null,
-    // kembali ke tampilan lama (diingat; di tampilan lama ada tombol "Coba tampilan baru")
-    ['layout', 'Tampilan lama', () => { location.href = '/monitoring?ui=lama' }],
-    ['logout', 'Keluar', logout, 'text-down', 'text-down']
-  ].filter(Boolean)
+  // Dikelompokkan per kategori supaya tidak padat. Item: [ikon, label, aksi, gaya kotak (HP), gaya baris (desktop)]
+  const groups = [
+    ['Tampilan', [
+      hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
+      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
+      ['activity', 'Indikator grafik', openIndicators],
+      ['sliders', 'Atur nominal', openNominalSettings]
+    ]],
+    ['Notifikasi & alat', [
+      ['sound', 'Suara & getar', openSound],
+      ['push', 'Notifikasi HP', enablePush],
+      ['calc', 'Kalkulator emas', openCalc],
+      isInstalled() ? null : ['download', 'Install aplikasi', install]
+    ]],
+    ['Akun', [
+      state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
+      hooks.canJoinGroup && hooks.canJoinGroup() ? ['users', 'Gabung grup WA', () => joinGroup(false)] : null,
+      state.isAdmin ? ['shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }] : null
+    ]],
+    ['Bantuan', [
+      hooks.startTour ? ['info', 'Panduan penggunaan', () => { closeAllSheets(true); hooks.startTour() }] : null,
+      ['wa', 'Hubungi admin', () => contactAdmin(state.phone)]
+    ]]
+  ].map(([t, items]) => [t, items.filter(Boolean)]).filter(g => g[1].length)
+  const logoutItem = ['logout', 'Keluar', logout, 'text-down', 'text-down']
   const profile = () => state.phone ? h('div', { class: 'tile mb-3 flex items-center gap-3 p-3' },
     h('div', { class: 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold', html: icon('users', 'h-5 w-5') }),
     h('div', { class: 'min-w-0' },
       h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
       h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
-  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(defs, profile)
+  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(groups, logoutItem, profile)
   const tile = ([ic, label, onclick, extra = '']) =>
-    h('button', { class: 'tile flex min-h-[84px] flex-col items-center justify-center gap-2 px-2 py-3 text-center text-xs font-semibold active:scale-95 ' + extra, onclick, html: icon(ic, 'h-6 w-6') + '<span>' + label + '</span>' })
-  openSheet('Lainnya', h('div', {}, profile(), h('div', { class: 'grid grid-cols-3 gap-2' }, defs.map(tile))))
+    h('button', { class: 'tile flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1.5 py-2.5 text-center text-[11px] font-semibold leading-tight active:scale-95 ' + extra, onclick, html: icon(ic, 'h-5 w-5') + '<span>' + label + '</span>' })
+  openSheet('Lainnya', h('div', {}, profile(),
+    groups.map(([title, items]) => h('div', { class: 'mb-3' },
+      h('div', { class: 'label mb-1.5 px-0.5 text-[10px]' }, title),
+      h('div', { class: 'grid grid-cols-3 gap-2' }, items.map(tile)))),
+    h('button', { class: 'btn-ghost mt-1 w-full text-down', onclick: logoutItem[2], html: icon('logout', 'h-4 w-4') + '<span>Keluar</span>' })))
 }
 
 // Desktop: menu turun di bawah tombol Lainnya (bukan lembar dari bawah seperti di HP).
 // Tutup: klik di luar, Esc, pilih menu, atau klik tombol Lainnya lagi.
-function openMoreDropdown(defs, profile) {
+function openMoreDropdown(groups, logoutItem, profile) {
   const old = document.getElementById('moreMenu')
   if (old) { old._close(); return }
   const btn = document.querySelector('#topNav [data-nav="lainnya"]')
@@ -58,12 +70,13 @@ function openMoreDropdown(defs, profile) {
   }
   const row = ([ic, label, fn, , cls = '']) =>
     h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-card2 ' + cls, onclick: () => { close(); fn() }, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
-  const last = defs.length - 1
   const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
     profile(),
-    defs.slice(0, last).map(row),
+    groups.map(([title, items], i) => h('div', {},
+      h('div', { class: 'label px-3 pb-1 text-[10px] ' + (i ? 'mt-2 border-t border-line/[0.08] pt-2.5' : 'pt-1') }, title),
+      items.map(row))),
     h('div', { class: 'my-1 border-t border-line/[0.08]' }),
-    row(defs[last]))
+    row(logoutItem))
   menu._close = close
   document.body.append(menu)
   if (btn) btn.setAttribute('aria-expanded', 'true')

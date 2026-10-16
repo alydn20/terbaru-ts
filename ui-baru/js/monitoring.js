@@ -1,11 +1,12 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
-import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang } from './api.js'
+import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
 import { initHistory, onNewPrice, onUsdIdr, loadHistory } from './monitoring/history.js'
 import { initChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
+import { startTour, tourDone } from './monitoring/tour.js'
 import { openMore, openRenew, openIndicators, openNominalSettings, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
 
 applyTheme()
@@ -215,7 +216,7 @@ function renderTitikOn() {
 }
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
-  el.className = 'pill px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
+  el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
   el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span>PROMO ' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
@@ -242,7 +243,107 @@ const wide = () => matchMedia('(min-width: 1024px)').matches
 /** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
 // chartFull = menu Grafik ditekan: grafik setinggi layar (antara bar atas dan menu bawah)
 let chartFull = false, chartFullAt = 0
-function fitChart() {
+// Tata letak pilihan user (diingat per perangkat). p = harga, c = grafik, h = riwayat;
+// s = grafik & riwayat terlihat sekaligus (desktop berdampingan, HP grafik dipendekkan).
+const LAYOUT_KEY = 'monitorLayout'
+export const LAYOUTS = [
+  ['def', 'Bawaan', 'Harga + grafik, riwayat di bawah (digulir)', { p: 1, c: 1, h: 1, s: 0 }],
+  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
+  ['pc', 'Harga + Grafik', 'Tanpa riwayat', { p: 1, c: 1, h: 0, s: 0 }],
+  ['ch', 'Grafik + Riwayat', 'Tanpa kotak harga', { p: 0, c: 1, h: 1, s: 1 }],
+  ['ph', 'Harga + Riwayat', 'Tanpa grafik', { p: 1, c: 0, h: 1, s: 0 }],
+  ['c', 'Grafik saja', '', { p: 0, c: 1, h: 0, s: 0 }],
+  ['p', 'Harga saja', '', { p: 1, c: 0, h: 0, s: 0 }],
+  ['h', 'Riwayat saja', '', { p: 0, c: 0, h: 1, s: 0 }]
+]
+let layout = 'def'
+try {
+  const v = localStorage.getItem(LAYOUT_KEY)
+  layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'def'
+} catch (e) {}
+const lay = () => (LAYOUTS.find(l => l[0] === layout) || LAYOUTS[0])[3]
+function applyLayout() {
+  const L = lay(), b = document.body.classList
+  b.toggle('hide-harga', !L.p)
+  b.toggle('hide-grafik', !L.c)
+  b.toggle('hide-riwayat', !L.h)
+  b.toggle('lay-split', !!(L.s && L.c && L.h))
+  fitHistPanel()
+}
+// Desktop + grafik & riwayat berdampingan: lebar panel riwayat = lebar alami tabelnya (supaya
+// semua kolom terlihat tanpa digeser), min 360px, maks 55% lebar; grafik mengisi sisanya.
+function fitHistPanel() {
+  const wrap = $('#chartHistWrap'), t = $('#histScroll table')
+  if (!wrap || !t) return
+  if (!wide() || !document.body.classList.contains('lay-split')) { wrap.style.gridTemplateColumns = ''; return }
+  t.style.width = 'max-content'
+  const need = t.offsetWidth + 2
+  t.style.width = ''
+  const w = Math.max(360, Math.min(Math.round(wrap.clientWidth * 0.55), need))
+  wrap.style.gridTemplateColumns = 'minmax(0, 1fr) ' + w + 'px'
+}
+window.addEventListener('resize', () => { fitHistPanel(); fitHist() })
+if ('MutationObserver' in window) {
+  const hb = document.getElementById('histBody')
+  if (hb) new MutationObserver(() => { fitHistPanel(); fitHist() }).observe(hb, { childList: true })
+}
+// Ukuran teks riwayat (tombol Aa di judul riwayat), diingat per perangkat
+const HIST_SIZES = [['0.85', 'Kecil'], ['1', 'Sedang (bawaan)'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
+function histSize() { try { const v = localStorage.getItem('histTextSize'); return HIST_SIZES.some(x => x[0] === v) ? v : '1' } catch (e) { return '1' } }
+function applyHistSize() {
+  const sc = $('#histScroll')
+  if (sc) sc.style.setProperty('--hist-zoom', histSize())
+  fitHistPanel()
+}
+function openHistSize() {
+  const cur = histSize()
+  const sheet = openSheet('Ukuran teks riwayat', h('div', { class: 'flex flex-col gap-1.5' },
+    HIST_SIZES.map(([v, label]) => h('button', {
+      class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (v === cur ? 'border-gold/60 bg-gold/10' : ''),
+      onclick: () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }
+    },
+      h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (v === cur ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: v === cur ? icon('check', 'h-3 w-3') : '' }),
+      h('span', { class: 'font-bold', style: 'font-size:' + Math.round(14 * Number(v)) + 'px' }, label)))))
+}
+export function getLayout() { return layout }
+export function setLayout(v) {
+  layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
+  try { localStorage.setItem(LAYOUT_KEY, layout) } catch (e) {}
+  chartFull = false
+  applyLayout()
+  fitChart()
+  window.scrollTo({ top: 0 })
+}
+// Lembar pilihan tata letak (dibuka dari Lainnya, dan tombol "Tata letak" di judul grafik)
+export function openLayoutPicker() {
+  const sheet = openSheet('Tata letak', h('div', { class: 'flex flex-col gap-1.5' },
+    h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih bagian yang ingin ditampilkan. Diingat di perangkat ini.'),
+    LAYOUTS.map(([id, label, note]) => h('button', {
+      class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (id === layout ? 'border-gold/60 bg-gold/10' : ''),
+      onclick: () => { setLayout(id); sheet.close() }
+    },
+      h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (id === layout ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: id === layout ? icon('check', 'h-3 w-3') : '' }),
+      h('span', { class: 'min-w-0' },
+        h('span', { class: 'block text-sm font-bold' }, label),
+        note ? h('span', { class: 'block text-[11px] text-muted' }, note) : null)))))
+}
+function fitChart() { fitChartBox(); fitHist() }
+// Kotak riwayat setinggi layar (isi digulir di dalam): kalau muat di layar pertama, isi sisa layar;
+// kalau letaknya di bawah (setelah grafik), setinggi satu layar. Panel samping desktop diatur CSS.
+function fitHist() {
+  const sec = $('#sec-riwayat')
+  if (!sec) return
+  const b = document.body.classList
+  if (b.contains('hide-riwayat') || (wide() && b.contains('lay-split'))) { sec.classList.remove('hist-fit'); sec.style.height = ''; return }
+  const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+  const avail = window.innerHeight - hdr - nav - (wide() ? 32 : 16)
+  const rest = window.innerHeight - (sec.getBoundingClientRect().top + window.scrollY) - nav - (wide() ? 16 : 8)
+  sec.classList.add('hist-fit')
+  // HP + grafik & riwayat sekaligus: riwayat cukup mengisi sisa layar di bawah grafik
+  if (!wide() && b.contains('lay-split')) { sec.style.height = Math.max(200, rest) + 'px'; return }
+  sec.style.height = Math.max(320, rest >= 320 ? rest : avail) + 'px'
+}
+function fitChartBox() {
   const box = $('#tvChart')
   if (!box) return
   if (chartFull && !wide()) {
@@ -254,7 +355,11 @@ function fitChart() {
   // dan riwayat baru terlihat saat digulir (di desktop menu bawah tersembunyi, tingginya 0)
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
-  box.style.height = Math.max(wide() ? 320 : 220, Math.round(window.innerHeight - top - nav - (wide() ? 16 : 8))) + 'px'
+  const rest = window.innerHeight - top - nav - (wide() ? 16 : 8)
+  // HP + grafik & riwayat sekaligus: grafik +-setengah sisa layar supaya riwayat langsung terlihat
+  const L = lay()
+  const hpSplit = !!(L.s && L.c && L.h) && !wide()
+  box.style.height = Math.max(hpSplit ? 200 : wide() ? 320 : 220, Math.round(hpSplit ? rest * 0.55 : rest)) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -363,7 +468,7 @@ const setActive = key => $$('[data-nav]').forEach(b => b.setAttribute('aria-curr
 function initNav() {
   $$('#bottomNav [data-nav]').forEach(b => {
     const [ic, fn] = NAV[b.dataset.nav]
-    b.insertAdjacentHTML('afterbegin', icon(ic, 'h-[22px] w-[22px]'))
+    b.insertAdjacentHTML('afterbegin', icon(ic, 'h-5 w-5'))
     b.addEventListener('click', fn)
   })
   placeNav()
@@ -373,7 +478,12 @@ function initNav() {
     setActive(scrollY > 4 && g < innerHeight * 0.45 ? 'grafik' : 'harga')
     // HP: kembali ke paling atas = tampilan biasa (harga + grafik dalam satu layar)
     // (bukan saat baru menekan Grafik: guliran ke grafik baru dimulai dari atas)
-    if (chartFull && scrollY < 4 && !wide() && Date.now() - chartFullAt > 1500) { chartFull = false; fitChart() }
+    // Grafik penuh (menu Grafik) kembali ke ukuran biasa begitu user menggulir ke atas: atas grafik
+    // turun dari bawah bar atas (bukan saat guliran otomatis ke grafik masih berjalan)
+    if (chartFull && !wide() && Date.now() - chartFullAt > 1200) {
+      const gTop = $('#sec-grafik').getBoundingClientRect().top, hdrB = $('header').getBoundingClientRect().bottom
+      if (gTop > hdrB + 24 || scrollY < 4) { chartFull = false; fitChart(); setActive(scrollY > 4 && gTop < innerHeight * 0.45 ? 'grafik' : 'harga') }
+    }
   }, { passive: true })
 }
 
@@ -381,15 +491,17 @@ function initNav() {
 let canJoin = false
 async function start() {
   $('#btnAdminWa').innerHTML = icon('wa', 'h-5 w-5')
-  // kembali ke tampilan lama (diingat 30 hari; di tampilan lama ada tombol "Baru")
-  $('#btnUiLama').innerHTML = icon('layout', 'h-4 w-4') + '<span class="hidden lg:inline">Tampilan lama</span>'
-  $('#btnUiLama').addEventListener('click', () => { location.href = '/monitoring?ui=lama' })
   $('#btnAdminWa').addEventListener('click', () => contactAdmin(state.phone))
   $('#btnIndicator').addEventListener('click', openIndicators)
   $('#btnNominal').addEventListener('click', openNominalSettings)
   initNav()
+  applyLayout()
+  $('#btnLayout').innerHTML = icon('panels', 'h-4 w-4') + '<span class="hidden lg:inline">Tata letak</span>'
+  $('#btnLayout').addEventListener('click', openLayoutPicker)
+  applyHistSize()
+  $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()
@@ -404,7 +516,9 @@ async function start() {
     renderSisaHari()
     fitChart()
     setTimeout(renewReminder, 2500)
-    setTimeout(() => joinGroup(true), 6000)
+    // Pengguna baru: panduan penggunaan wajib tampil dulu, baru pertanyaan gabung grup WA
+    if (tourDone()) setTimeout(() => joinGroup(true), 6000)
+    else setTimeout(() => startTour(true).then(() => setTimeout(() => joinGroup(true), 1500)), 1500)
     getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})
   }
   setInterval(async () => {

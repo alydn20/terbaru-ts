@@ -72,10 +72,10 @@
   .grip { @apply mx-auto mb-3 mt-1 h-1 w-10 rounded-full bg-line/20; }
 
   /* navigasi bawah */
-  .nav-item { @apply relative flex flex-col items-center justify-center gap-1 text-[11px] font-semibold text-muted transition; }
+  .nav-item { @apply relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-muted transition; }
   .nav-item[aria-current='true'] { @apply text-gold; }
-  .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[3px] w-7 rounded-b bg-gold; }
-  .badge { @apply absolute left-1/2 top-1.5 ml-2 h-[18px] min-w-[18px] rounded-full bg-down px-1 text-center text-[10px] font-extrabold leading-[18px] text-white; }
+  .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[2px] w-6 rounded-b bg-gold; }
+  .badge { @apply absolute left-1/2 top-1 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
 
   /* angka harga: berkedip hijau/merah saat berubah */
   .flash-up { @apply animate-flash-up; }
@@ -90,3 +90,54 @@
   .tile-blink .num { animation: tileBlink 0.5s ease-in-out 6; }
   .tile-down .num { color: rgb(var(--down)); }
 }
+
+/* Tata letak pilihan user: bagian yang disembunyikan */
+body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #histWrap { display: none !important; }
+
+/* Riwayat (selain panel samping desktop): kotak setinggi layar, isi tabel digulir di dalam kotak
+   supaya halaman tidak memanjang (tinggi diatur fitHist di monitoring.js) */
+#sec-riwayat.hist-fit { display: flex; flex-direction: column; }
+#sec-riwayat.hist-fit #histScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+#sec-riwayat.hist-fit #histHead { position: sticky; top: 0; z-index: 2; }
+
+/* Grafik dan riwayat terlihat sekaligus (body.lay-split). Desktop: grafik kiri, riwayat kanan setinggi
+   grafik dan digulir sendiri, jadi harga + grafik + riwayat terlihat tanpa menggulir halaman. */
+@media (min-width: 1024px) {
+  body.lay-split #chartHistWrap { display: grid; grid-template-columns: minmax(0, 1fr) 430px; }
+  body.lay-split #histWrap { position: relative; min-height: 320px; }
+  body.lay-split #sec-riwayat { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  body.lay-split #histScroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  body.lay-split #histHead { position: sticky; top: 0; z-index: 2; }
+  /* tabel ringkas di panel samping (lebar panel diatur monitoring.js sesuai isi tabel) */
+  body.lay-split #histScroll table { min-width: 0; }
+  body.lay-split #histScroll th, body.lay-split #histScroll td { padding-left: 0.5rem; padding-right: 0.5rem; }
+  body.lay-split .st-long { display: none; }
+  body.lay-split .st-short { display: inline; }
+}
+.st-short { display: none; }
+
+/* HP: tabel riwayat ringkas supaya muat selebar layar (tanpa geser ke samping bila 1 nominal) */
+@media (max-width: 1023px) {
+  #histScroll table { min-width: 0; }
+  #histScroll th, #histScroll td { padding: 0.3rem 0.4rem; }
+  #histScroll td { font-size: 12px; line-height: 1.25; }
+  #histScroll td .text-\[11px\] { font-size: 10px; }
+  #histScroll .st-long { display: none; }
+  #histScroll .st-short { display: inline; }
+  #histScroll .hist-st-col { display: none; }
+  #histScroll .hist-st-inline { display: block; }
+}
+.hist-st-inline { display: none; }
+
+/* Angka Beli/Jual: ukuran mengikuti lebar kotaknya sendiri (bukan lebar layar), jadi tidak mepet
+   ke tepi kotak di lebar mana pun. Browser lama tetap memakai ukuran berbasis lebar layar. */
+@supports (container-type: inline-size) {
+  .price-tile { container-type: inline-size; }
+  .price-big { font-size: clamp(0.95rem, 12.5cqw, 1.6rem) !important; }
+}
+/* Kotak info (USD/IDR, Tertinggi, ...): isi tidak pernah keluar kotak */
+.stat { overflow: hidden; }
+.stat-v, .stat-k { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* Ukuran teks riwayat pilihan user (tombol Aa): seluruh isi tabel diperbesar / diperkecil */
+#histScroll table { zoom: var(--hist-zoom, 1); }
