@@ -24079,10 +24079,23 @@ function analyzeProofText(text, order, merchantName, now) {
   // tengah malam) dan ia mengirim bukti pembayaran yang sama. Bukti bulan lalu tetap ditolak.
   const dates = extractProofDates(text)
   const from = wibDateStr(order.createdAt - 2 * 24 * 3600 * 1000), to = wibDateStr(now)
-  const dateOk = dates.some(d => d >= from && d <= to)
+  // OCR sering salah membaca digit terakhir tahun (2026 -> 2020 / 2028). Kalau tanggal & bulannya
+  // masuk rentang dan tahunnya masih dekade yang sama, tahun dianggap tahun berjalan / sebelumnya.
+  const inRange = d => d >= from && d <= to
+  const yearFix = d => {
+    if (inRange(d)) return d
+    const y = Number(d.substring(0, 4))
+    for (const yy of [Number(to.substring(0, 4)), Number(from.substring(0, 4))]) {
+      if (Math.floor(y / 10) === Math.floor(yy / 10)) { const c = yy + d.substring(4); if (inRange(c)) return c }
+    }
+    return d
+  }
+  const fixedDates = dates.map(yearFix)
+  const dateOk = fixedDates.some(inRange)
   const dateWrong = !dateOk && dates.length > 0
   const tampil = d => d.substring(8, 10) + '/' + d.substring(5, 7) + '/' + d.substring(0, 4)
-  checks.push('Tanggal: ' + (dateOk ? 'cocok (' + tampil(dates.find(d => d >= from && d <= to)) + ')' : dateWrong ? 'TIDAK cocok, terbaca ' + dates.slice(0, 2).map(tampil).join(', ') : 'tidak terbaca'))
+  const okIdx = fixedDates.findIndex(inRange)
+  checks.push('Tanggal: ' + (dateOk ? 'cocok (' + tampil(dates[okIdx]) + (dates[okIdx] !== fixedDates[okIdx] ? ', tahun terbaca salah' : '') + ')' : dateWrong ? 'TIDAK cocok, terbaca ' + dates.slice(0, 2).map(tampil).join(', ') : 'tidak terbaca'))
 
   // 5. ID / nomor referensi transaksi: deret angka panjang (15+ digit, supaya nomor HP tidak ikut)
   const ids = [...new Set(text.replace(/[ \t]/g, '').match(/[0-9]{15,}/g) || [])].slice(0, 5)
@@ -24166,7 +24179,11 @@ async function processPaymentProof(orderId, buffer, mime, ctx) {
     if (!dupReason) {
       for (const id of result.ids) {
         const owner = await redis.hget(PAYMENT_PROOF_IDS_KEY, id)
-        if (owner && owner !== order.id) { dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break }
+        if (!owner || owner === order.id) continue
+        const ownerOrder = await readPaymentOrder(owner).catch(() => null)
+        // angka yang sama di bukti dengan nominal berbeda bukan bukti ganda (contoh: nomor merchant + tanggal)
+        if (ownerOrder && ownerOrder.amount !== order.amount) continue
+        dupReason = 'ID transaksi di bukti ini sudah pernah dipakai untuk pembayaran lain'; break
       }
     }
     // Bukti yang sama difoto / dipotong ulang: gambarnya beda, tetapi nominal + tanggal + jam sama
