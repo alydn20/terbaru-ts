@@ -27,7 +27,7 @@ async function endSession(message, title, extra) {
 }
 function handleInvalid(d) {
   if (d.reason === 'kicked_other_device') {
-    return endSession('Akun Anda baru saja login di perangkat lain. Maksimal 3 perangkat aktif, jadi sesi di perangkat ini dikeluarkan.', 'Login di perangkat lain',
+    return endSession('Akun Anda baru saja login di perangkat lain. Jumlah perangkat aktif per akun dibatasi, jadi sesi di perangkat ini dikeluarkan.', 'Login di perangkat lain',
       () => { try { localStorage.setItem('gold_kicked_notice', String(Date.now())) } catch (e) {} })
   }
   if (d.reason === 'expired') return endSession('Masa aktif akun Anda sudah habis. Perpanjang dari halaman login.', 'Masa aktif habis')
@@ -98,10 +98,12 @@ function setChange(id, change) {
   el.className = pillHtml(change) + ' px-1.5 py-0 text-[10px] lg:text-xs'
   el.textContent = (change > 0 ? '▲' : '▼') + signed(change)
 }
+// Kotak Beli/Jual: hijau penuh saat naik, merah penuh saat turun (bertahan sampai harga berubah lagi)
 function flash(id, change) {
   const el = $('#' + id)
-  el.classList.remove('flash-up', 'flash-down'); void el.offsetWidth
-  el.classList.add(change > 0 ? 'flash-up' : 'flash-down')
+  el.classList.remove('flash-up', 'flash-down', 'tile-up', 'tile-down', 'tile-blink'); void el.offsetWidth
+  // + berkedip +-3 detik supaya terlihat itu harga terbaru
+  el.classList.add(change > 0 ? 'tile-up' : 'tile-down', 'tile-blink')
 }
 function updateDayRange(buy) {
   if (state.high === null || buy > state.high) { state.high = buy; $('#dayHigh').textContent = num(buy) }
@@ -127,14 +129,15 @@ function renderNominals() {
   if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    const size = list.length === 1 ? 'basis-1/2 lg:basis-2/3' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.5rem)/2)]'
-    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:p-3 lg:text-left ' + size },
+    // ukuran kotak sama berapa pun jumlahnya (1 nominal tidak dibuat melebar), rata tengah
+    const size = 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.25rem)/2)]'
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip); layar lebar: label, gram, untung
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
-        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
+        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-[13px]' }, n.label),
         p ? h('span', { class: 'num text-[11.5px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
-      h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
-        h('span', { class: 'num whitespace-nowrap font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
+      h('div', { class: 'mt-0.5 hidden items-center justify-between gap-2 lg:flex' },
+        h('span', { class: 'num whitespace-nowrap font-mono text-[11px] text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
         p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
   }))
   fitChart()
@@ -232,13 +235,21 @@ async function fetchPrices() {
 // ===================================================================== GRAFIK MUAT SATU LAYAR (HP)
 const wide = () => matchMedia('(min-width: 1024px)').matches
 /** HP: tinggi grafik = sisa layar dari atas grafik sampai navigasi bawah, jadi harga + grafik tampil tanpa digulir */
+// chartFull = menu Grafik ditekan: grafik setinggi layar (antara bar atas dan menu bawah)
+let chartFull = false, chartFullAt = 0
 function fitChart() {
   const box = $('#tvChart')
   if (!box) return
-  if (wide()) { box.style.height = ''; return }
+  if (chartFull && !wide()) {
+    const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+    box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - 12)) + 'px'
+    return
+  }
+  // HP & desktop: grafik mengisi sisa layar di bawah harga, jadi harga + grafik muat satu layar
+  // dan riwayat baru terlihat saat digulir (di desktop menu bawah tersembunyi, tingginya 0)
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
-  box.style.height = Math.max(220, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+  box.style.height = Math.max(wide() ? 320 : 220, Math.round(window.innerHeight - top - nav - (wide() ? 16 : 8))) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -321,28 +332,43 @@ setInterval(() => { if (Date.now() - lastData > 60000) { lastData = Date.now(); 
 
 // ===================================================================== NAVIGASI BAWAH
 const NAV = {
-  harga: ['home', () => scrollTo('#sec-harga')],
-  grafik: ['chart', () => scrollTo('#sec-grafik')],
+  // Harga: kembali ke atas (grafik kembali ke ukuran biasa). Grafik: grafik setinggi layar.
+  harga: ['home', () => { chartFull = false; setActive('harga'); window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => { fitChart(); setActive('harga') }, 700) }],
+  grafik: ['chart', () => { chartFull = true; chartFullAt = Date.now(); setActive('grafik'); fitChart(); requestAnimationFrame(() => scrollTo('#sec-grafik')) }],
   promo: ['tag', openPromos],
   news: ['bell', openNews],
   lainnya: ['grid', openMore]
 }
 function scrollTo(sel) {
   const el = $(sel)
-  window.scrollTo({ top: el.getBoundingClientRect().top + scrollY - 70, behavior: 'smooth' })
+  const hdr = $('header').offsetHeight
+  window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + scrollY - hdr - 6), behavior: 'smooth' })
 }
+// Desktop: menu bawah disembunyikan; Promo / News / Lainnya dipindah ke bar atas (Harga & Grafik
+// tidak perlu karena semuanya satu halaman). HP: kembali ke menu bawah.
+function placeNav() {
+  const top = $('#topNav'), grid = $('#bottomNav > div')
+  if (!top || !grid) return
+  const to = wide() ? top : grid
+  ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
+}
+window.addEventListener('resize', placeNav)
+// tab aktif mengikuti bagian yang sedang terlihat
+const setActive = key => $$('[data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
 function initNav() {
   $$('#bottomNav [data-nav]').forEach(b => {
     const [ic, fn] = NAV[b.dataset.nav]
     b.insertAdjacentHTML('afterbegin', icon(ic, 'h-[22px] w-[22px]'))
     b.addEventListener('click', fn)
   })
-  // tab aktif mengikuti bagian yang sedang terlihat
-  const setActive = key => $$('#bottomNav [data-nav]').forEach(b => b.setAttribute('aria-current', String(b.dataset.nav === key)))
+  placeNav()
   setActive('harga')
   window.addEventListener('scroll', () => {
     const g = $('#sec-grafik').getBoundingClientRect().top
-    setActive(g < innerHeight * 0.45 ? 'grafik' : 'harga')
+    setActive(scrollY > 4 && g < innerHeight * 0.45 ? 'grafik' : 'harga')
+    // HP: kembali ke paling atas = tampilan biasa (harga + grafik dalam satu layar)
+    // (bukan saat baru menekan Grafik: guliran ke grafik baru dimulai dari atas)
+    if (chartFull && scrollY < 4 && !wide() && Date.now() - chartFullAt > 1500) { chartFull = false; fitChart() }
   }, { passive: true })
 }
 
@@ -350,6 +376,9 @@ function initNav() {
 let canJoin = false
 async function start() {
   $('#btnAdminWa').innerHTML = icon('wa', 'h-5 w-5')
+  // kembali ke tampilan lama (diingat 30 hari; di tampilan lama ada tombol "Baru")
+  $('#btnUiLama').innerHTML = icon('layout', 'h-4 w-4') + '<span class="hidden lg:inline">Tampilan lama</span>'
+  $('#btnUiLama').addEventListener('click', () => { location.href = '/monitoring?ui=lama' })
   $('#btnAdminWa').addEventListener('click', () => contactAdmin(state.phone))
   $('#btnIndicator').addEventListener('click', openIndicators)
   $('#btnNominal').addEventListener('click', openNominalSettings)

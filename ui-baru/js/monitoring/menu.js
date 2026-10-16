@@ -12,30 +12,62 @@ export function setMenuHooks(h2) { hooks = h2 }
 
 // ===================================================================== LAINNYA
 export function openMore() {
-  const tile = (ic, label, onclick, extra = '') =>
-    h('button', { class: 'tile flex min-h-[84px] flex-col items-center justify-center gap-2 px-2 py-3 text-center text-xs font-semibold active:scale-95 ' + extra, onclick, html: icon(ic, 'h-6 w-6') + '<span>' + label + '</span>' })
   const light = document.documentElement.dataset.theme === 'light'
-  const items = [
-    tile('calc', 'Kalkulator emas', openCalc),
-    tile('activity', 'Indikator grafik', openIndicators),
-    tile('sound', 'Suara & getar', openSound),
-    tile('sliders', 'Atur nominal', openNominalSettings),
-    tile(light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }),
-    tile('push', 'Notifikasi HP', enablePush),
-    state.user && state.user.expired ? tile('calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold') : null,
-    hooks.canJoinGroup && hooks.canJoinGroup() ? tile('users', 'Gabung grup WA', () => joinGroup(false)) : null,
-    tile('wa', 'Hubungi admin', () => contactAdmin(state.phone)),
-    isInstalled() ? null : tile('download', 'Install aplikasi', install),
-    state.isAdmin ? tile('shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }) : null,
-    tile('logout', 'Keluar', logout, 'text-down')
+  // [ikon, label, aksi, gaya kotak (HP), gaya baris (desktop)]
+  const defs = [
+    ['calc', 'Kalkulator emas', openCalc],
+    ['activity', 'Indikator grafik', openIndicators],
+    ['sound', 'Suara & getar', openSound],
+    ['sliders', 'Atur nominal', openNominalSettings],
+    [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
+    ['push', 'Notifikasi HP', enablePush],
+    state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
+    hooks.canJoinGroup && hooks.canJoinGroup() ? ['users', 'Gabung grup WA', () => joinGroup(false)] : null,
+    ['wa', 'Hubungi admin', () => contactAdmin(state.phone)],
+    isInstalled() ? null : ['download', 'Install aplikasi', install],
+    state.isAdmin ? ['shield', 'Panel admin', () => { location.href = '/admin/sso?session=' + encodeURIComponent(session.get()) }] : null,
+    // kembali ke tampilan lama (diingat; di tampilan lama ada tombol "Coba tampilan baru")
+    ['layout', 'Tampilan lama', () => { location.href = '/monitoring?ui=lama' }],
+    ['logout', 'Keluar', logout, 'text-down', 'text-down']
   ].filter(Boolean)
-  openSheet('Lainnya', h('div', {},
-    state.phone ? h('div', { class: 'tile mb-3 flex items-center gap-3 p-3' },
-      h('div', { class: 'flex h-10 w-10 items-center justify-center rounded-full bg-gold/15 text-gold', html: icon('users', 'h-5 w-5') }),
-      h('div', { class: 'min-w-0' },
-        h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
-        h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null,
-    h('div', { class: 'grid grid-cols-3 gap-2' }, items)))
+  const profile = () => state.phone ? h('div', { class: 'tile mb-3 flex items-center gap-3 p-3' },
+    h('div', { class: 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold', html: icon('users', 'h-5 w-5') }),
+    h('div', { class: 'min-w-0' },
+      h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
+      h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
+  if (matchMedia('(min-width: 1024px)').matches) return openMoreDropdown(defs, profile)
+  const tile = ([ic, label, onclick, extra = '']) =>
+    h('button', { class: 'tile flex min-h-[84px] flex-col items-center justify-center gap-2 px-2 py-3 text-center text-xs font-semibold active:scale-95 ' + extra, onclick, html: icon(ic, 'h-6 w-6') + '<span>' + label + '</span>' })
+  openSheet('Lainnya', h('div', {}, profile(), h('div', { class: 'grid grid-cols-3 gap-2' }, defs.map(tile))))
+}
+
+// Desktop: menu turun di bawah tombol Lainnya (bukan lembar dari bawah seperti di HP).
+// Tutup: klik di luar, Esc, pilih menu, atau klik tombol Lainnya lagi.
+function openMoreDropdown(defs, profile) {
+  const old = document.getElementById('moreMenu')
+  if (old) { old._close(); return }
+  const btn = document.querySelector('#topNav [data-nav="lainnya"]')
+  const r = btn ? btn.getBoundingClientRect() : { bottom: 56, right: window.innerWidth - 16 }
+  const outside = e => { if (!menu.contains(e.target) && !(btn && btn.contains(e.target))) close() }
+  const esc = e => { if (e.key === 'Escape') close() }
+  const close = () => {
+    menu.remove()
+    document.removeEventListener('mousedown', outside, true)
+    document.removeEventListener('keydown', esc)
+    if (btn) btn.setAttribute('aria-expanded', 'false')
+  }
+  const row = ([ic, label, fn, , cls = '']) =>
+    h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-card2 ' + cls, onclick: () => { close(); fn() }, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
+  const last = defs.length - 1
+  const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
+    profile(),
+    defs.slice(0, last).map(row),
+    h('div', { class: 'my-1 border-t border-line/[0.08]' }),
+    row(defs[last]))
+  menu._close = close
+  document.body.append(menu)
+  if (btn) btn.setAttribute('aria-expanded', 'true')
+  setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', esc) }, 0)
 }
 
 // ===================================================================== KALKULATOR

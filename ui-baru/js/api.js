@@ -55,6 +55,8 @@ export function h(tag, attrs = {}, ...children) {
 
 // ------------------------------------------------------------------ ikon (garis, gaya Lucide)
 const ICON_PATHS = {
+  layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   home: '<path d="M3 10.5 12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/>',
   chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
   tag: '<path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4z"/><circle cx="7" cy="7" r="1.5"/>',

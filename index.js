@@ -3666,15 +3666,21 @@ const UI2_PAGES = { '/login': 'login.html', '/monitoring': 'monitoring.html' }
 const UI2_VER = Date.now().toString(36) // berubah tiap server restart (= tiap update)
 const _ui2Cache = {}
 const isUi2Request = req => {
+  // Pilihan user (tombol "Coba tampilan baru" / "Kembali ke tampilan lama") menang atas alamat:
+  // ?ui=baru / ?ui=lama lalu diingat di cookie. Tanpa pilihan: newxau.* = baru, alamat lain = lama.
   if (req.query.ui === 'lama') return false
-  return /^newxau\./i.test(String(req.headers.host || '')) || req.query.ui === 'baru' || parseCookies(req).ui === 'baru'
+  if (req.query.ui === 'baru') return true
+  const pick = parseCookies(req).ui
+  if (pick === 'lama') return false
+  if (pick === 'baru') return true
+  return /^newxau\./i.test(String(req.headers.host || ''))
 }
 for (const sub of ['dist', 'js', 'sounds']) {
   app.use('/ui-baru/' + sub, express.static(join(UI2_DIR, sub), { fallthrough: false, setHeaders: r => r.setHeader('Cache-Control', 'no-cache') }))
 }
 app.get(['/login', '/monitoring'], async (req, res, next) => {
   if (req.query.ui === 'baru') res.append('Set-Cookie', 'ui=baru; Path=/; Max-Age=2592000; SameSite=Lax')
-  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=; Path=/; Max-Age=0; SameSite=Lax')
+  if (req.query.ui === 'lama') res.append('Set-Cookie', 'ui=lama; Path=/; Max-Age=2592000; SameSite=Lax')
   if (!isUi2Request(req)) return next()
   try {
     const file = UI2_PAGES[req.path]
@@ -5092,8 +5098,8 @@ app.get('/favicon.ico', (_req, res) => {
 app.get('/manifest.json', (req, res) => {
   const host = req.get('host') || 'xau.pemulaold.com'
   res.json({
-    name: 'PemulaOLD Price',
-    short_name: 'PemulaOLD',
+    name: 'Harga PemulaOLD',
+    short_name: 'Harga PemulaOLD',
     description: 'Real-time PemulaOLD Gold Price Monitor',
     start_url: '/monitoring',
     display: 'standalone',
@@ -5101,19 +5107,19 @@ app.get('/manifest.json', (req, res) => {
     theme_color: '#f7931a',
     icons: [
       {
-        src: '/icon-rounded.svg',
+        src: '/icon-rounded.svg?v=3',
         sizes: 'any',
         type: 'image/svg+xml',
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png?v=2',
+        src: '/icon.png?v=3',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png?v=2',
+        src: '/icon.png?v=3',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any maskable'
@@ -6107,7 +6113,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     } catch (e) {}
   }
 
-  // Check existing sessions (max 2 devices, kecuali admin phone tidak ada limit).
+  // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi).
   // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
   if (normalizedPhone !== ADMIN_PHONE) {
     const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
@@ -6115,7 +6121,8 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     for (const [sessId, sessPhone] of Object.entries(allSessions)) {
       if (sessPhone === normalizedPhone) userSessions.push(sessId)
     }
-    while (userSessions.length >= 3) { // max 3 device per user
+    const _maxDev = await getMaxDevices()   // batas perangkat (diatur admin)
+    while (userSessions.length >= _maxDev) {
       const oldSess = userSessions.shift()
       const _kickedMetaRaw = await redis.hget(REDIS_KEYS.SESSION_META, oldSess)
       const _kickedMeta = _kickedMetaRaw ? JSON.parse(_kickedMetaRaw) : {}
@@ -6124,7 +6131,7 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
       await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
       const _kickName = check.user?.name || '-'
       pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks 3)' })
+      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks ' + _maxDev + ')' })
     }
   }
 
@@ -7060,6 +7067,39 @@ app.get('/api/latency', async (req, res) => {
     avgFetchMs: avg,
     samples: latencyHistory.length
   })
+})
+
+// ---------- Batas perangkat login per nomor (diatur admin; bawaan 3) ----------
+// Login di perangkat ke-(batas+1) menendang sesi paling lama. Nomor admin tidak dibatasi.
+const MAX_DEVICES_KEY = 'gold:max_devices'
+const MAX_DEVICES_DEFAULT = 3
+let maxDevicesCache = null
+async function getMaxDevices() {
+  if (maxDevicesCache === null) {
+    try {
+      const v = parseInt(await redis.get(MAX_DEVICES_KEY), 10)
+      maxDevicesCache = v >= 1 && v <= 20 ? v : MAX_DEVICES_DEFAULT
+    } catch (e) { return MAX_DEVICES_DEFAULT }
+  }
+  return maxDevicesCache
+}
+app.get('/api/admin/max-devices', async (req, res) => {
+  if (req.query.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  res.json({ success: true, max: await getMaxDevices(), def: MAX_DEVICES_DEFAULT })
+})
+app.post('/api/admin/max-devices', express.json(), async (req, res) => {
+  if (!req.body || req.body.password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  const n = parseInt(req.body.max, 10)
+  if (!(n >= 1 && n <= 20)) return res.json({ success: false, error: 'Isi angka 1 sampai 20' })
+  try {
+    const old = await getMaxDevices()
+    await redis.set(MAX_DEVICES_KEY, String(n))
+    maxDevicesCache = n
+    if (n !== old) pushLog(`Admin | Batas perangkat login diubah: ${old} -> ${n} per nomor`)
+    res.json({ success: true, max: n })
+  } catch (e) {
+    res.json({ success: false, error: 'Gagal menyimpan' })
+  }
 })
 
 // Public: Get promo limit
@@ -8340,7 +8380,7 @@ app.get('/login', async (req, res) => {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Sesi Berakhir — Login di Perangkat Lain
         </div>
-        <div style="color:#c9a86a;font-size:0.76em;line-height:1.5;">Akun Anda baru saja masuk di perangkat lain. Demi keamanan, maksimal <b>3 perangkat aktif</b> per akun — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali untuk melanjutkan.</div>
+        <div style="color:#c9a86a;font-size:0.76em;line-height:1.5;">Akun Anda baru saja masuk di perangkat lain. Demi keamanan, jumlah <b>perangkat aktif</b> per akun dibatasi — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali untuk melanjutkan.</div>
       </div>
 
       <!-- Step Indicator -->
@@ -9198,7 +9238,7 @@ app.get('/auth/:token', async (req, res) => {
       return res.send(getLoginErrorPage('Akun tidak ditemukan atau tidak valid.'))
     }
 
-    // Check existing sessions for this user (max 2 devices, kecuali nomor admin tanpa batas)
+    // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi)
     if (phone !== ADMIN_PHONE) {
       const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
       const userSessions = []
@@ -9209,7 +9249,8 @@ app.get('/auth/:token', async (req, res) => {
       }
 
       // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain"
-      while (userSessions.length >= 3) { // max 3 device per user
+      const _maxDev = await getMaxDevices()   // batas perangkat (diatur admin)
+      while (userSessions.length >= _maxDev) {
         const oldSess = userSessions.shift()
         await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
         await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
@@ -10689,6 +10730,26 @@ ${authScript}
           </div>
         </div>
 
+        <!-- Batas perangkat login -->
+        <div class="card">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+            </svg>
+            Batas Perangkat Login
+          </h2>
+          <p style="color:#6b7280;font-size:0.82em;margin-bottom:14px;">Satu nomor boleh login di berapa perangkat sekaligus. Kalau login di perangkat berikutnya, perangkat yang paling lama dikeluarkan otomatis. Nomor admin tidak dibatasi.</p>
+          <div class="result-msg" id="maxDevicesResult"></div>
+          <div class="form-group" style="display:flex;gap:10px;align-items:flex-end;">
+            <div style="flex:1;">
+              <label>Maksimal perangkat per nomor (1 - 20)</label>
+              <input type="number" id="maxDevicesInput" min="1" max="20" step="1" placeholder="3" style="width:100%;">
+            </div>
+            <button class="btn btn-primary" style="white-space:nowrap;" onclick="saveMaxDevices()">Simpan</button>
+          </div>
+          <p style="color:#6b7280;font-size:0.78em;margin-top:8px;">Nilai saat ini: <strong id="maxDevicesCurrent">-</strong>. Berlaku untuk login berikutnya; sesi yang sudah ada tidak langsung dikeluarkan.</p>
+        </div>
+
         <!-- Limit Beli Promo -->
         <div class="card">
           <h2>
@@ -11170,6 +11231,7 @@ ${authScript}
       loadNtfySettings();
       loadSoundSettings();
       loadPromoLimit();
+      loadMaxDevices();
       loadMarkupSettingsAdmin();
       loadThemeAdmin();
       loadPaymentAdmin();
@@ -11668,6 +11730,33 @@ ${authScript}
         result.textContent = 'Gagal menghubungi server';
         setTimeout(() => { result.textContent = ''; }, 3000);
       });
+    }
+
+    // ==================== Batas perangkat login ====================
+    function loadMaxDevices() {
+      adminFetch('/api/admin/max-devices')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.success) return;
+          const cur = document.getElementById('maxDevicesCurrent');
+          if (cur) cur.textContent = data.max + ' perangkat per nomor';
+          const inp = document.getElementById('maxDevicesInput');
+          if (inp) inp.value = data.max;
+        }).catch(() => {});
+    }
+    function saveMaxDevices() {
+      const inp = document.getElementById('maxDevicesInput');
+      const result = document.getElementById('maxDevicesResult');
+      const n = parseInt(inp ? inp.value : '', 10);
+      if (!(n >= 1 && n <= 20)) { result.className = 'result-msg error'; result.textContent = 'Isi angka 1 sampai 20'; return; }
+      adminFetch('/api/admin/max-devices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ max: n }) })
+        .then(r => r.json())
+        .then(data => {
+          result.className = 'result-msg ' + (data.success ? 'success' : 'error');
+          result.textContent = data.success ? 'Tersimpan: maksimal ' + data.max + ' perangkat per nomor' : (data.error || 'Gagal menyimpan');
+          if (data.success) loadMaxDevices();
+          setTimeout(() => { result.textContent = ''; result.className = 'result-msg'; }, 3000);
+        }).catch(() => { result.className = 'result-msg error'; result.textContent = 'Gagal menyimpan'; });
     }
 
     // ==================== Promo Limit Functions ====================
@@ -13738,10 +13827,10 @@ app.get('/monitoring', async (req, res) => {
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="PemulaOLD">
+  <meta name="apple-mobile-web-app-title" content="Harga PemulaOLD">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon.png?v=2">
+  <link rel="apple-touch-icon" href="/icon.png?v=3">
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
   <link rel="icon" type="image/png" href="/icon.png?v=2">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-synthesis:none;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
@@ -13874,6 +13963,7 @@ app.get('/monitoring', async (req, res) => {
     .sisa-cta-x { display: inline-block; margin-left: 5px; padding: 0 2px; font-weight: 700; opacity: 0.7; cursor: pointer; }
     .sisa-cta { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #f7931a; color: #111827; font-weight: 700; font-size: 0.95em; line-height: 1.45; vertical-align: 1px; }
     /* Nav icon buttons */
+    .nav-icon-btn.ui-switch-btn { width: auto; padding: 0 8px; gap: 4px; color: #f7931a; font-size: 0.72em; font-weight: 700; border: 1px solid rgba(247,147,26,0.35); background: rgba(247,147,26,0.08); }
     .nav-icon-btn {
       display: flex;
       align-items: center;
@@ -16137,6 +16227,9 @@ app.get('/monitoring', async (req, res) => {
     .price-card.updated-up {
       animation: highlight-up 0.8s ease-out 1;
     }
+    /* Beli / Jual berkedip +-3 detik setelah berubah, supaya terlihat itu harga terbaru */
+    @keyframes price-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .stat-item.updated-up .stat-value, .stat-item.updated-down .stat-value { animation: price-blink 0.5s ease-in-out 6; }
     .price-card.updated-up .value {
       animation: value-up 0.8s ease-out 1;
     }
@@ -17183,6 +17276,9 @@ app.get('/monitoring', async (req, res) => {
             <path d="M9 9.6c0 2.9 2.5 5.4 5.4 5.4l1.1-1.6-1.8-1.1-.8.7c-.9-.4-1.6-1.1-2-2l.7-.8-1.1-1.8L9 9.6z" stroke-width="1.5"/>
           </svg>
         </button>
+        <button class="nav-icon-btn ui-switch-btn" id="uiBaruTopBtn" onclick="window.location.href='/monitoring?ui=baru'" title="Coba tampilan baru (bisa kembali lagi)">
+          <i data-lucide="sparkles" style="width:13px;height:13px;"></i><span>Baru</span>
+        </button>
         <button class="nav-icon-btn" onclick="openNavMenu(event)" title="Menu" id="navMenuBtn">
           <i data-lucide="align-justify" style="width:15px;height:15px;"></i>
         </button>
@@ -17222,6 +17318,10 @@ app.get('/monitoring', async (req, res) => {
       <button class="nav-menu-item" id="joinGroupBtn" style="display:none;" onclick="joinWaGroup(false);closeNavMenu()" title="Gabung ke grup WhatsApp">
         <i data-lucide="users" style="width:14px;height:14px;"></i>
         Gabung Grup WA
+      </button>
+      <button class="nav-menu-item" id="uiBaruBtn" onclick="window.location.href='/monitoring?ui=baru'" title="Pindah ke tampilan baru (bisa kembali lagi)">
+        <i data-lucide="sparkles" style="width:14px;height:14px;color:#f7931a;"></i>
+        Coba Tampilan Baru
       </button>
       <div class="nav-menu-divider"></div>
       <button class="nav-menu-item nav-menu-logout" id="logoutBtn" onclick="logout()">
@@ -20180,7 +20280,7 @@ app.get('/monitoring', async (req, res) => {
       localStorage.removeItem('goldmonitor_session');
       try { localStorage.setItem('gold_kicked_notice', String(Date.now())); } catch(e) {}
       try {
-        showConfirm('Akun Anda baru saja login di perangkat lain. Demi keamanan, maksimal 3 perangkat aktif — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali jika ingin memakai perangkat ini.', 'Login di Perangkat Lain')
+        showConfirm('Akun Anda baru saja login di perangkat lain. Demi keamanan, jumlah perangkat aktif per akun dibatasi — sesi di perangkat ini dikeluarkan otomatis. Silakan login kembali jika ingin memakai perangkat ini.', 'Login di Perangkat Lain')
           .then(function(){ window.location.replace('/login'); });
         // fallback: redirect otomatis kalau modal tidak ditutup
         setTimeout(function(){ window.location.replace('/login'); }, 12000);
