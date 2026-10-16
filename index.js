@@ -6673,14 +6673,8 @@ app.post('/api/admin/users/kick', express.json(), async (req, res) => {
       await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'remove')
       kickedFromGroup = true
       pushLog(`WA | Kicked +${normalizedPhone} from group`)
-
-      // Send kick notification to user
-      try {
-        await sock.sendMessage(jid, {
-          text: `❌ *ANDA TELAH DI-KICK*\n\nAnda telah dikeluarkan dari grup Gold Price Monitor.\n\nJika ada pertanyaan, hubungi admin:\nhttps://wa.me/62895701692525`
-        })
-      } catch (msgErr) {
-      }
+      // Bot tidak mengirim pesan apa pun ke user (hanya ke nomor admin) supaya nomor bot aman
+      await resetGroupAfterRemoval(normalizedPhone, 'dikeluarkan admin (panel)')
     } catch (kickError) {
       // User might not be in group, or bot is not admin
       pushLog(`WA | Failed to kick +${normalizedPhone}: ${kickError.message}`)
@@ -7905,15 +7899,7 @@ app.post('/api/approve-registration', async (req, res) => {
     // Remove from pending (Redis)
     await redis.hdel(REDIS_KEYS.PENDING_REGISTRATIONS, phone)
 
-    // Send approval message to user
-    if (isReady && sock) {
-      try {
-        const userJid = phone + '@s.whatsapp.net'
-        await sock.sendMessage(userJid, {
-          text: `✅ *PENDAFTARAN DISETUJUI*\n\nHalo ${registration.name}!\n\nPendaftaran Anda telah disetujui.\nSilakan login di:\nhttps://xau.pemulaold.com/login\n\nGunakan nomor ini untuk login.`
-        })
-      } catch (e) {}
-    }
+    // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
 
     pushLog(`REGISTER | Approved: ${registration.name} (${phone})`)
 
@@ -7941,15 +7927,7 @@ app.post('/api/reject-registration', async (req, res) => {
     // Remove from pending (Redis)
     await redis.hdel(REDIS_KEYS.PENDING_REGISTRATIONS, phone)
 
-    // Send rejection message to user
-    if (isReady && sock) {
-      try {
-        const userJid = phone + '@s.whatsapp.net'
-        await sock.sendMessage(userJid, {
-          text: `❌ *PENDAFTARAN DITOLAK*\n\nMaaf ${registration.name},\n\nPendaftaran Anda tidak disetujui.${reason ? '\nAlasan: ' + reason : ''}\n\nSilakan hubungi admin untuk informasi lebih lanjut.`
-        })
-      } catch (e) {}
-    }
+    // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
 
     pushLog(`REGISTER | Rejected: ${registration.name} (${phone})`)
 
@@ -21875,10 +21853,35 @@ async function activateUserFromPayment(phone, name, days) {
   return user
 }
 
+// User dikeluarkan dari grup WA: hapus dari daftar anggota dan reset jawabannya soal grup,
+// supaya saat ia aktif lagi (bayar / diperpanjang) ia ditanya lagi "mau gabung grup?".
+async function resetGroupAfterRemoval(phone, reason) {
+  try { await setGroupMember(phone, false) } catch (e) {}
+  try {
+    const pref = (await getGroupPref(phone)) || {}
+    delete pref.choice; delete pref.askAgainAt; delete pref.days; delete pref.adminMark
+    pref.removedAt = Date.now()
+    if (reason) pref.removedReason = reason
+    await saveGroupPref(phone, pref)
+  } catch (e) {}
+}
+
 async function completePaymentOrder(order, via) {
   const settings = await getPaymentSettings()
   const days = order.days || settings.days
   const user = await activateUserFromPayment(order.phone, order.name, days)
+  // Belum / tidak lagi di grup WA (misalnya dikeluarkan saat masa aktif habis): jawaban lama soal
+  // grup dihapus supaya ia ditanya lagi "mau gabung grup?" saat membuka website
+  try {
+    const grp = await getGroupMembers()
+    if (!grp.phones.has(order.phone)) {
+      const pref = (await getGroupPref(order.phone)) || {}
+      if (pref.choice || pref.adminMark) {
+        delete pref.choice; delete pref.askAgainAt; delete pref.days; delete pref.adminMark
+        await saveGroupPref(order.phone, pref)
+      }
+    }
+  } catch (e) {}
   order.status = 'paid'
   order.paidAt = Date.now()
   order.via = via
@@ -22583,6 +22586,7 @@ async function tgUserAction(act, phone) {
         await sock.groupParticipantsUpdate(monitoredGroupId, [phone + '@s.whatsapp.net'], 'remove')
         kicked = true
         pushLog(`WA | Kicked +${phone} from group`)
+        await resetGroupAfterRemoval(phone, 'dikeluarkan admin (Telegram)')
       } catch (e) {
         pushLog(`WA | Failed to kick +${phone}: ${e.message}`)
       }
@@ -25323,13 +25327,8 @@ _Ganti 08xxx dengan nomor WA target_`
             try {
               await sock.groupParticipantsUpdate(monitoredGroupId, [jid], 'remove')
               kickedFromGroup = true
-
-              // Send notification to kicked user
-              try {
-                await sock.sendMessage(jid, {
-                  text: '❌ *ANDA TELAH DI-KICK*\\n\\nAnda telah dikeluarkan dari grup Gold Price Monitor.\\n\\nJika ada pertanyaan, hubungi admin:\\nhttps://wa.me/6289654454210'
-                })
-              } catch (_) {}
+              // Bot tidak mengirim pesan ke user (hanya ke nomor admin) supaya nomor bot aman
+              await resetGroupAfterRemoval(phone, 'dikeluarkan admin (perintah WA)')
             } catch (e) {
               pushLog(`WA CMD | Failed to kick ${phone} from group: ${e.message}`)
             }
