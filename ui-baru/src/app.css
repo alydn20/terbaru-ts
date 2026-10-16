@@ -154,7 +154,7 @@ body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
 /* versi ringkas: semua info tetap tampil sebagai kotak kecil (USD/IDR, Tertinggi, Terendah, Limit,
    Markup/Markdown, Spread, Titik ON); hanya untung per nominal yang disembunyikan */
 /* untung per nominal ikut tampil ringkas: kotak kecil satu baris "60jt  24.2116 gram  +Rp11.700" */
-body.price-compact #nomWrap { width: 100%; margin: 0 !important; padding: 0 !important; border: none !important; }
+body.price-compact #nomWrap { width: 100%; margin: 0 !important; padding: 0.3rem 0 0 !important; border: none !important; border-top: 1px dashed rgb(var(--line) / 0.15) !important; }
 body.price-compact #nomWrap > div:first-child { display: none; }
 body.price-compact #nominals { display: flex !important; flex-wrap: wrap; justify-content: center; gap: 0.25rem; }
 body.price-compact #nominals > .tile { display: flex; align-items: center; gap: 0.4rem; flex: none !important; width: auto !important; max-width: none !important; padding: 0.05rem 0.5rem !important; border-radius: 0.4rem; }
@@ -162,7 +162,8 @@ body.price-compact #nominals > .tile > div { margin: 0 !important; display: flex
 body.price-compact #nominals > .tile > .font-mono { font-size: 10px !important; }
 body.price-compact #nominals > .tile span { font-size: 11px !important; }
 body.price-compact #nominals .pill-up, body.price-compact #nominals .pill-down { padding: 0 0.3rem; }
-body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.25rem; }
+/* garis pemisah di bawah baris jam (di atas info) dan di atas gramasi nominal */
+body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.25rem; padding-top: 0.3rem; border-top: 1px dashed rgb(var(--line) / 0.15); }
 body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 0.4rem; }
 body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
