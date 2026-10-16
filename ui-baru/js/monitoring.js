@@ -325,7 +325,7 @@ function openHistSize() {
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
     HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
-    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus).'),
+    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 3 baris; geser riwayat untuk melihat yang lebih lama.'),
     (() => {
       // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
       let n = histRowsSetting() || 10
