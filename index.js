@@ -16710,7 +16710,7 @@ app.get('/monitoring', async (req, res) => {
       background: rgba(0,0,0,0.85);
       align-items: center;
       justify-content: center;
-      z-index: 9999;
+      z-index: 100100; /* di atas jendela Perpanjang / Grup WA (z-index 100000) */
     }
     .confirm-modal.show { display: flex; }
     .confirm-box {
