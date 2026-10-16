@@ -3388,47 +3388,20 @@ async function checkPriceUpdate() {
 
 // ==================== CONTINUOUS FAST POLLING ====================
 // Polling terus-menerus untuk real-time update
-let isFastPolling = false
-let isFastPollingSince = 0 // timestamp kapan isFastPolling = true (untuk deadlock detection)
 let lastKnownTimestamp = 0
 let consecutiveErrors = 0
 let lastFetchMs = null       // berapa ms request ke Treasury API
 let lastDataAgeMs = null     // berapa ms sejak Treasury update datanya
 let latencyHistory = []      // rolling 10 sample terakhir untuk avg
 
-let _lastPollStart = 0
-let _lastNewTsAt = 0
 let _staleIgnored = 0
 // Hitungan sejak harga baru terakhir, untuk analisis telat di log "Timestamp baru"
 let _pollSame = 0   // balasan berhasil tapi masih harga yang sama (Treasury belum update)
 let _pollFail = 0   // permintaan gagal / timeout (semua cadangan)
 let _pollOld = 0    // balasan berisi harga lama (diabaikan)
-async function fastPoll() {
-  // Treasury memperbarui harga sekali per menit di detik :01-:05. Polling cepat (tiap 0,5 detik)
-  // hanya di detik 0-25 setiap menit, atau kalau harga terakhir sudah > 65 detik (jadwal Treasury
-  // bergeser). Di luar itu cukup tiap 3 detik -> permintaan ke Treasury jauh lebih sedikit
-  // (IP yang terlalu sering meminta cenderung tidak dibalas).
-  const _nowMs = Date.now()
-  // (_lastNewTsAt = jam server saat timestamp baru diterima; updated_at Treasury tanpa zona waktu)
-  const _hot = new Date(_nowMs).getSeconds() <= 25 || !_lastNewTsAt || _nowMs - _lastNewTsAt > 65000
-  if (!_hot && _nowMs - _lastPollStart < 3000) return
-  // Deadlock detection: jika isFastPolling stuck > 10 detik, force reset
-  if (isFastPolling) {
-    if (isFastPollingSince && Date.now() - isFastPollingSince > 10000) {
-      pushLog(`TREASURY | isFastPolling stuck ${Math.round((Date.now()-isFastPollingSince)/1000)}s — force reset`)
-      isFastPolling = false
-    } else {
-      return
-    }
-  }
-  isFastPolling = true
-  isFastPollingSince = Date.now()
-  _lastPollStart = isFastPollingSince
-
+// Memproses SATU balasan Treasury (dipanggil berurutan lewat antrean, lihat launchTreasuryPoll)
+async function fastPoll(treasuryData, _fetchMs) {
   try {
-    const _fetchStart = Date.now()
-    const treasuryData = await fetchTreasury()
-    const _fetchMs = Date.now() - _fetchStart
 
     if (!treasuryData?.data?.buying_rate) {
       consecutiveErrors++
@@ -3476,7 +3449,6 @@ async function fastPoll() {
 
     if (isNewTimestamp) {
       lastKnownTimestamp = updateTime
-      _lastNewTsAt = Date.now()
       lastApiUpdateTime = treasuryData.data.updated_at
       const _usdIdrLog = cachedMarketData.usdIdr?.rate ? ` | USD/IDR Rp${formatRupiah(cachedMarketData.usdIdr.rate)}` : ''
       // Telat = jam diterima server (WIB) - jam Treasury (updated_at, jam WIB tanpa zona waktu)
@@ -3640,19 +3612,39 @@ async function fastPoll() {
       }
     }
   } catch (e) {
-    consecutiveErrors++
-    _pollFail++
-    if (consecutiveErrors <= 3 || consecutiveErrors % 20 === 0) {
-      pushLog(`TREASURY | Fetch error #${consecutiveErrors}: ${e.message}`)
-    }
-  } finally {
-    isFastPolling = false
-    isFastPollingSince = 0
+    pushLog(`TREASURY | Gagal memproses balasan: ${e.message}`)
   }
 }
 
-// Fast poll setiap 500ms (balanced - 2x per detik)
-setInterval(fastPoll, 500)
+// ---------- Pengambil harga Treasury ----------
+// Hasil uji langsung dari server ini (16 Okt): +-51% permintaan ke Treasury MENGGANTUNG secara
+// acak (tersebar rata di semua detik, sama saja koneksi baru atau dipakai ulang); yang dibalas
+// butuh +-0,7-1 detik. Kalau menunggu satu permintaan selesai dulu, harga baru bisa tertahan.
+// Jadi: setiap 0,5 detik dikirim permintaan BARU tanpa menunggu yang sebelumnya (maks 8 berjalan
+// bersamaan, timeout 3,5 detik). Balasan diproses berurutan sesuai datangnya; balasan berisi harga
+// lama diabaikan di fastPoll. Hasil uji cara ini: harga baru diterima +-1-2 detik setelah jam
+// Treasury, di detik berapa pun Treasury memperbaruinya.
+const TREASURY_POLL_MS = 500
+const TREASURY_MAX_INFLIGHT = 8
+let _treasuryInFlight = 0
+let _treasuryQueue = Promise.resolve()
+function launchTreasuryPoll() {
+  if (_treasuryInFlight >= TREASURY_MAX_INFLIGHT) return
+  _treasuryInFlight++
+  const start = Date.now()
+  fetchTreasuryOnce(3500)
+    .then(json => { const ms = Date.now() - start; _treasuryQueue = _treasuryQueue.then(() => fastPoll(json, ms)).catch(() => {}) })
+    .catch(e => {
+      consecutiveErrors++
+      _pollFail++
+      // Gagal sesekali itu normal (+-separuh permintaan). Dicatat hanya kalau beruntun.
+      if (consecutiveErrors === 10 || consecutiveErrors % 60 === 0) {
+        pushLog(`TREASURY | ${consecutiveErrors} permintaan beruntun gagal (terakhir: ${e.message})`)
+      }
+    })
+    .finally(() => { _treasuryInFlight-- })
+}
+setInterval(launchTreasuryPoll, TREASURY_POLL_MS)
 // ==================== XAU/USD REAL-TIME ====================
 let lastXauUsdPrice = null
 let isXauFetching = false
