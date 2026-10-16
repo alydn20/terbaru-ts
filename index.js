@@ -273,6 +273,11 @@ const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 })
 
 // ------ CONFIG ------
 const PORT = process.env.PORT || 8000
+// Sumber harga UTAMA: GET connect.treasury.id/gold/rate (tanpa login; balasan sama: buying_rate,
+// selling_rate, updated_at). Uji 16 Okt: 112/112 berhasil, harga baru terlihat +-1-2 dtk.
+// Endpoint lama (POST api.treasury.id/.../antigrvty/gold/rate) sering menggantung (50-98% gagal)
+// dan hanya dipakai sebagai CADANGAN kalau connect gagal beruntun.
+const TREASURY_RATE_URL = process.env.TREASURY_RATE_URL || 'https://connect.treasury.id/gold/rate'
 const TREASURY_URL = process.env.TREASURY_URL ||
   'https://api.treasury.id/api/v1/antigrvty/gold/rate'
 
@@ -2193,17 +2198,27 @@ ${nominalLines}
 ${calendarSection}${highLowLine}
 🌐 Via website: https://xau.pemulaold.com`
 }
-async function fetchTreasuryOnce(timeoutMs) {
-  const res = await fetch(TREASURY_URL, {
+// source: 'connect' (utama, GET) | 'api' (cadangan, POST endpoint lama)
+let _connectFailStreak = 0
+function connectFailed() {
+  if (++_connectFailStreak === 6) pushLog('TREASURY | connect.treasury.id gagal 6x beruntun, endpoint lama ikut dipakai sebagai cadangan')
+}
+async function fetchTreasuryOnce(timeoutMs, source) {
+  if (!source) source = _connectFailStreak >= 6 && Math.random() < 0.5 ? 'api' : 'connect'
+  const res = await fetch(source === 'api' ? TREASURY_URL : TREASURY_RATE_URL, source === 'api' ? {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Connection': 'keep-alive'
-    },
-    agent: httpsAgent, // Reuse TCP connection
+    headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(timeoutMs)
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  } : {
+    method: 'GET',
+    headers: { 'accept': 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs)
+  }).catch(e => { if (source === 'connect') connectFailed(); throw e })
+  if (!res.ok) { if (source === 'connect') connectFailed(); throw new Error(`HTTP ${res.status}`) }
+  if (source === 'connect') {
+    if (_connectFailStreak >= 6) pushLog(`TREASURY | connect.treasury.id kembali normal setelah ${_connectFailStreak} gagal`)
+    _connectFailStreak = 0
+  }
   const json = await res.json()
   if (!json?.data?.buying_rate || !json?.data?.selling_rate) {
     throw new Error('Invalid data')
