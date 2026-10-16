@@ -1,7 +1,6 @@
 // Fungsi bersama untuk halaman login dan monitoring (tampilan baru).
 // Semua data diambil dari API server yang sama dengan tampilan lama.
 
-export const ADMIN_WA = '62895701692525'
 
 // ------------------------------------------------------------------ sesi
 const SESSION_KEY = 'goldmonitor_session'
@@ -180,7 +179,8 @@ export function confirmDialog(message, { title = 'Konfirmasi', ok = 'Ya', cancel
 
 export function contactAdmin(phone, text) {
   const nomor = phone && /^[0-9]+$/.test(phone) ? ' (+' + phone + ')' : ''
-  window.open('https://wa.me/' + ADMIN_WA + '?text=' + encodeURIComponent(text || ('Hallo saya' + nomor + ' butuh bantuan')), '_blank')
+  // nomor admin tidak ditulis di halaman; server yang meneruskan ke WhatsApp admin
+  window.open('/go/wa-admin?text=' + encodeURIComponent(text || ('Hallo saya' + nomor + ' butuh bantuan')), '_blank')
 }
 
 /** Perkecil foto di perangkat sebelum diunggah (hemat kuota, tetap terbaca) */

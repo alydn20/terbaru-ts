@@ -1,6 +1,6 @@
 // Halaman login (tampilan baru): nomor -> PIN -> (wajib ganti PIN awal) -> monitoring.
 // Nomor belum terdaftar / masa aktif habis -> pembayaran QRIS di halaman ini juga.
-import { $, session, getJSON, applyTheme, contactAdmin, ADMIN_WA } from './api.js'
+import { $, session, getJSON, applyTheme, contactAdmin } from './api.js'
 import { mountPayment } from './payment.js'
 
 applyTheme()
@@ -122,7 +122,7 @@ async function startPayment(p, expired) {
   if (!cfg) { msg('Gagal memuat. Coba lagi sebentar lagi.', 'error'); return }
   if (!cfg.enabled) {
     if (cfg.waFallback === false) { msg(expired ? 'Masa aktif habis. Hubungi admin untuk perpanjang.' : 'Nomor tidak terdaftar.', 'error'); return }
-    location.href = 'https://wa.me/' + ADMIN_WA + '?text=' + encodeURIComponent(expired
+    location.href = '/go/wa-admin?text=' + encodeURIComponent(expired
       ? 'Halo admin, saya mau perpanjang masa aktif. Nomor WA saya: +62' + p
       : 'Halo, saya ingin daftar grup harga PemulaOLD. Nomor WA saya: +62' + p)
     return

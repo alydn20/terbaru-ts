@@ -127,13 +127,17 @@ function renderNominals() {
   const list = visibleNominals()
   if (!state.nominals.length) return
   if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  // Desktop: grid, jumlah kolom menyesuaikan jumlah nominal supaya kotak harga tidak memanjang:
+  // 1 -> 1 (kotak lebar di tengah), 2 -> 2, 3 -> 3, 4 -> 2x2, 5+ -> 3 kolom. HP: 3 per baris, rata tengah.
+  const cols = list.length === 1 ? 'lg:grid-cols-1' : list.length === 2 || list.length === 4 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
+  box.className = 'flex flex-wrap justify-center gap-1 lg:grid lg:gap-2 ' + cols
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
     // HP: 3 per baris; desktop: 2 per baris. Hanya 1 nominal: satu kotak lebar di tengah.
     const one = list.length === 1
-    const size = one ? 'basis-1/2 lg:basis-full lg:max-w-[300px]' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.25rem)/2)]'
+    const size = one ? 'basis-1/2 lg:w-full lg:max-w-[300px] lg:justify-self-center' : 'basis-[calc((100%-0.5rem)/3)]'
     const untung = p ? (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit)) : ''
-    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-3 lg:py-2 lg:text-left ' + size },
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
