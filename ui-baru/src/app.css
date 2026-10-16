@@ -118,6 +118,7 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 
 /* HP: tabel riwayat ringkas supaya muat selebar layar (tanpa geser ke samping bila 1 nominal) */
 @media (max-width: 767px) {
+  #histMode > button { padding: 0.25rem 0.55rem; font-size: 11px; }
   #histScroll table { min-width: 0; }
   #histScroll th, #histScroll td { padding: 0.3rem 0.4rem; }
   #histScroll td { font-size: 12px; line-height: 1.25; }

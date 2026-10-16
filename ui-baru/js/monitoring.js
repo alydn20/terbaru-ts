@@ -248,7 +248,7 @@ let chartFull = false, chartFullAt = 0
 const LAYOUT_KEY = 'monitorLayout'
 export const LAYOUTS = [
   ['def', 'Bawaan', 'Harga + grafik, riwayat di bawah (digulir)', { p: 1, c: 1, h: 1, s: 0 }],
-  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus (kotak harga ringkas)', { p: 1, c: 1, h: 1, s: 1 }],
+  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
   ['pc', 'Harga + Grafik', 'Tanpa riwayat', { p: 1, c: 1, h: 0, s: 0 }],
   ['ch', 'Grafik + Riwayat', 'Tanpa kotak harga', { p: 0, c: 1, h: 1, s: 1 }],
   ['ph', 'Harga + Riwayat', 'Tanpa grafik', { p: 1, c: 0, h: 1, s: 0 }],
@@ -268,7 +268,7 @@ function applyLayout() {
   b.toggle('hide-grafik', !L.c)
   b.toggle('hide-riwayat', !L.h)
   b.toggle('lay-split', !!(L.s && L.c && L.h))
-  b.toggle('price-compact', !!(L.s && L.p && L.c && L.h))
+  b.toggle('price-compact', !!(L.p && priceCompact()))
   fitHistPanel()
 }
 // Desktop + grafik & riwayat berdampingan: lebar panel riwayat = lebar alami tabelnya (supaya
@@ -321,6 +321,8 @@ function openHistSize() {
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
     IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
 }
+// Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
+function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
 export function getLayout() { return layout }
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
@@ -341,7 +343,16 @@ export function openLayoutPicker() {
       h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (id === layout ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: id === layout ? icon('check', 'h-3 w-3') : '' }),
       h('span', { class: 'min-w-0' },
         h('span', { class: 'block text-sm font-bold' }, label),
-        note ? h('span', { class: 'block text-[11px] text-muted' }, note) : null)))))
+        note ? h('span', { class: 'block text-[11px] text-muted' }, note) : null))),
+    (() => {
+      const t = h('input', { type: 'checkbox', class: 'toggle' })
+      t.checked = priceCompact()
+      t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
+      return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
+        h('span', { class: 'min-w-0' },
+          h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
+          h('span', { class: 'block text-[11px] text-muted' }, 'Hanya Beli, Jual, jam & promo (info & untung per nominal disembunyikan)')), t)
+    })()))
 }
 function fitChart() { fitChartBox(); fitHist() }
 // Kotak riwayat setinggi layar (isi digulir di dalam): kalau muat di layar pertama, isi sisa layar;
@@ -375,7 +386,7 @@ function fitChartBox() {
   // HP + grafik & riwayat sekaligus: grafik +-setengah sisa layar supaya riwayat langsung terlihat
   const L = lay()
   const hpSplit = !!(L.s && L.c && L.h) && !wide()
-  box.style.height = Math.max(hpSplit ? 200 : wide() ? 320 : 220, Math.round(hpSplit ? rest * 0.55 : rest)) + 'px'
+  box.style.height = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * 0.45 : rest)) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -422,7 +433,9 @@ let retry = 0
 function connect() {
   if (es) es.close()
   es = new EventSource('/sse?ui=2&session=' + encodeURIComponent(session.get()))
-  es.onopen = () => { $('#liveDot').className = $('#liveDot').className.replace('bg-gold', 'bg-up'); lastData = Date.now(); if (retry) loadHistory(); retry = 0 }
+  // Sambung ulang (mis. server restart karena update): cek versi lewat fetchPrices -> kalau versi
+  // server berubah, halaman reload sendiri ke kode terbaru
+  es.onopen = () => { $('#liveDot').className = $('#liveDot').className.replace('bg-gold', 'bg-up'); lastData = Date.now(); if (retry) { loadHistory(); fetchPrices() } retry = 0 }
   es.onerror = () => {
     $('#liveDot').className = $('#liveDot').className.replace('bg-up', 'bg-gold')
     es.close()
