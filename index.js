@@ -480,7 +480,9 @@ let cachedMarketData = {
 let ADMIN_PHONES = ['62895701692525'] // Fixed admin phones
 
 // App version for force reload - update this to force all clients to reload
-const APP_VERSION = '2024120104'
+// Berubah tiap server start (= tiap update). Halaman (lama & baru) membandingkannya di /monitoring/api
+// dan me-reload sendiri bila berbeda, jadi setelah update semua halaman memakai kode terbaru.
+const APP_VERSION = process.env.APP_VERSION || ('v' + Date.now().toString(36))
 
 // Pending registrations now stored in Redis (REDIS_KEYS.PENDING_REGISTRATIONS)
 
@@ -4944,6 +4946,11 @@ app.get('/sse', async (req, res) => {
   res.setHeader('Connection', 'keep-alive')
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.flushHeaders()
+
+  // Halaman TAMPILAN LAMA yang masih terbuka sejak sebelum tampilan lama dimatikan: tidak dikirimi
+  // data realtime. Pengaman bawaan tampilan lama me-reload halaman sendiri setelah +-80 detik tanpa
+  // data, lalu server memberi tampilan baru. Tampilan baru menandai koneksinya dengan ui=2.
+  if (req.query.ui !== '2') return
 
   // Build user info from validated session
   let userInfo = { phone: phone, name: 'Member', connectedAt: new Date().toISOString(), lastActivity: Date.now() }

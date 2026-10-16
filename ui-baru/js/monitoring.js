@@ -405,7 +405,7 @@ let lastData = Date.now()
 let retry = 0
 function connect() {
   if (es) es.close()
-  es = new EventSource('/sse?session=' + encodeURIComponent(session.get()))
+  es = new EventSource('/sse?ui=2&session=' + encodeURIComponent(session.get()))
   es.onopen = () => { $('#liveDot').className = $('#liveDot').className.replace('bg-gold', 'bg-up'); lastData = Date.now(); if (retry) loadHistory(); retry = 0 }
   es.onerror = () => {
     $('#liveDot').className = $('#liveDot').className.replace('bg-up', 'bg-gold')
