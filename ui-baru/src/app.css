@@ -48,9 +48,9 @@
   .pill-down { @apply pill bg-down/15 text-down; }
   .chip { @apply inline-flex items-center gap-1.5 rounded-full border border-line/[0.08] bg-card2 px-2.5 py-1 text-xs font-bold; }
   /* kotak info kecil di kartu harga: 3 per baris, ukuran sama, isi rata tengah */
-  .stat { @apply flex min-w-0 grow-0 basis-[calc((100%-0.5rem)/3)] flex-col items-center rounded-xl border border-line/[0.08] bg-card2 px-1 py-1 text-center; }
-  .stat-k { @apply flex items-center gap-1 whitespace-nowrap text-[8.5px] font-bold uppercase tracking-wider text-muted; }
-  .stat-v { @apply num whitespace-nowrap font-mono text-[12px] font-extrabold leading-tight lg:text-sm; }
+  .stat { @apply flex min-w-0 grow-0 basis-[calc((100%-0.75rem)/4)] flex-col items-center rounded-xl border border-line/[0.08] bg-card2 px-0.5 py-1 text-center lg:basis-[calc((100%-0.5rem)/3)]; }
+  .stat-k { @apply flex items-center gap-1 whitespace-nowrap text-[8px] font-bold uppercase tracking-wide text-muted lg:text-[8.5px] lg:tracking-wider; }
+  .stat-v { @apply num whitespace-nowrap font-mono text-[11.5px] font-extrabold leading-tight lg:text-sm; }
   .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition active:scale-[0.98] disabled:opacity-50; }
   .btn-gold { @apply btn bg-gold text-bg; }
   .btn-green { @apply btn bg-up text-white; }

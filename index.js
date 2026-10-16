@@ -14760,6 +14760,11 @@ app.get('/monitoring', async (req, res) => {
       .header-title-text { font-size: 0.74em; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; }
       .info-time { font-size: 1.05em; letter-spacing: 0; }
     }
+    @media (max-width: 768px) {
+      /* harga Beli/Jual harus lebih menonjol daripada angka perubahannya */
+      #buyPrice, #sellPrice { font-size: 1.2em !important; }
+      #buyChange, #sellChange { font-size: 0.8em !important; padding: 2px 6px !important; }
+    }
     @media (max-width: 480px) {
       /* baris jam / tertinggi-terendah / limit-markup-spread: jam di atas, sisanya di bawah (tidak bertumpuk) */
       .chart-bottom-row { flex-wrap: wrap; justify-content: center; row-gap: 6px; column-gap: 6px; }
