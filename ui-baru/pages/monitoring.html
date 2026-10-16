@@ -16,7 +16,7 @@
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
-<body class="min-h-screen pb-[calc(48px+env(safe-area-inset-bottom))] lg:pb-0">
+<body class="min-h-screen pb-[env(safe-area-inset-bottom)]">
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
@@ -30,7 +30,7 @@
         <button id="sisaHari" class="hidden items-center gap-1.5 text-[11px] font-semibold"></button>
       </div>
       <!-- desktop: Promo / News / Lainnya pindah ke sini (menu bawah disembunyikan) -->
-      <div id="topNav" class="hidden items-center gap-1 lg:flex"></div>
+      <div id="topNav" class="flex items-center gap-0.5 lg:gap-1"></div>
       <button id="btnLayout" class="icon-btn h-9 w-9 text-muted lg:h-10 lg:w-auto lg:gap-1.5 lg:px-3 lg:text-xs lg:font-semibold" title="Tata letak: pilih harga / grafik / riwayat" aria-label="Tata letak"></button>
       <button id="btnAdminWa" class="icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
     </div>
@@ -60,7 +60,7 @@
 
           <!-- jam + status promo -->
           <div id="clockRow" class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
-            <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
+            <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span><span class="clk-colon">:</span><span id="clkM">--</span><span class="clk-colon">:</span><span id="clkS">--</span></span>
             <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
           </div>
@@ -131,7 +131,7 @@
   </main>
 
   <!-- ============================== NAVIGASI BAWAH ============================== -->
-  <nav id="bottomNav" class="fixed inset-x-0 bottom-0 z-30 lg:hidden border-t border-line/[0.08] bg-card/95 backdrop-blur-xl" style="padding-bottom: env(safe-area-inset-bottom)" aria-label="Navigasi">
+  <nav id="bottomNav" class="hidden border-t border-line/[0.08] bg-card/95 backdrop-blur-xl" style="padding-bottom: env(safe-area-inset-bottom)" aria-label="Navigasi">
     <div class="mx-auto grid h-11 max-w-xl grid-cols-5">
       <button data-nav="harga" class="nav-item">Harga</button>
       <button data-nav="grafik" class="nav-item">Grafik</button>

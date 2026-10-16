@@ -127,7 +127,9 @@ function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
+  // 0 nominal dipilih: bagian untung per nominal disembunyikan (atur lagi dari Lainnya > Atur nominal)
+  $('#nomWrap').classList.toggle('nom-off', !list.length)
+  if (!list.length) { box.replaceChildren(); fitChart(); return }
   // Desktop: grid, jumlah kolom menyesuaikan jumlah nominal supaya kotak harga tidak memanjang:
   // 1 -> 1 (kotak lebar di tengah), 2 -> 2, 3 -> 3, 4 -> 2x2, 5+ -> 3 kolom. HP: 3 per baris, rata tengah.
   const cols = list.length === 1 ? 'lg:grid-cols-1' : list.length === 2 || list.length === 4 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'
@@ -192,6 +194,11 @@ function setUsdIdr(rate) {
     const el = $('#usdIdrChange')
     el.className = 'num text-[9px] ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
+    const chip = $('#chipUsd')
+    if (chip) {
+      chip.classList.remove('chip-up', 'chip-down', 'tile-blink'); void chip.offsetWidth
+      chip.classList.add(c > 0 ? 'chip-up' : 'chip-down', 'tile-blink')
+    }
   }
   state.usdIdr = rate
   $('#usdIdr').textContent = num(r)
@@ -292,7 +299,7 @@ function fitHistPanel() {
 window.addEventListener('resize', () => { fitHistPanel(); fitHist() })
 if ('MutationObserver' in window) {
   const hb = document.getElementById('histBody')
-  if (hb) new MutationObserver(() => { fitHistPanel(); fitHist() }).observe(hb, { childList: true })
+  if (hb) new MutationObserver(() => { fitHistPanel(); fitChart() }).observe(hb, { childList: true })
 }
 // Ukuran teks riwayat (tombol Aa di judul riwayat), diingat per perangkat
 const HIST_SIZES = [['0.85', 'Kecil'], ['1', 'Sedang (bawaan)'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
@@ -325,7 +332,7 @@ function openHistSize() {
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
     HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
-    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 3 baris; geser riwayat untuk melihat yang lebih lama.'),
+    h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 2 baris; geser riwayat untuk melihat yang lebih lama.'),
     (() => {
       // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
       let n = histRowsSetting() || 10
@@ -343,6 +350,48 @@ function openHistSize() {
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
+// Info harga yang ditampilkan (pilihan user, diingat per perangkat). Semua dimatikan = baris info hilang.
+const CHIP_DEFS = [['chipUsd', 'USD/IDR'], ['chipHigh', 'Tertinggi'], ['chipLow', 'Terendah'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown'], ['chipSpread', 'Spread'], ['chipOn', 'Titik ON']]
+function chipPrefs() { try { return JSON.parse(localStorage.getItem('chipPrefs') || '{}') || {} } catch (e) { return {} } }
+function applyChipPrefs() {
+  const pr = chipPrefs()
+  CHIP_DEFS.forEach(([id]) => { const el = document.getElementById(id); if (el) el.classList.toggle('chip-off', pr[id] === false) })
+  $('#chips').classList.toggle('chips-off', CHIP_DEFS.every(([id]) => pr[id] === false))
+  fitChart()
+}
+// Ikon pengaturan di pojok kotak harga: ringkas on/off, info harga, nominal
+function openPriceSettings() {
+  const t = h('input', { type: 'checkbox', class: 'toggle' })
+  t.checked = priceCompact()
+  t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
+  const row = (ic, label, note, fn) => h('button', { class: 'tile flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn, html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })
+  openSheet('Atur kotak harga', h('div', { class: 'flex flex-col gap-1.5' },
+    h('label', { class: 'tile flex items-center justify-between gap-3 px-3 py-2.5' },
+      h('span', { class: 'min-w-0' },
+        h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
+        h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil, info & gramasi dalam kotak kecil')), t),
+    row('activity', 'Atur info harga', 'USD/IDR, Tertinggi, Terendah, Limit, Markdown, Spread, Titik ON', () => openChipSettings()),
+    row('sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings())))
+}
+export function openChipSettings() {
+  const pr = chipPrefs()
+  const save = () => { try { localStorage.setItem('chipPrefs', JSON.stringify(pr)) } catch (e) {} applyChipPrefs() }
+  const toggles = []
+  const rows = CHIP_DEFS.map(([id, label]) => {
+    const t = h('input', { type: 'checkbox', class: 'toggle' })
+    t.checked = pr[id] !== false
+    t.addEventListener('change', () => { pr[id] = t.checked; save() })
+    toggles.push([id, t])
+    return h('label', { class: 'flex items-center justify-between py-2.5 text-sm font-semibold' }, label, t)
+  })
+  const all = on => { toggles.forEach(([id, t]) => { t.checked = on; pr[id] = on }); save() }
+  openSheet('Atur info harga', h('div', {},
+    h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih info yang tampil di kotak harga. Diingat di perangkat ini.'),
+    h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
+    h('div', { class: 'mt-3 flex gap-2' },
+      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(false) }, 'Sembunyikan semua'),
+      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(true) }, 'Tampilkan semua'))))
+}
 export function getLayout() { return layout }
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
@@ -371,7 +420,7 @@ export function openLayoutPicker() {
       return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
-          h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + USD/IDR, Limit, Spread, Titik ON')), t)
+          h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga & gramasi nominal dalam kotak kecil')), t)
     })(),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
@@ -387,12 +436,47 @@ export function openLayoutPicker() {
     })() : null))
 }
 function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
+// Tinggi menu bawah (0 di desktop, dan saat disembunyikan karena layar lama tidak disentuh)
+function navH() { return document.body.classList.contains('nav-idle') ? 0 : $('#bottomNav').offsetHeight }
+// Tinggi kotak riwayat untuk n baris: judul + kepala tabel + n baris + tombol halaman (kalau tampil)
+function histRowsHeight(n) {
+  const sec = $('#sec-riwayat'), tr = $('#histBody tr'), pager = $('#histPager'), scroll = $('#histScroll')
+  // Tepat: tinggi kotak sekarang dikoreksi dengan selisih antara tinggi n baris pertama yang
+  // sebenarnya dan area baris yang sedang terlihat (tidak ada potongan baris berikutnya)
+  const trs = document.querySelectorAll('#histBody tr')
+  if (sec && sec.offsetHeight && scroll && trs.length) {
+    // ukuran yang benar-benar tampil (getBoundingClientRect), karena tabel bisa di-zoom (ukuran teks)
+    const vh = el => el.getBoundingClientRect().height
+    let need = 0
+    for (let i = 0; i < Math.min(n, trs.length); i++) need += vh(trs[i])
+    if (trs.length < n) need += vh(trs[0]) * (n - trs.length)
+    const headH = $('#histHead') ? vh($('#histHead')) : 0
+    return Math.round(sec.offsetHeight + need - (scroll.clientHeight - headH))
+  }
+  const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
+  const head = $('#histHead') ? $('#histHead').offsetHeight : 28
+  const rowH = tr ? tr.getBoundingClientRect().height : (wide() ? 48 : 44)
+  const pg = pager && pager.offsetParent ? pager.offsetHeight : 0
+  return Math.round(title + head + rowH * n + pg + 3)
+}
+// HP: menu bawah disembunyikan setelah 5 detik layar tidak disentuh -> grafik lebih besar.
+// Sentuh / geser / gerak mouse -> menu muncul lagi.
+let idleTimer = null
+function wake() {
+  if (document.body.classList.contains('nav-idle')) { document.body.classList.remove('nav-idle'); fitChart() }
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    if (wide() || document.querySelector('.sheet, #tourRoot, #askJoinModal')) return
+    document.body.classList.add('nav-idle'); fitChart()
+  }, 5000)
+}
+;['touchstart', 'scroll', 'mousemove', 'keydown', 'click'].forEach(ev => window.addEventListener(ev, wake, { passive: true, capture: true }))
 // 'Harga saja': kotak harga setinggi layar (di antara bar atas dan menu bawah)
 function fitPriceOnly() {
   const sec = $('#sec-harga')
   if (!sec) return
   if (!document.body.classList.contains('price-only') || document.body.classList.contains('price-compact')) { sec.style.minHeight = ''; return }
-  sec.style.minHeight = Math.max(240, window.innerHeight - $('header').offsetHeight - $('#bottomNav').offsetHeight - (wide() ? 32 : 20)) + 'px'
+  sec.style.minHeight = Math.max(240, window.innerHeight - $('header').offsetHeight - navH() - (wide() ? 32 : 20)) + 'px'
 }
 // Kotak riwayat setinggi layar (isi digulir di dalam): kalau muat di layar pertama, isi sisa layar;
 // kalau letaknya di bawah (setelah grafik), setinggi satu layar. Panel samping desktop diatur CSS.
@@ -401,11 +485,13 @@ function fitHist() {
   if (!sec) return
   const b = document.body.classList
   if (b.contains('hide-riwayat') || (wide() && b.contains('lay-split'))) { sec.classList.remove('hist-fit'); sec.style.height = ''; return }
-  const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+  const hdr = $('header').offsetHeight, nav = navH()
   const avail = window.innerHeight - hdr - nav - (wide() ? 32 : 16)
   const rest = window.innerHeight - (sec.getBoundingClientRect().top + window.scrollY) - nav - (wide() ? 16 : 8)
   sec.classList.add('hist-fit')
   // grafik & riwayat sekaligus (bertumpuk): riwayat cukup mengisi sisa layar di bawah grafik
+  // jumlah baris dipilih: kotak tepat n baris (sisanya digeser di dalam kotak)
+  if (b.contains('lay-stack') && histRowsSetting()) { sec.style.height = histRowsHeight(histRowsSetting()) + 'px'; return }
   if (b.contains('lay-stack')) { sec.style.height = Math.max(200, rest) + 'px'; return }
   sec.style.height = Math.max(320, rest >= 320 ? rest : avail) + 'px'
 }
@@ -413,14 +499,14 @@ function fitChartBox() {
   const box = $('#tvChart')
   if (!box) return
   if (chartFull && !wide()) {
-    const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
+    const hdr = $('header').offsetHeight, nav = navH()
     box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - 12)) + 'px'
     return
   }
   // HP & desktop: grafik mengisi sisa layar di bawah harga, jadi harga + grafik muat satu layar
   // dan riwayat baru terlihat saat digulir (di desktop menu bawah tersembunyi, tingginya 0)
   const top = box.getBoundingClientRect().top + window.scrollY
-  const nav = $('#bottomNav').offsetHeight
+  const nav = navH()
   const rest = window.innerHeight - top - nav - (wide() ? 16 : 8)
   // Grafik & riwayat sekaligus tetapi bertumpuk (HP, atau desktop dengan riwayat di bawah):
   // grafik +-setengah sisa layar supaya riwayat langsung terlihat
@@ -429,13 +515,8 @@ function fitChartBox() {
   // (baris sedikit -> grafik lebih besar)
   const nRows = histRowsSetting()
   if (hpSplit && nRows) {
-    const sec = $('#sec-riwayat'), tr = $('#histBody tr'), scroll = $('#histScroll')
-    const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 40)
-    const head = $('#histHead') ? $('#histHead').offsetHeight : 28
-    const extra = sec && scroll ? sec.offsetHeight - scroll.clientHeight : 90   // judul + tombol halaman + garis
-    const histH = Math.round((sec && sec.offsetHeight ? extra : 90) + head + rowH * nRows + 4)
     const gap = wide() ? 16 : 8
-    box.style.height = Math.max(180, Math.round(rest - histH - gap)) + 'px'
+    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(nRows) - gap)) + 'px'
     return
   }
   const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
@@ -460,8 +541,14 @@ function tick() {
   $('#clkH').textContent = pad2(now.getHours())
   $('#clkM').textContent = pad2(now.getMinutes())
   const sEl = $('#clkS')
-  sEl.textContent = pad2(s)
-  sEl.className = s >= 50 ? 'text-down' : ''
+  // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
+  if (sEl.textContent !== pad2(s)) {
+    sEl.textContent = pad2(s)
+    sEl.className = (s >= 50 ? 'text-down ' : '') + 'clk-tick'
+    void sEl.offsetWidth
+    sEl.classList.add('clk-tick-on')
+    document.querySelectorAll('.clk-colon').forEach(c => c.classList.toggle('clk-dim', s % 2 === 1))
+  }
   $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
   countdownTick(s, $('main'))
 }
@@ -539,10 +626,11 @@ function scrollTo(sel) {
 }
 // Desktop: menu bawah disembunyikan; Promo / News / Lainnya dipindah ke bar atas (Harga & Grafik
 // tidak perlu karena semuanya satu halaman). HP: kembali ke menu bawah.
+// Promo / News / Lainnya selalu di bar atas (HP: ikon saja). Menu bawah tidak dipakai lagi.
 function placeNav() {
-  const top = $('#topNav'), grid = $('#bottomNav > div')
-  if (!top || !grid) return
-  const to = wide() ? top : grid
+  const top = $('#topNav')
+  if (!top) return
+  const to = top
   ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
 }
 window.addEventListener('resize', placeNav)
@@ -584,10 +672,14 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
+  applyChipPrefs()
+  // ikon pengaturan kotak harga, di baris jam setelah pil PROMO (tidak menimpa kotak Beli/Jual)
+  const gear = h('button', { id: 'btnPriceSet', class: 'icon-btn h-7 w-7 shrink-0 text-muted', title: 'Atur kotak harga', 'aria-label': 'Atur kotak harga', html: icon('sliders', 'h-3.5 w-3.5'), onclick: openPriceSettings })
+  $('#clockRow').append(gear)
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, openChipSettings, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()

@@ -19,7 +19,8 @@ export function openMore() {
       hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
       [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
       ['activity', 'Indikator grafik', openIndicators],
-      ['sliders', 'Atur nominal', openNominalSettings]
+      ['sliders', 'Atur nominal', openNominalSettings],
+      hooks.openChipSettings ? ['activity', 'Atur info harga', () => hooks.openChipSettings()] : null
     ]],
     ['Notifikasi & alat', [
       ['sound', 'Suara & getar', openSound],
@@ -44,13 +45,14 @@ export function openMore() {
       h('div', { class: 'truncate text-sm font-bold' }, (state.user && state.user.name) || 'Member'),
       h('div', { class: 'num text-xs text-muted' }, '+' + state.phone + ' · ' + (state.user && state.user.expired ? 'aktif sampai ' + tanggalPanjang(state.user.expired) : 'Lifetime')))) : null
   if (matchMedia('(min-width: 768px)').matches) return openMoreDropdown(groups, logoutItem, profile)
-  const tile = ([ic, label, onclick, extra = '']) =>
-    h('button', { class: 'tile flex min-h-[72px] flex-col items-center justify-center gap-1.5 px-1.5 py-2.5 text-center text-[11px] font-semibold leading-tight active:scale-95 ' + extra, onclick, html: icon(ic, 'h-5 w-5') + '<span>' + label + '</span>' })
+  // HP: daftar ringkas seperti menu desktop (ikon kecil + nama, per kategori)
+  const row = ([ic, label, onclick, , cls = '']) =>
+    h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm font-semibold active:bg-card2 ' + cls, onclick, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
   openSheet('Lainnya', h('div', {}, profile(),
-    groups.map(([title, items]) => h('div', { class: 'mb-3' },
-      h('div', { class: 'label mb-1.5 px-0.5 text-[10px]' }, title),
-      h('div', { class: 'grid grid-cols-3 gap-2' }, items.map(tile)))),
-    h('button', { class: 'btn-ghost mt-1 w-full text-down', onclick: logoutItem[2], html: icon('logout', 'h-4 w-4') + '<span>Keluar</span>' })))
+    groups.map(([title, items], i) => h('div', { class: i ? 'mt-1.5 border-t border-line/[0.08] pt-1.5' : '' },
+      h('div', { class: 'label px-2.5 pb-0.5 pt-1 text-[10px]' }, title),
+      items.map(row))),
+    h('div', { class: 'mt-1.5 border-t border-line/[0.08] pt-1.5' }, row(logoutItem))))
 }
 
 // Desktop: menu turun di bawah tombol Lainnya (bukan lembar dari bawah seperti di HP).
@@ -173,14 +175,19 @@ export function openSound() {
 // ===================================================================== NOMINAL
 export function openNominalSettings() {
   openSheet('Nominal yang dipantau', h('div', {},
-    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih nominal yang tampil di kartu untung dan tabel riwayat.'),
+    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih nominal yang tampil di kartu untung dan tabel riwayat. Boleh tidak memilih sama sekali.'),
     h('div', { class: 'divide-y divide-line/[0.06]' }, state.nominals.map(n => {
-      const t = h('input', { type: 'checkbox', class: 'toggle' })
+      const t = h('input', { type: 'checkbox', class: 'toggle nom-t', 'data-id': n.id })
       t.checked = isNominalVisible(n.id)
       t.addEventListener('change', () => { setNominalVisible(n.id, t.checked); if (hooks.refreshNominals) hooks.refreshNominals() })
       return h('label', { class: 'flex items-center justify-between py-3 text-sm font-semibold' },
         h('span', {}, n.label, h('span', { class: 'ml-2 text-xs font-normal text-muted' }, rp(n.amount))), t)
-    }))))
+    })),
+    h('div', { class: 'mt-3 flex gap-2' },
+      ...[[false, 'Hapus semua'], [true, 'Pilih semua']].map(([on, label]) => h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: e => {
+        e.currentTarget.closest('.sheet').querySelectorAll('.nom-t').forEach(t => { t.checked = on; setNominalVisible(t.dataset.id, on) })
+        if (hooks.refreshNominals) hooks.refreshNominals()
+      } }, label)))))
 }
 
 // ===================================================================== NOTIFIKASI HP

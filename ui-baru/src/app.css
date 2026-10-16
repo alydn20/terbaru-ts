@@ -76,6 +76,8 @@
   .nav-item[aria-current='true'] { @apply text-gold; }
   /* HP: menu bawah hanya ikon (tulisan disembunyikan, tetap terbaca pembaca layar lewat aria-label) */
   #bottomNav .nav-item { font-size: 0; gap: 0; }
+  /* HP: Promo / News / Lainnya di bar atas sebagai ikon kecil (tanpa tulisan) */
+  @media (max-width: 767px) { #topNav .nav-item { font-size: 0; gap: 0; width: 2.1rem; height: 2.25rem; } }
   .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[2px] w-6 rounded-b bg-gold; }
   .badge { @apply absolute left-1/2 top-0.5 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
 
@@ -141,24 +143,61 @@ body.idr-merge #histScroll .hist-idr-col { display: table-cell; }
 body.idr-merge #histMode { display: none; }
 
 /* Kotak harga RINGKAS (ceklis di Tata letak; HP, tablet, desktop): satu baris kecil tanpa kotak
-   "BELI Rp... JUAL Rp... jam PROMO", di bawahnya satu baris kecil USD/IDR, Limit, Spread, Titik ON. */
+   "BELI Rp... JUAL Rp... jam PROMO", di bawahnya kotak-kotak kecil info harga dan gramasi nominal. */
 body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
 body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
 /* Beli/Jual tetap berkotak (warna naik/turun ikut), hanya lebih kecil dan tipis */
-body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-type: normal !important; min-width: 10.5rem; }
+body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-type: normal !important; }
+@media (min-width: 768px) { body.price-compact .price-tile { min-width: 10.5rem; } }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
 body.price-compact #clockRow > .num { font-size: 1rem; }
 body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
-body.price-compact #nomWrap, body.price-compact #chipHigh, body.price-compact #chipLow, body.price-compact #chipMarkup { display: none !important; }
-body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.15rem 0.9rem; }
-body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0; background: none; border: none; }
+/* versi ringkas: semua info tetap tampil sebagai kotak kecil (USD/IDR, Tertinggi, Terendah, Limit,
+   Markup/Markdown, Spread, Titik ON); hanya untung per nominal yang disembunyikan */
+/* untung per nominal ikut tampil ringkas: kotak kecil satu baris "60jt  24.2116 gram  +Rp11.700" */
+body.price-compact #nomWrap { width: 100%; margin: 0 !important; padding: 0.3rem 0 0 !important; border: none !important; border-top: 1px dashed rgb(var(--line) / 0.15) !important; }
+body.price-compact #nomWrap > div:first-child { display: none; }
+body.price-compact #nominals { display: flex !important; flex-wrap: wrap; justify-content: center; gap: 0.25rem; }
+body.price-compact #nominals > .tile { display: flex; align-items: center; gap: 0.4rem; flex: none !important; width: auto !important; max-width: none !important; padding: 0.05rem 0.5rem !important; border-radius: 0.4rem; }
+body.price-compact #nominals > .tile > div { margin: 0 !important; display: flex !important; align-items: center; gap: 0.35rem; }
+body.price-compact #nominals > .tile > .font-mono { font-size: 10px !important; }
+body.price-compact #nominals > .tile span { font-size: 11px !important; }
+body.price-compact #nominals .pill-up, body.price-compact #nominals .pill-down { padding: 0 0.3rem; }
+/* garis pemisah di bawah baris jam (di atas info) dan di atas gramasi nominal */
+body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.25rem; padding-top: 0.3rem; border-top: 1px dashed rgb(var(--line) / 0.15); }
+body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 0.4rem; }
 body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
+/* Ukuran versi ringkas mengikuti layar: HP kecil, tablet sedang, desktop lebih besar, monitor lebar terbesar */
+@media (max-width: 767px) {
+  body.price-compact #chips .stat-k { font-size: 8px; }
+  body.price-compact #chips .stat-v { font-size: 10.5px; }
+  body.price-compact #clockRow > .num { font-size: 0.95rem; }
+}
+@media (min-width: 1280px) {
+  body.price-compact .price-tile .price-big { font-size: 1.3rem !important; }
+  body.price-compact .price-tile { min-width: 12rem; padding: 0.25rem 0.9rem !important; }
+  body.price-compact #clockRow > .num { font-size: 1.25rem; }
+  body.price-compact #promoStatus { font-size: 0.85rem; padding: 0.2rem 0.75rem; }
+  body.price-compact #chips .stat { padding: 0.15rem 0.6rem; }
+  body.price-compact #chips .stat-k { font-size: 10px; }
+  body.price-compact #chips .stat-v { font-size: 13px; }
+}
+@media (min-width: 1600px) {
+  body.price-compact .price-tile .price-big { font-size: 1.5rem !important; }
+  body.price-compact .price-tile { min-width: 13.5rem; }
+  body.price-compact #clockRow > .num { font-size: 1.4rem; }
+  body.price-compact #chips .stat-k { font-size: 11px; }
+  body.price-compact #chips .stat-v { font-size: 14px; }
+}
 /* HP: baris ringkas muat selebar layar. Badge naik/turun tetap tampil (lebih kecil), tulisan "Rp"
    disembunyikan; kalau tetap tidak muat, Jual turun ke baris berikutnya (tidak meluber). */
 @media (max-width: 767px) {
-  body.price-compact #sec-harga > div:first-child { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; width: 100%; }
+  body.price-compact #sec-harga { overflow: visible; }
+  body.price-compact #sec-harga > div:first-child { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.4rem; width: 100%; }
+  body.price-compact .price-tile { min-width: 0; overflow: hidden; }
+  body.price-compact .price-tile .price-big { font-size: clamp(0.78rem, 4.3vw, 1rem) !important; }
   body.price-compact #buyChange, body.price-compact #sellChange { font-size: 9px !important; padding: 0 0.3rem !important; }
   body.price-compact .price-tile { padding: 0.1rem 0.4rem !important; }
   body.price-compact .price-tile .price-big { font-size: 1rem !important; }
@@ -187,3 +226,31 @@ body.price-only:not(.price-compact) .stat-k { font-size: clamp(8px, 1.5vmin, 12p
 
 /* Ukuran teks riwayat pilihan user (tombol Aa): seluruh isi tabel diperbesar / diperkecil */
 #histScroll table { zoom: var(--hist-zoom, 1); }
+
+/* USD/IDR berubah: kotaknya hijau / merah sebentar dan angkanya berkedip (seperti Beli/Jual) */
+#chipUsd { transition: background-color 0.3s, border-color 0.3s; }
+#chipUsd.chip-up { background-color: rgb(var(--up) / 0.15); border-color: rgb(var(--up) / 0.55); }
+#chipUsd.chip-down { background-color: rgb(var(--down) / 0.15); border-color: rgb(var(--down) / 0.55); }
+.stat.tile-blink .stat-v { animation: tileBlink 0.5s ease-in-out 6; }
+
+/* HP: menu bawah disembunyikan saat layar lama tidak disentuh (body.nav-idle) */
+#bottomNav { transition: transform 0.25s ease; }
+body.nav-idle #bottomNav { transform: translateY(110%); }
+body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
+
+/* Harga berubah: kotak Beli/Jual dan USD/IDR berkedip terang beberapa kali (+-3 detik), bukan hanya
+   angkanya meredup, supaya jelas terlihat ada perubahan */
+@keyframes flashUpBox { 0%, 100% { background-color: rgb(var(--up) / 0.15); } 50% { background-color: rgb(var(--up) / 0.5); } }
+@keyframes flashDownBox { 0%, 100% { background-color: rgb(var(--down) / 0.15); } 50% { background-color: rgb(var(--down) / 0.5); } }
+.tile-up.tile-blink, .chip-up.tile-blink { animation: flashUpBox 0.5s ease-in-out 6; }
+.tile-down.tile-blink, .chip-down.tile-blink { animation: flashDownBox 0.5s ease-in-out 6; }
+
+/* Jam: titik dua berkedip tiap detik, angka detik berdenyut saat berganti */
+.clk-colon { transition: opacity 0.2s; }
+.clk-colon.clk-dim { opacity: 0.25; }
+@keyframes clkTick { 0% { opacity: 0.35; transform: translateY(-2px); } 100% { opacity: 1; transform: none; } }
+.clk-tick { display: inline-block; }
+.clk-tick.clk-tick-on { animation: clkTick 0.35s ease-out; }
+
+/* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
+#chips .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
