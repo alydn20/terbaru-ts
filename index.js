@@ -417,6 +417,11 @@ const subscriptions = new Set()
 // Token awal dari Treasury (akan di-refresh otomatis jika expired)
 let treasuryToken = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZXMiOlsiKiJdLCJhdWQiOiIzIiwiZXhwIjoxNzY3NzA3ODcwLCJqdGkiOiJyWmc2RTdLeU16YUtVZzB0Q3dPeUc5dGQxMlNROHh3YUxLT2IyZGZiMElCZjM0anJYMW5PSXVZZDNMOUxTUHR0eXd3eVRYN1RXN0RJbFpUdDdkbUhjRVJiWnJWbmVUSjJZWkl0IiwiaWF0IjoxNzY2NDExODcwLCJuYmYiOjE3NjY0MTE4NzAsInN1YiI6IjE2ODg3Nzk0In0.FDb_1WLhjE4pJ5zfhuAkAX4-mhIylcXAZmNbyWA2o-E9N8bzxrKqkiL0RRPaISggDOBz2m31eYtM_3-hNwsDIkhejhBnDDDYmD8xurKe1275zYE3OJE2XGw8QhXwlop1K_IA0PzVzXqnPJm5DQyKCU6Ya_QRVMmidVpOji3Q4bbR-aHL9U0l1CsubwvI7laj66qCjw2XT7ftKf0bFW1mm5yDz-l0zuJVzpNlvsFBqroI_RR6nVHeu4wG3QYhvoATKUyRntjWMLuPRB9wu2WA7-DJuQtACvfMPdqoNhfT-sgSYxR1WXuI4micZe3_tOKbabiK2FJUoLHkHtPnPwEuAxnxDwzlvqOoQrTpbtBRUbRprjjdJ6CD0J2TR7qkkhX284BJHBVub8kYTNYpYIhim9Zzvgh_1TdBnX-nBFNvK0fFiaA4VbqAnl5jcFTs2HEglj_Vh3RT0XHa7b8DSjHfRlnsWxr6jJexT7-6svnXHQFUBnRG-qa5RXYyp9mDxqIWsURcS19OuxSSwlHVTRsLq_4AMfupWwKLSRFIERHwYgrbYozDlROb-x8FDLuOlON8wiMSSlSaVCXW0ZboV7h6ROte_mrRoTjRsn2QVA1pyGZbSn6NfEudvqcLcHXBz1cc9rdJMJ6lvRBInUHg2JjZxzTJRGiVa69ICmm0D4bQK3Y'
 let lastPromoStatus = null // 'ON' atau 'OFF'
+// Waktu terakhir promo terlihat ON (ms). Disimpan di Redis supaya tidak hilang saat restart.
+// Saat promo OFF, website menampilkan "Terakhir ON dd-mm-yyyy" di kotak Titik ON.
+const PROMO_LAST_ON_KEY = 'gold:promo_last_on'
+let promoLastOnAt = null   // null = belum dimuat dari Redis, 0 = belum pernah tercatat
+let _promoLastOnSavedAt = 0
 let lowestOnPriceCache = undefined // undefined = belum diload, null = belum ada nilai
 let lowestOnDateWIB = null        // Tanggal WIB (YYYY-MM-DD) saat lowestOnPriceCache dicatat
 let lowestOnPendingTimeout = null // Timeout 20 detik sebelum update titik ON terendah
@@ -2346,6 +2351,17 @@ async function doPromoBroadcast() {
     )
     const currentStatus = hasPromo ? 'ON' : 'OFF'
 
+    // Catat waktu terakhir ON (disimpan paling sering tiap 1 menit, dan langsung saat berubah ke OFF)
+    if (promoLastOnAt === null) {
+      try { const v = await redis.get(PROMO_LAST_ON_KEY); promoLastOnAt = v ? parseInt(v, 10) || 0 : 0 } catch (e) { promoLastOnAt = 0 }
+    }
+    if (currentStatus === 'ON') {
+      promoLastOnAt = now
+      if (now - _promoLastOnSavedAt > 60000) { _promoLastOnSavedAt = now; redis.set(PROMO_LAST_ON_KEY, String(now)).catch(() => {}) }
+    } else if (lastPromoStatus === 'ON' && promoLastOnAt) {
+      redis.set(PROMO_LAST_ON_KEY, String(promoLastOnAt)).catch(() => {})
+    }
+
     // Detect status change
     const isFirstCheck = lastPromoStatus === null
     const statusChanged = lastPromoStatus !== null && lastPromoStatus !== currentStatus
@@ -2513,6 +2529,7 @@ async function doPromoBroadcast() {
       type: 'promo_status',
       status: currentStatus,
       message: message,
+      lastOnAt: promoLastOnAt || null,
       time: new Date().toISOString()
     })
 
@@ -2900,8 +2917,8 @@ async function sendPushToAll(title, body, type = 'price') {
     const payload = JSON.stringify({
       title,
       body,
-      icon: '/icon.png',
-      badge: '/icon.png',
+      icon: '/icon.png?v=2',
+      badge: '/icon.png?v=2',
       type,
       url: '/monitoring'
     })
@@ -2961,7 +2978,7 @@ async function sendRenewReminders() {
       const payload = JSON.stringify({
         title: hari <= 1 ? 'Masa aktif habis besok' : 'Masa aktif tinggal ' + hari + ' hari',
         body: 'Ketuk untuk perpanjang: bayar QRIS lalu upload bukti, langsung dari website.',
-        icon: '/icon.png', badge: '/icon.png', type: 'info', url: '/monitoring?perpanjang=1'
+        icon: '/icon.png?v=2', badge: '/icon.png?v=2', type: 'info', url: '/monitoring?perpanjang=1'
       })
       const subscription = typeof subRaw === 'string' ? JSON.parse(subRaw) : subRaw
       await webpush.sendNotification(subscription, payload).then(() => { n++ }).catch(async e => {
@@ -4863,6 +4880,7 @@ app.get('/sse', async (req, res) => {
     res.write(`data: ${JSON.stringify({
       type: 'promo_status',
       status: lastPromoStatus,
+      lastOnAt: promoLastOnAt || null,
       message: lastPromoStatus === 'ON' ? '✅ ON' : '❌ OFF'
     })}\n\n`)
   }
@@ -5073,13 +5091,13 @@ app.get('/manifest.json', (req, res) => {
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png',
+        src: '/icon.png?v=2',
         sizes: '192x192',
         type: 'image/png',
         purpose: 'any maskable'
       },
       {
-        src: '/icon.png',
+        src: '/icon.png?v=2',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any maskable'
@@ -5106,7 +5124,7 @@ app.get('/sw.js', (_req, res) => {
       self.skipWaiting();
       e.waitUntil(
         caches.open(CACHE_VERSION).then((cache) => {
-          return cache.addAll(['/icon.png']);
+          return cache.addAll(['/icon.png?v=2']);
         })
       );
     });
@@ -5168,8 +5186,8 @@ app.get('/sw.js', (_req, res) => {
 
       const options = {
         body: data.body,
-        icon: data.icon || '/icon.png',
-        badge: data.badge || '/icon.png',
+        icon: data.icon || '/icon.png?v=2',
+        badge: data.badge || '/icon.png?v=2',
         vibrate: [200, 100, 200],
         tag: data.type || 'notification',
         renotify: true,
@@ -6766,8 +6784,8 @@ app.post('/api/admin/push', express.json(), async (req, res) => {
   const payload = JSON.stringify({
     title,
     body: message,
-    icon: '/icon.png',
-    badge: '/icon.png',
+    icon: '/icon.png?v=2',
+    badge: '/icon.png?v=2',
     type,
     url: '/monitoring'
   })
@@ -7162,7 +7180,9 @@ app.get('/api/lowest-on-price', async (req, res) => {
   try {
     const val = await redis.get(REDIS_KEYS.LOWEST_ON_PRICE)
     const price = val !== null ? parseInt(val, 10) : null
-    res.json({ success: true, price })
+    let lastOnAt = promoLastOnAt || null
+    if (promoLastOnAt === null) { try { const v = await redis.get(PROMO_LAST_ON_KEY); lastOnAt = v ? parseInt(v, 10) || null : null } catch (e) {} }
+    res.json({ success: true, price, status: lastPromoStatus, lastOnAt })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
@@ -7985,7 +8005,7 @@ app.get('/login', async (req, res) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#000000">
   <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/icon.png">
+  <link rel="icon" href="/icon.png?v=2">
   ${tsSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ''}
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
   <title>Masuk | PemulaOLD</title>
@@ -8310,7 +8330,7 @@ app.get('/login', async (req, res) => {
     <div class="card">
       <div class="logo-container">
         <div class="icon">
-          <img src="/icon.png" alt="Gold Monitor">
+          <img src="/icon.png?v=2" alt="Gold Monitor">
         </div>
         <h1><span>PemulaOLD</span> Price Monitor</h1>
         <p class="subtitle">Pantau harga emas real-time dengan akurat</p>
@@ -9216,7 +9236,7 @@ app.get('/auth/:token', async (req, res) => {
 '  <meta charset="UTF-8">' +
 '  <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
 '  <meta name="theme-color" content="#0f1419">' +
-'  <link rel="icon" href="/icon.png">' +
+'  <link rel="icon" href="/icon.png?v=2">' +
 '  <title>Login Berhasil</title>' +
 '  <style>' +
 '    body {' +
@@ -9285,7 +9305,7 @@ function getLoginErrorPage(message) {
 '  <meta charset="UTF-8">' +
 '  <meta name="viewport" content="width=device-width, initial-scale=1.0">' +
 '  <meta name="theme-color" content="#0f1419">' +
-'  <link rel="icon" href="/icon.png">' +
+'  <link rel="icon" href="/icon.png?v=2">' +
 '  <title>Login Gagal</title>' +
 '  <style>' +
 '    body {' +
@@ -13543,9 +13563,9 @@ app.get('/monitoring', async (req, res) => {
   <meta name="apple-mobile-web-app-title" content="PemulaOLD">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon.png">
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <link rel="icon" type="image/png" href="/icon.png">
+  <link rel="apple-touch-icon" href="/icon.png?v=2">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+  <link rel="icon" type="image/png" href="/icon.png?v=2">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-synthesis:none;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
   <script src="/assets/lucide.min.js"></script>
   <title>Harga Emas Realtime | PemulaOLD</title>
@@ -19376,7 +19396,7 @@ app.get('/monitoring', async (req, res) => {
       if (notifEnabled && Notification.permission === 'granted') {
         new Notification(data.title, {
           body: data.message,
-          icon: '/icon.png',
+          icon: '/icon.png?v=2',
           tag: 'promo-' + Date.now()
         });
       }
@@ -19395,8 +19415,8 @@ app.get('/monitoring', async (req, res) => {
 
       const options = {
         body: body,
-        icon: '/icon.png',
-        badge: '/icon.png',
+        icon: '/icon.png?v=2',
+        badge: '/icon.png?v=2',
         tag: 'gold-price',
         renotify: true,
         silent: false
@@ -20684,19 +20704,44 @@ app.get('/monitoring', async (req, res) => {
     }
     loadAndShowPromoLimit();
 
+    // Kotak Titik ON: promo ON -> harga terendah saat ON; promo OFF -> "Terakhir ON dd-mm-yyyy"
+    var _titikOnPrice = null, _promoStatusNow = null, _promoLastOnAt = null, _titikOnLabelHtml = null;
+    function _tglWib(ms) {
+      var d = new Date(Number(ms) + 7 * 3600000);
+      var p = function(n) { return (n < 10 ? '0' : '') + n; };
+      return p(d.getUTCDate()) + '-' + p(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear();
+    }
+    function _renderTitikOn() {
+      var card = document.getElementById('lowestOnCard');
+      var val = document.getElementById('lowestOnValue');
+      if (!card || !val) return;
+      var lbl = card.querySelector('.stat-label');
+      if (lbl && _titikOnLabelHtml === null) _titikOnLabelHtml = lbl.innerHTML;
+      if (_promoStatusNow === 'OFF' && _promoLastOnAt) {
+        if (lbl) lbl.textContent = 'Terakhir ON';
+        val.textContent = _tglWib(_promoLastOnAt);
+        val.style.color = '#9ca3af';
+        card.title = 'Promo terakhir ON pada ' + new Date(Number(_promoLastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB';
+        card.style.display = '';
+      } else if (_titikOnPrice !== null && _titikOnPrice !== undefined) {
+        if (lbl && _titikOnLabelHtml !== null) lbl.innerHTML = _titikOnLabelHtml;
+        val.textContent = formatRupiahShort(_titikOnPrice);
+        val.style.color = '#22c55e';
+        card.title = 'Harga beli terendah selama promo ON hari ini';
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
+      updateStatCentering();
+    }
     function loadLowestOnPrice() {
       monFetch('/api/lowest-on-price')
         .then(r => r.json())
         .then(data => {
-          const card = document.getElementById('lowestOnCard');
-          const val = document.getElementById('lowestOnValue');
-          if (data.price !== null && data.price !== undefined) {
-            if (val) val.textContent = formatRupiahShort(data.price);
-            if (card) card.style.display = '';
-          } else {
-            if (card) card.style.display = 'none';
-          }
-          updateStatCentering();
+          _titikOnPrice = (data.price !== null && data.price !== undefined) ? data.price : null;
+          if (data.status && !_promoStatusNow) _promoStatusNow = data.status;
+          if (data.lastOnAt) _promoLastOnAt = data.lastOnAt;
+          _renderTitikOn();
         })
         .catch(() => {});
     }
@@ -20836,15 +20881,8 @@ app.get('/monitoring', async (req, res) => {
 
         // Handle lowest ON price update
         if (data.type === 'lowest_on_price') {
-          const card = document.getElementById('lowestOnCard');
-          const val = document.getElementById('lowestOnValue');
-          if (data.price !== null && data.price !== undefined) {
-            if (val) val.textContent = formatRupiahShort(data.price);
-            if (card) card.style.display = '';
-          } else {
-            if (card) card.style.display = 'none';
-          }
-          updateStatCentering();
+          _titikOnPrice = (data.price !== null && data.price !== undefined) ? data.price : null;
+          _renderTitikOn();
           return;
         }
 
@@ -20908,6 +20946,9 @@ app.get('/monitoring', async (req, res) => {
 
         // 🎁 Handle promo ON/OFF status
         if (data.type === 'promo_status') {
+          _promoStatusNow = data.status;
+          if (data.lastOnAt) _promoLastOnAt = data.lastOnAt;
+          _renderTitikOn();
 
           // Update badge UI (selalu update, tidak perlu soundEnabled)
           const badge = document.getElementById('promoStatusBadge');

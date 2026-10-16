@@ -187,6 +187,24 @@ function setUsdIdr(rate) {
   state.usdIdr = rate
   $('#usdIdr').textContent = num(r)
 }
+/** Promo ON: harga terendah selama ON (Titik ON). Promo OFF: tanggal terakhir ON (dd-mm-yyyy, WIB). */
+function renderTitikOn() {
+  const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
+  if (state.promo === 'OFF' && state.lastOnAt) {
+    const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
+    lbl.textContent = 'Terakhir ON'
+    val.textContent = pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear()
+    val.className = 'stat-v text-muted'
+    box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
+    box.classList.remove('hidden')
+  } else if (state.titikOn != null) {
+    lbl.textContent = 'Titik ON'
+    val.textContent = num(state.titikOn)
+    val.className = 'stat-v text-up'
+    box.title = 'Harga beli terendah selama promo ON hari ini'
+    box.classList.remove('hidden')
+  } else box.classList.add('hidden')
+}
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
   el.className = 'pill px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
@@ -284,9 +302,9 @@ function connect() {
         if (d.high != null && (state.high === null || d.high > state.high)) { state.high = d.high; $('#dayHigh').textContent = num(d.high) }
         if (d.low != null && (state.low === null || d.low < state.low)) { state.low = d.low; $('#dayLow').textContent = num(d.low) }
         break
-      case 'promo_status': setPromoStatus(d.status, true); break
+      case 'promo_status': if (d.lastOnAt) state.lastOnAt = d.lastOnAt; setPromoStatus(d.status, true); renderTitikOn(); break
       case 'promo_limit_update': setChip('chipLimit', 'limitVal', d.limit); break
-      case 'lowest_on_price': setChip('chipOn', 'lowestOnVal', d.price, num); break
+      case 'lowest_on_price': state.titikOn = d.price ?? null; renderTitikOn(); break
       case 'markup_settings_update':
         if (d.settings) { if (d.settings.minMargin != null) state.markupMin = parseFloat(d.settings.minMargin); if (d.settings.maxMargin != null) state.markupMax = parseFloat(d.settings.maxMargin) }
         renderMarkup(); loadHistory(); break
@@ -374,7 +392,12 @@ async function start() {
   } catch (e) {}
   getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
   getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
-  getJSON('/api/lowest-on-price').then(d => setChip('chipOn', 'lowestOnVal', d.price, num)).catch(() => {})
+  getJSON('/api/lowest-on-price').then(d => {
+    state.titikOn = d.price ?? null
+    if (d.lastOnAt) state.lastOnAt = d.lastOnAt
+    if (d.status && !state.promo) setPromoStatus(d.status, false)
+    renderTitikOn()
+  }).catch(() => {})
   getJSON('/api/daily-highlow').then(d => {
     if (d.high != null) { state.high = Math.max(state.high ?? d.high, d.high); $('#dayHigh').textContent = num(state.high) }
     if (d.low != null) { state.low = Math.min(state.low ?? d.low, d.low); $('#dayLow').textContent = num(state.low) }
