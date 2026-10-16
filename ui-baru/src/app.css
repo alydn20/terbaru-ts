@@ -102,7 +102,7 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 
 /* Grafik dan riwayat terlihat sekaligus (body.lay-split). Desktop: grafik kiri, riwayat kanan setinggi
    grafik dan digulir sendiri, jadi harga + grafik + riwayat terlihat tanpa menggulir halaman. */
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   body.lay-split #chartHistWrap { display: grid; grid-template-columns: minmax(0, 1fr) 430px; }
   body.lay-split #histWrap { position: relative; min-height: 320px; }
   body.lay-split #sec-riwayat { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -117,7 +117,7 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 .st-short { display: none; }
 
 /* HP: tabel riwayat ringkas supaya muat selebar layar (tanpa geser ke samping bila 1 nominal) */
-@media (max-width: 1023px) {
+@media (max-width: 767px) {
   #histScroll table { min-width: 0; }
   #histScroll th, #histScroll td { padding: 0.3rem 0.4rem; }
   #histScroll td { font-size: 12px; line-height: 1.25; }
@@ -128,6 +128,19 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
   #histScroll .hist-st-inline { display: block; }
 }
 .hist-st-inline { display: none; }
+/* USD/IDR digabung ke tabel harga (body.idr-merge, pengaturan riwayat): kolom tampil, tombol
+   Harga emas | USD/IDR disembunyikan. Bawaan (Otomatis): desktop & tablet gabung, HP terpisah. */
+.hist-idr-col { display: none; }
+body.idr-merge #histScroll .hist-idr-col { display: table-cell; }
+body.idr-merge #histMode { display: none; }
+
+/* Tata letak 'Harga + Grafik + Riwayat': kotak harga ringkas (Beli, Jual, jam, promo) supaya grafik
+   dan riwayat mendapat ruang lebih banyak */
+body.price-compact #chips, body.price-compact #nomWrap { display: none !important; }
+@media (min-width: 768px) {
+  body.price-compact #sec-harga { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) !important; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  body.price-compact #clockRow { grid-column: 2 !important; grid-row: 1 !important; margin-top: 0 !important; }
+}
 
 /* Angka Beli/Jual: ukuran mengikuti lebar kotaknya sendiri (bukan lebar layar), jadi tidak mepet
    ke tepi kotak di lebar mana pun. Browser lama tetap memakai ukuran berbasis lebar layar. */

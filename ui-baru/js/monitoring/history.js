@@ -15,7 +15,7 @@ const changeEl = n => n
 function renderHead() {
   const th = (t, cls = '') => h('th', { class: 'px-3 py-2 font-bold ' + cls }, t)
   const row = mode === 'price'
-    ? [th('Waktu', 'sticky left-0 bg-card2'), th('Beli'), th('Jual'), th('Status', 'hist-st-col'), ...visibleNominals().map(n => th(n.label, 'text-right'))]
+    ? [th('Waktu', 'sticky left-0 bg-card2'), th('Beli'), th('Jual'), th('USD/IDR', 'hist-idr-col text-right'), th('Status', 'hist-st-col'), ...visibleNominals().map(n => th(n.label, 'text-right'))]
     : [th('Waktu'), th('USD/IDR'), th('Perubahan')]
   $('#histHead').replaceChildren(h('tr', {}, row))
 }
@@ -24,9 +24,17 @@ function empty(text) {
   $('#histBody').replaceChildren(h('tr', {}, h('td', { colspan: 20, class: 'px-4 py-8 text-center text-sm text-muted' }, text)))
 }
 
+function idrCell(rate, prev) {
+  if (!rate) return h('td', { class: 'hist-idr-col px-3 py-2 text-right text-muted' }, '—')
+  const ch = prev ? Math.round(rate) - Math.round(prev) : 0
+  return h('td', { class: 'hist-idr-col px-3 py-2 text-right' },
+    h('div', { class: 'num font-mono font-bold text-sky' }, num(Math.round(rate))),
+    ch ? h('div', { class: 'num text-[11px] font-bold ' + (ch > 0 ? 'text-up' : 'text-down') }, (ch > 0 ? '▲ ' : '▼ ') + signed(ch)) : null)
+}
+
 function renderPriceRows(items) {
   if (!items.length) return empty('Belum ada data perubahan harga')
-  const rows = items.map(item => {
+  const rows = items.map((item, idx) => {
     const t = new Date(typeof item.time === 'string' ? item.time.replace(' ', 'T') : item.time)
     const jam = isNaN(t) ? String(item.time).substring(11, 19) : t.toTimeString().substring(0, 8)
     const mk = item.xauUsd && item.usdIdr ? markupOf(item.sell, item.xauUsd, item.usdIdr) : null
@@ -45,6 +53,9 @@ function renderPriceRows(items) {
       h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam, statusSmall),
       priceCell(item.buy, item.buyChange || 0),
       priceCell(item.sell, item.sellChange || 0),
+      // Kolom USD/IDR (tampil kalau digabung: pengaturan riwayat, bawaan desktop & tablet).
+      // Perubahan dibanding baris sebelumnya (lebih lama, di bawahnya).
+      idrCell(item.usdIdr, items[idx + 1] && items[idx + 1].usdIdr),
       h('td', { class: 'hist-st-col px-3 py-2 whitespace-nowrap text-[11px]' }, status),
       ...visibleNominals().map(n => {
         const p = profitOf(n, item.buy, item.sell)
@@ -73,6 +84,11 @@ function renderPager(total) {
 }
 
 export async function loadHistory() {
+  // USD/IDR digabung ke tabel harga (pengaturan riwayat): tabel USD/IDR terpisah tidak dipakai
+  if (mode !== 'price' && document.body.classList.contains('idr-merge')) {
+    mode = 'price'
+    $$('#histMode button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.mode === 'price')))
+  }
   renderHead()
   try {
     if (mode === 'price') {

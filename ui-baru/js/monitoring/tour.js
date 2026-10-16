@@ -5,7 +5,7 @@ import { h } from '../api.js'
 
 const DONE_KEY = 'tourDone_v1'
 const STEP_KEY = 'tourStep_v1'   // langkah terakhir (reload di tengah panduan -> dilanjutkan)
-const wide = () => matchMedia('(min-width: 1024px)').matches
+const wide = () => matchMedia('(min-width: 768px)').matches
 // tombol menu yang terlihat: di HP menu bawah, di desktop bar atas
 const navBtn = key => wide() ? '#topNav [data-nav="' + key + '"]' : '#bottomNav [data-nav="' + key + '"]'
 
