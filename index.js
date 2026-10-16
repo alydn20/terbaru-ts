@@ -20074,7 +20074,7 @@ app.get('/monitoring', async (req, res) => {
       if (!d.show) return;
       if (silent) {
         // Server yang menentukan kapan user perlu ditanya (belum menjawab / waktunya ditanya lagi)
-        if (d.ask) _askJoinGroup();
+        if (d.ask) _askJoinGroup(d.maxDays);
         return;
       }
       // Menekan menu = memang ingin bergabung. Cukup dicatat dan admin diberi tahu;
@@ -20086,7 +20086,9 @@ app.get('/monitoring', async (req, res) => {
     }
 
     // Pertanyaan saat masuk: ingin bergabung grup WA? Kalau tidak, pilih kapan ditanya lagi.
-    function _askJoinGroup() {
+    function _askJoinGroup(maxDays) {
+      // batas hari = sisa masa aktif user (dari server); Lifetime 365
+      var maxD = Math.max(1, Math.min(365, parseInt(maxDays, 10) || 365));
       var old = document.getElementById('joinGroupModal');
       if (old) old.remove();
       var wrap = document.createElement('div');
@@ -20118,18 +20120,19 @@ app.get('/monitoring', async (req, res) => {
       var render2 = function() {
         box.textContent = '';
         box.appendChild(mk('div', 'Tanya lagi nanti?', 'font-weight:800;font-size:17px;margin-bottom:8px;'));
-        box.appendChild(mk('div', 'Tanya lagi setelah berapa hari?', 'color:#9ca3af;margin-bottom:10px;'));
+        box.appendChild(mk('div', 'Tanya lagi setelah berapa hari? (maks ' + maxD + ' hari, sesuai masa aktif)', 'color:#9ca3af;margin-bottom:10px;'));
         var row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;';
         var stepCss = 'width:42px;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#e7e9ea;font-size:20px;cursor:pointer;';
         var minus = mk('button', '-', stepCss);
         var plus = mk('button', '+', stepCss);
         var inp = document.createElement('input');
-        inp.type = 'number'; inp.min = '1'; inp.max = '365'; inp.value = '1';
+        inp.type = 'number'; inp.min = '1'; inp.max = String(maxD); inp.value = '1';
         inp.style.cssText = 'width:80px;height:42px;text-align:center;font-size:18px;font-weight:700;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:#0b0e12;color:#fff;';
-        var val = function() { var n = parseInt(inp.value, 10); if (isNaN(n) || n < 1) n = 1; if (n > 365) n = 365; return n; };
+        var val = function() { var n = parseInt(inp.value, 10); if (isNaN(n) || n < 1) n = 1; if (n > maxD) n = maxD; return n; };
         minus.onclick = function() { inp.value = Math.max(1, val() - 1); };
-        plus.onclick = function() { inp.value = Math.min(365, val() + 1); };
+        plus.onclick = function() { inp.value = Math.min(maxD, val() + 1); };
+        inp.onchange = function() { inp.value = val(); };
         row.appendChild(minus); row.appendChild(inp); row.appendChild(mk('span', 'hari', 'color:#9ca3af;')); row.appendChild(plus);
         box.appendChild(row);
         var simpan = mk('button', 'Tanya lagi nanti', btn + 'background:#f7931a;color:#000;');
@@ -23961,6 +23964,13 @@ const _groupOpenSeen = new Map()   // nomor -> waktu laporan terakhir
 //   choice 'no', days N (>=1) -> ditanya lagi setelah N hari
 //   choice 'no', days 0       -> tidak ditanya lagi (masih bisa berubah pikiran lewat menu)
 const _groupWantNotified = new Map()   // nomor -> waktu notifikasi terakhir (cegah dobel)
+// Batas "tanya lagi setelah N hari" = sisa masa aktif user (Lifetime: 365 hari)
+function groupAskMaxDays(user) {
+  const exp = user && user.expired ? Number(user.expired) : 0
+  if (!exp) return 365
+  return Math.max(1, Math.min(365, Math.ceil((exp - Date.now()) / 86400000)))
+}
+
 app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String((req.body && req.body.session) || ''))
@@ -23968,7 +23978,7 @@ app.post('/api/group-pref', rateLimit(15, 60000), express.json(), async (req, re
     const check = await isUserValid(phone)
     if (!check.valid) return res.json({ success: false, error: 'Sesi tidak valid' })
     const choice = req.body.choice === 'yes' ? 'yes' : 'no'
-    const days = Math.max(0, Math.min(3650, parseInt(req.body.days, 10) || 0))
+    const days = Math.max(0, Math.min(groupAskMaxDays(check.user), parseInt(req.body.days, 10) || 0))
     const now = Date.now()
     const old = (await getGroupPref(phone)) || {}
     const pref = { ...old, choice, at: now, askAgainAt: choice === 'no' && days > 0 ? now + days * 86400000 : 0, days: choice === 'no' ? days : 0 }
@@ -24090,7 +24100,8 @@ async function reportGroupLinkOpened(phone, user, openedAt) {
 app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
   try {
     const phone = await redis.hget(REDIS_KEYS.SESSIONS, String(req.query.session || ''))
-    if (!phone || !(await isUserValid(phone)).valid) return res.json({ success: false, error: 'Sesi tidak valid' })
+    const valid = phone ? await isUserValid(phone) : null
+    if (!valid || !valid.valid) return res.json({ success: false, error: 'Sesi tidak valid' })
     const grp = await getGroupMembers()
     // Sudah di grup (ada di daftar anggota) -> menu dan pertanyaan tidak ditampilkan sama sekali
     if (grp.phones.has(phone)) return res.json({ success: true, inGroup: true, show: false, ask: false })
@@ -24105,7 +24116,7 @@ app.get('/api/group-link', rateLimit(20, 60000), async (req, res) => {
     const now = Date.now()
     for (const [k, v] of _groupTickets) if (v.until < now) _groupTickets.delete(k)
     _groupTickets.set(ticket, { phone, until: now + 10 * 60 * 1000 })
-    res.json({ success: true, inGroup: false, show: true, ask, wants: !!(pref && pref.choice === 'yes'), ticket, phone, suggest: pending })
+    res.json({ success: true, inGroup: false, show: true, ask, wants: !!(pref && pref.choice === 'yes'), ticket, phone, suggest: pending, maxDays: groupAskMaxDays(valid.user) })
   } catch (e) {
     res.json({ success: false, error: 'Link grup belum tersedia. Coba lagi nanti.' })
   }
