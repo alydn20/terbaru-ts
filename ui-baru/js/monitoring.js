@@ -497,8 +497,14 @@ function tick() {
   $('#clkH').textContent = pad2(now.getHours())
   $('#clkM').textContent = pad2(now.getMinutes())
   const sEl = $('#clkS')
-  sEl.textContent = pad2(s)
-  sEl.className = s >= 50 ? 'text-down' : ''
+  // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
+  if (sEl.textContent !== pad2(s)) {
+    sEl.textContent = pad2(s)
+    sEl.className = (s >= 50 ? 'text-down ' : '') + 'clk-tick'
+    void sEl.offsetWidth
+    sEl.classList.add('clk-tick-on')
+    document.querySelectorAll('.clk-colon').forEach(c => c.classList.toggle('clk-dim', s % 2 === 1))
+  }
   $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
   countdownTick(s, $('main'))
 }

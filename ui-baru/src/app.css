@@ -235,3 +235,17 @@ body.price-only:not(.price-compact) .stat-k { font-size: clamp(8px, 1.5vmin, 12p
 #bottomNav { transition: transform 0.25s ease; }
 body.nav-idle #bottomNav { transform: translateY(110%); }
 body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
+
+/* Harga berubah: kotak Beli/Jual dan USD/IDR berkedip terang beberapa kali (+-3 detik), bukan hanya
+   angkanya meredup, supaya jelas terlihat ada perubahan */
+@keyframes flashUpBox { 0%, 100% { background-color: rgb(var(--up) / 0.15); } 50% { background-color: rgb(var(--up) / 0.5); } }
+@keyframes flashDownBox { 0%, 100% { background-color: rgb(var(--down) / 0.15); } 50% { background-color: rgb(var(--down) / 0.5); } }
+.tile-up.tile-blink, .chip-up.tile-blink { animation: flashUpBox 0.5s ease-in-out 6; }
+.tile-down.tile-blink, .chip-down.tile-blink { animation: flashDownBox 0.5s ease-in-out 6; }
+
+/* Jam: titik dua berkedip tiap detik, angka detik berdenyut saat berganti */
+.clk-colon { transition: opacity 0.2s; }
+.clk-colon.clk-dim { opacity: 0.25; }
+@keyframes clkTick { 0% { opacity: 0.35; transform: translateY(-2px); } 100% { opacity: 1; transform: none; } }
+.clk-tick { display: inline-block; }
+.clk-tick.clk-tick-on { animation: clkTick 0.35s ease-out; }
