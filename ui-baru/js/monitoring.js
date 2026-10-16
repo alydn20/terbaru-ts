@@ -127,14 +127,15 @@ function renderNominals() {
   if (!list.length) { box.replaceChildren(h('div', { class: 'py-2 text-sm text-muted' }, 'Tidak ada nominal dipilih. Tekan "Atur".')); return }
   box.replaceChildren(...list.map((n, i) => {
     const p = state.buy && state.sell ? profitOf(n, state.buy, state.sell) : null
-    const size = list.length === 1 ? 'basis-1/2 lg:basis-2/3' : 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.5rem)/2)]'
-    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:p-3 lg:text-left ' + size },
+    // ukuran kotak sama berapa pun jumlahnya (1 nominal tidak dibuat melebar), rata tengah
+    const size = 'basis-[calc((100%-0.5rem)/3)] lg:basis-[calc((100%-0.25rem)/2)]'
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip); layar lebar: label, gram, untung
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
-        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-sm' }, n.label),
+        h('span', { class: 'text-[11px] font-extrabold text-gold lg:text-[13px]' }, n.label),
         p ? h('span', { class: 'num text-[11.5px] font-extrabold lg:hidden ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null),
-      h('div', { class: 'mt-1 hidden items-center justify-between gap-2 lg:flex' },
-        h('span', { class: 'num whitespace-nowrap font-mono text-xs text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
+      h('div', { class: 'mt-0.5 hidden items-center justify-between gap-2 lg:flex' },
+        h('span', { class: 'num whitespace-nowrap font-mono text-[11px] text-muted' }, p ? p.gram.toFixed(4) + ' g' : '—'),
         p ? h('span', { class: 'num ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))) : null))
   }))
   fitChart()
@@ -237,15 +238,16 @@ let chartFull = false, chartFullAt = 0
 function fitChart() {
   const box = $('#tvChart')
   if (!box) return
-  if (wide() || chartFull) {
+  if (chartFull && !wide()) {
     const hdr = $('header').offsetHeight, nav = $('#bottomNav').offsetHeight
-    // desktop: dikurangi baris judul grafik + jarak
-    box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - (wide() ? 70 : 12))) + 'px'
+    box.style.height = Math.max(300, Math.round(window.innerHeight - hdr - nav - 12)) + 'px'
     return
   }
+  // HP & desktop: grafik mengisi sisa layar di bawah harga, jadi harga + grafik muat satu layar
+  // dan riwayat baru terlihat saat digulir (di desktop menu bawah tersembunyi, tingginya 0)
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
-  box.style.height = Math.max(220, Math.round(window.innerHeight - top - nav - 8)) + 'px'
+  box.style.height = Math.max(wide() ? 320 : 220, Math.round(window.innerHeight - top - nav - (wide() ? 16 : 8))) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang

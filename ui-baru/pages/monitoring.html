@@ -45,27 +45,27 @@
       <div class="flex min-w-0 flex-col gap-2 lg:gap-4">
 
         <!-- HARGA UTAMA: semua isi kartu rata tengah dan kotak kecil berukuran sama -->
-        <section id="sec-harga" class="card min-w-0 p-2 lg:grid lg:grid-cols-2 lg:gap-x-6 lg:p-4" aria-label="Harga emas">
-          <div class="grid grid-cols-2 gap-1.5 lg:gap-2">
-            <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:p-3">
+        <section id="sec-harga" class="card min-w-0 p-2 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-x-5 lg:px-4 lg:py-3" aria-label="Harga emas">
+          <div class="grid grid-cols-2 gap-1.5 lg:col-start-1 lg:row-start-1 lg:gap-2">
+            <div id="buyCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
               <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
               <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
             </div>
-            <div id="sellCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:p-3">
+            <div id="sellCard" class="tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
               <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-sky"></span>Jual</span><span id="sellChange" class="hidden"></span></div>
               <div class="num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
             </div>
           </div>
 
           <!-- jam + status promo -->
-          <div class="mt-2 flex items-center justify-center gap-3">
+          <div class="mt-2 flex items-center justify-center gap-3 lg:col-start-1 lg:row-start-2">
             <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span>:<span id="clkM">--</span>:<span id="clkS">--</span></span>
             <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
           </div>
 
           <!-- info harga: kotak seragam 3 per baris; sisa di baris terakhir di tengah -->
-          <div id="chips" class="mt-2 flex flex-wrap justify-center gap-1">
+          <div id="chips" class="mt-2 flex flex-wrap justify-center gap-1 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
             <div class="stat"><span class="stat-k">USD/IDR <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
             <div class="stat"><span class="stat-k">Tertinggi</span><span id="dayHigh" class="stat-v text-up">—</span></div>
             <div class="stat"><span class="stat-k">Terendah</span><span id="dayLow" class="stat-v text-down">—</span></div>
@@ -76,7 +76,7 @@
           </div>
 
           <!-- untung per nominal -->
-          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5 lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:mt-0 lg:self-center lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+          <div class="mt-2 border-t border-dashed border-line/[0.12] pt-1.5 lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
             <div class="relative mb-1 text-center">
               <h2 class="label text-[10px] lg:text-[11px]">Untung per nominal</h2>
               <button id="btnNominal" class="absolute right-0.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gold">Atur</button>
