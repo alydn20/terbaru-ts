@@ -135,12 +135,30 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 body.idr-merge #histScroll .hist-idr-col { display: table-cell; }
 body.idr-merge #histMode { display: none; }
 
-/* Tata letak 'Harga + Grafik + Riwayat': kotak harga ringkas (Beli, Jual, jam, promo) supaya grafik
-   dan riwayat mendapat ruang lebih banyak */
-body.price-compact #chips, body.price-compact #nomWrap { display: none !important; }
-@media (min-width: 768px) {
-  body.price-compact #sec-harga { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) !important; padding-top: 0.5rem; padding-bottom: 0.5rem; }
-  body.price-compact #clockRow { grid-column: 2 !important; grid-row: 1 !important; margin-top: 0 !important; }
+/* Kotak harga RINGKAS (ceklis di Tata letak; HP, tablet, desktop): satu baris kecil tanpa kotak
+   "BELI Rp... JUAL Rp... jam PROMO", di bawahnya satu baris kecil USD/IDR, Limit, Spread, Titik ON. */
+body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
+body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
+body.price-compact .price-tile { display: flex !important; align-items: center; gap: 0.4rem; padding: 0 !important; background: none !important; border: none !important; overflow: visible; container-type: normal; }
+body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
+body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
+body.price-compact #clockRow > .num { font-size: 1rem; }
+body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
+body.price-compact #nomWrap, body.price-compact #chipHigh, body.price-compact #chipLow, body.price-compact #chipMarkup { display: none !important; }
+body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.15rem 0.9rem; }
+body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0; background: none; border: none; }
+body.price-compact #chips .stat-k { font-size: 9px; }
+body.price-compact #chips .stat-v { font-size: 11px; }
+
+/* 'Harga saja': kotak harga memenuhi layar (tinggi diatur JS), angka besar, menyesuaikan HP
+   tegak / mendatar dan desktop */
+body.price-only:not(.price-compact) #sec-harga { align-content: center; }
+body.price-only:not(.price-compact) .price-big { font-size: clamp(1.4rem, 15cqw, 4.5rem) !important; }
+body.price-only:not(.price-compact) #clockRow > .num { font-size: clamp(1.5rem, 5vmin, 3rem); }
+body.price-only:not(.price-compact) .stat-v { font-size: clamp(11px, 2.4vmin, 18px); }
+body.price-only:not(.price-compact) .stat-k { font-size: clamp(8px, 1.5vmin, 12px); }
+@media (max-width: 767px) {
+  body.price-only:not(.price-compact) #sec-harga { display: flex; flex-direction: column; justify-content: center; gap: 0.75rem; }
 }
 
 /* Angka Beli/Jual: ukuran mengikuti lebar kotaknya sendiri (bukan lebar layar), jadi tidak mepet

@@ -20,7 +20,7 @@
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
-    <div class="mx-auto flex max-w-[1400px] items-center gap-2.5 px-3 py-1.5 lg:gap-3 lg:px-4 lg:py-2.5">
+    <div class="mx-auto flex max-w-[1400px] items-center min-[1600px]:max-w-[96vw] gap-2.5 px-3 py-1.5 lg:gap-3 lg:px-4 lg:py-2.5">
       <div class="relative shrink-0">
         <svg viewBox="0 0 24 24" class="h-7 w-7 lg:h-8 lg:w-8" aria-hidden="true"><rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/></svg>
         <span id="liveDot" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-up ring-2 ring-bg" title="Data live"></span>
@@ -36,7 +36,7 @@
     </div>
   </header>
 
-  <main class="mx-auto max-w-[1400px] px-2.5 pt-2 lg:px-4 lg:pt-3">
+  <main class="mx-auto max-w-[1400px] min-[1600px]:max-w-[96vw] px-2.5 pt-2 lg:px-4 lg:pt-3">
     <!-- pemberitahuan dari admin -->
     <div id="notifs" class="mb-2 flex flex-col gap-2 empty:hidden"></div>
 
@@ -67,9 +67,9 @@
 
           <!-- info harga: kotak seragam 3 per baris; sisa di baris terakhir di tengah -->
           <div id="chips" class="mt-2 flex flex-wrap justify-center gap-1 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
-            <div class="stat"><span class="stat-k">USD/IDR <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
-            <div class="stat"><span class="stat-k">Tertinggi</span><span id="dayHigh" class="stat-v text-up">—</span></div>
-            <div class="stat"><span class="stat-k">Terendah</span><span id="dayLow" class="stat-v text-down">—</span></div>
+            <div id="chipUsd" class="stat"><span class="stat-k">USD/IDR <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
+            <div id="chipHigh" class="stat"><span class="stat-k">Tertinggi</span><span id="dayHigh" class="stat-v text-up">—</span></div>
+            <div id="chipLow" class="stat"><span class="stat-k">Terendah</span><span id="dayLow" class="stat-v text-down">—</span></div>
             <div id="chipLimit" class="stat hidden"><span class="stat-k">Limit</span><span id="limitVal" class="stat-v text-gold"></span></div>
             <div id="chipMarkup" class="stat hidden"><span id="markupLabel" class="stat-k">Markup</span><span id="markupVal" class="stat-v text-gold"></span></div>
             <div id="chipSpread" class="stat"><span class="stat-k">Spread</span><span id="spreadVal" class="stat-v">—</span></div>
