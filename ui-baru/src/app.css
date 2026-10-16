@@ -74,8 +74,10 @@
   /* navigasi bawah */
   .nav-item { @apply relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-muted transition; }
   .nav-item[aria-current='true'] { @apply text-gold; }
+  /* HP: menu bawah hanya ikon (tulisan disembunyikan, tetap terbaca pembaca layar lewat aria-label) */
+  #bottomNav .nav-item { font-size: 0; gap: 0; }
   .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[2px] w-6 rounded-b bg-gold; }
-  .badge { @apply absolute left-1/2 top-1 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
+  .badge { @apply absolute left-1/2 top-0.5 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
 
   /* angka harga: berkedip hijau/merah saat berubah */
   .flash-up { @apply animate-flash-up; }
@@ -150,12 +152,14 @@ body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wr
 body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0; background: none; border: none; }
 body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
-/* HP: baris ringkas muat selebar layar (badge perubahan disembunyikan; arah tetap dari warna angka) */
+/* HP: baris ringkas muat selebar layar. Badge naik/turun tetap tampil (lebih kecil), tulisan "Rp"
+   disembunyikan; kalau tetap tidak muat, Jual turun ke baris berikutnya (tidak meluber). */
 @media (max-width: 767px) {
-  body.price-compact #sec-harga > div:first-child { gap: 0.75rem; }
-  body.price-compact #buyChange, body.price-compact #sellChange { display: none !important; }
-  body.price-compact .price-tile .price-big { font-size: 0.95rem !important; }
-  body.price-compact .price-tile { gap: 0.3rem; }
+  body.price-compact #sec-harga > div:first-child { gap: 0.25rem 0.75rem; flex-wrap: wrap; justify-content: center; }
+  body.price-compact #buyChange, body.price-compact #sellChange { font-size: 9px !important; padding: 0 0.3rem !important; }
+  body.price-compact .price-tile .price-big { font-size: 0.92rem !important; }
+  body.price-compact .price-tile .price-big > span:first-child { display: none; }
+  body.price-compact .price-tile { gap: 0.25rem; }
 }
 
 /* 'Harga saja': kotak harga memenuhi layar (tinggi diatur JS), angka besar, menyesuaikan HP
