@@ -143,7 +143,7 @@ body.idr-merge #histMode { display: none; }
 body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
 body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
 /* Beli/Jual tetap berkotak (warna naik/turun ikut), hanya lebih kecil dan tipis */
-body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; }
+body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-type: normal !important; min-width: 10.5rem; }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
 body.price-compact #clockRow > .num { font-size: 1rem; }
