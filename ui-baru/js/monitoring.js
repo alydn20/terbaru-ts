@@ -262,13 +262,19 @@ try {
   layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'def'
 } catch (e) {}
 const lay = () => (LAYOUTS.find(l => l[0] === layout) || LAYOUTS[0])[3]
+// Desktop & tablet: riwayat di samping grafik (bawaan) atau di bawahnya (pilihan di Tata letak)
+function histSide() { try { return localStorage.getItem('histSide') !== '0' } catch (e) { return true } }
 function applyLayout() {
   const L = lay(), b = document.body.classList
+  const both = !!(L.s && L.c && L.h)
   b.toggle('hide-harga', !L.p)
   b.toggle('hide-grafik', !L.c)
   b.toggle('hide-riwayat', !L.h)
-  b.toggle('lay-split', !!(L.s && L.c && L.h))
+  // berdampingan hanya di desktop/tablet dan bila dipilih; selain itu bertumpuk (grafik dipendekkan)
+  b.toggle('lay-split', both && wide() && histSide())
+  b.toggle('lay-stack', both && !(wide() && histSide()))
   b.toggle('price-compact', !!(L.p && priceCompact()))
+  b.toggle('price-only', !!(L.p && !L.c && !L.h))
   fitHistPanel()
 }
 // Desktop + grafik & riwayat berdampingan: lebar panel riwayat = lebar alami tabelnya (supaya
@@ -306,7 +312,7 @@ function applyIdrMode() {
   document.body.classList.toggle('idr-merge', merge)
   if (merge !== was) { loadHistory(); fitHistPanel() }
 }
-window.addEventListener('resize', () => applyIdrMode())
+window.addEventListener('resize', () => { applyIdrMode(); applyLayout(); fitChart() })
 // Pengaturan riwayat (tombol Aa): ukuran teks + USD/IDR digabung / terpisah. Diingat per perangkat.
 function openHistSize() {
   const opt = (active, label, note, onclick, style) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), onclick },
@@ -351,10 +357,29 @@ export function openLayoutPicker() {
       return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
-          h('span', { class: 'block text-[11px] text-muted' }, 'Hanya Beli, Jual, jam & promo (info & untung per nominal disembunyikan)')), t)
-    })()))
+          h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + USD/IDR, Limit, Spread, Titik ON')), t)
+    })(),
+    // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
+    wide() ? (() => {
+      const side = histSide()
+      const pick = v => { try { localStorage.setItem('histSide', v ? '1' : '0') } catch (e) {} applyLayout(); fitChart(); sheet.close() }
+      return h('div', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
+        h('span', { class: 'min-w-0' },
+          h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
+          h('span', { class: 'block text-[11px] text-muted' }, 'Saat grafik & riwayat tampil sekaligus')),
+        h('div', { class: 'seg shrink-0' },
+          h('button', { 'aria-pressed': String(side), onclick: () => pick(true) }, 'Di samping'),
+          h('button', { 'aria-pressed': String(!side), onclick: () => pick(false) }, 'Di bawah')))
+    })() : null))
 }
-function fitChart() { fitChartBox(); fitHist() }
+function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
+// 'Harga saja': kotak harga setinggi layar (di antara bar atas dan menu bawah)
+function fitPriceOnly() {
+  const sec = $('#sec-harga')
+  if (!sec) return
+  if (!document.body.classList.contains('price-only') || document.body.classList.contains('price-compact')) { sec.style.minHeight = ''; return }
+  sec.style.minHeight = Math.max(240, window.innerHeight - $('header').offsetHeight - $('#bottomNav').offsetHeight - (wide() ? 32 : 20)) + 'px'
+}
 // Kotak riwayat setinggi layar (isi digulir di dalam): kalau muat di layar pertama, isi sisa layar;
 // kalau letaknya di bawah (setelah grafik), setinggi satu layar. Panel samping desktop diatur CSS.
 function fitHist() {
@@ -366,8 +391,8 @@ function fitHist() {
   const avail = window.innerHeight - hdr - nav - (wide() ? 32 : 16)
   const rest = window.innerHeight - (sec.getBoundingClientRect().top + window.scrollY) - nav - (wide() ? 16 : 8)
   sec.classList.add('hist-fit')
-  // HP + grafik & riwayat sekaligus: riwayat cukup mengisi sisa layar di bawah grafik
-  if (!wide() && b.contains('lay-split')) { sec.style.height = Math.max(200, rest) + 'px'; return }
+  // grafik & riwayat sekaligus (bertumpuk): riwayat cukup mengisi sisa layar di bawah grafik
+  if (b.contains('lay-stack')) { sec.style.height = Math.max(200, rest) + 'px'; return }
   sec.style.height = Math.max(320, rest >= 320 ? rest : avail) + 'px'
 }
 function fitChartBox() {
@@ -383,10 +408,10 @@ function fitChartBox() {
   const top = box.getBoundingClientRect().top + window.scrollY
   const nav = $('#bottomNav').offsetHeight
   const rest = window.innerHeight - top - nav - (wide() ? 16 : 8)
-  // HP + grafik & riwayat sekaligus: grafik +-setengah sisa layar supaya riwayat langsung terlihat
-  const L = lay()
-  const hpSplit = !!(L.s && L.c && L.h) && !wide()
-  box.style.height = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * 0.45 : rest)) + 'px'
+  // Grafik & riwayat sekaligus tetapi bertumpuk (HP, atau desktop dengan riwayat di bawah):
+  // grafik +-setengah sisa layar supaya riwayat langsung terlihat
+  const hpSplit = document.body.classList.contains('lay-stack')
+  box.style.height = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest)) + 'px'
 }
 window.addEventListener('resize', fitChart)
 // bagian atas berubah tinggi (font selesai dimuat, info bertambah, pemberitahuan muncul) -> hitung ulang
@@ -529,6 +554,7 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
+  $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
   setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
