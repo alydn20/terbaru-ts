@@ -29,14 +29,16 @@ function predictGold(ev) {
 function floatNote(title, lines, ms) {
   let box = document.getElementById('newsFloat')
   if (!box) {
-    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed inset-x-0 z-[35] mx-auto flex w-[min(340px,calc(100%-24px))] flex-col gap-1.5', style: 'bottom:calc(76px + env(safe-area-inset-bottom))' })
-    document.body.append(box)
+    // diselipkan di bawah kartu harga, tepat di atas grafik (rata kiri) — tidak menutupi grafik
+    box = h('div', { id: 'newsFloat', class: 'mt-2 flex max-w-[260px] flex-col items-start gap-1' })
+    const host = document.getElementById('sec-harga')
+    if (host) host.append(box); else document.body.append(box)
   }
-  const close = () => { card.style.opacity = '0'; setTimeout(() => card.remove(), 260) }
-  const card = h('div', { class: 'pointer-events-auto relative rounded-xl border border-down/50 border-l-4 border-l-down bg-card/95 py-2 pl-2.5 pr-8 text-xs shadow-xl backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
+  const close = () => { card.style.opacity = '0'; setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 260) }
+  const card = h('div', { class: 'relative max-w-full cursor-pointer rounded-lg border border-down/50 border-l-[3px] border-l-down bg-card/95 py-1 pl-2 pr-6 text-[11px] leading-snug shadow-lg backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
     h('div', { class: 'mb-0.5 font-extrabold text-down' }, title),
     lines.map(l => h('div', {}, l)),
-    h('button', { class: 'absolute right-1.5 top-1 px-1 text-lg leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
+    h('button', { class: 'absolute right-1 top-0.5 px-1 text-[15px] leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
   box.append(card)
   requestAnimationFrame(() => { card.style.opacity = '1' })
   setTimeout(close, ms || 12000)

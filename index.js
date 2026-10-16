@@ -17741,13 +17741,15 @@ app.get('/monitoring', async (req, res) => {
     function _newsFloat(title, lines, ms) {
       var box = document.getElementById('newsFloatBox');
       if (!box) {
+        // diselipkan di bawah info harga, tepat di atas grafik (rata kiri) — tidak menutupi grafik
         box = document.createElement('div');
         box.id = 'newsFloatBox';
-        box.style.cssText = 'position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:9000;display:flex;flex-direction:column;gap:6px;width:min(340px,calc(100% - 24px));pointer-events:none;';
-        document.body.appendChild(box);
+        box.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;max-width:260px;align-self:flex-start;margin-top:6px;';
+        var host = document.querySelector('.chart-header');
+        if (host) host.appendChild(box); else document.body.appendChild(box);
       }
       var card = document.createElement('div');
-      card.style.cssText = 'pointer-events:auto;position:relative;background:rgba(17,17,17,0.94);color:#f3f4f6;border:1px solid rgba(239,68,68,0.55);border-left:4px solid #ef4444;border-radius:12px;padding:8px 30px 8px 10px;font-size:12px;line-height:1.4;box-shadow:0 6px 20px rgba(0,0,0,0.35);opacity:0;transition:opacity .25s;';
+      card.style.cssText = 'cursor:pointer;position:relative;max-width:100%;background:rgba(17,17,17,0.94);color:#f3f4f6;border:1px solid rgba(239,68,68,0.5);border-left:3px solid #ef4444;border-radius:10px;padding:5px 22px 5px 8px;font-size:11px;line-height:1.35;box-shadow:0 4px 14px rgba(0,0,0,0.3);opacity:0;transition:opacity .25s;';
       var t = document.createElement('div');
       t.style.cssText = 'font-weight:800;color:#fca5a5;margin-bottom:2px;';
       t.textContent = title;
@@ -17757,8 +17759,8 @@ app.get('/monitoring', async (req, res) => {
       x.type = 'button';
       x.textContent = String.fromCharCode(215);
       x.setAttribute('aria-label', 'Tutup');
-      x.style.cssText = 'position:absolute;top:4px;right:6px;background:none;border:none;color:#9ca3af;font-size:18px;line-height:1;cursor:pointer;padding:2px 4px;';
-      var close = function() { card.style.opacity = '0'; setTimeout(function() { card.remove(); }, 260); };
+      x.style.cssText = 'position:absolute;top:2px;right:3px;background:none;border:none;color:#9ca3af;font-size:15px;line-height:1;cursor:pointer;padding:2px 4px;';
+      var close = function() { card.style.opacity = '0'; setTimeout(function() { card.remove(); var b = document.getElementById('newsFloatBox'); if (b && !b.children.length) b.remove(); }, 260); };
       x.onclick = close;
       card.appendChild(x);
       card.onclick = function(e) { if (e.target !== x && typeof openNewsModal === 'function') { close(); openNewsModal(); } };
