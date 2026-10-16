@@ -150,12 +150,14 @@ body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wr
 body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0; background: none; border: none; }
 body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
-/* HP: baris ringkas muat selebar layar (badge perubahan disembunyikan; arah tetap dari warna angka) */
+/* HP: baris ringkas muat selebar layar. Badge naik/turun tetap tampil (lebih kecil), tulisan "Rp"
+   disembunyikan; kalau tetap tidak muat, Jual turun ke baris berikutnya (tidak meluber). */
 @media (max-width: 767px) {
-  body.price-compact #sec-harga > div:first-child { gap: 0.75rem; }
-  body.price-compact #buyChange, body.price-compact #sellChange { display: none !important; }
-  body.price-compact .price-tile .price-big { font-size: 0.95rem !important; }
-  body.price-compact .price-tile { gap: 0.3rem; }
+  body.price-compact #sec-harga > div:first-child { gap: 0.25rem 0.75rem; flex-wrap: wrap; justify-content: center; }
+  body.price-compact #buyChange, body.price-compact #sellChange { font-size: 9px !important; padding: 0 0.3rem !important; }
+  body.price-compact .price-tile .price-big { font-size: 0.92rem !important; }
+  body.price-compact .price-tile .price-big > span:first-child { display: none; }
+  body.price-compact .price-tile { gap: 0.25rem; }
 }
 
 /* 'Harga saja': kotak harga memenuhi layar (tinggi diatur JS), angka besar, menyesuaikan HP
