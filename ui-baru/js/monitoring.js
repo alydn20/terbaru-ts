@@ -401,15 +401,17 @@ function histRowsHeight(n) {
   // sebenarnya dan area baris yang sedang terlihat (tidak ada potongan baris berikutnya)
   const trs = document.querySelectorAll('#histBody tr')
   if (sec && sec.offsetHeight && scroll && trs.length) {
+    // ukuran yang benar-benar tampil (getBoundingClientRect), karena tabel bisa di-zoom (ukuran teks)
+    const vh = el => el.getBoundingClientRect().height
     let need = 0
-    for (let i = 0; i < Math.min(n, trs.length); i++) need += trs[i].offsetHeight
-    if (trs.length < n) need += trs[0].offsetHeight * (n - trs.length)
-    const headH = $('#histHead') ? $('#histHead').offsetHeight : 0
+    for (let i = 0; i < Math.min(n, trs.length); i++) need += vh(trs[i])
+    if (trs.length < n) need += vh(trs[0]) * (n - trs.length)
+    const headH = $('#histHead') ? vh($('#histHead')) : 0
     return Math.round(sec.offsetHeight + need - (scroll.clientHeight - headH))
   }
   const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
   const head = $('#histHead') ? $('#histHead').offsetHeight : 28
-  const rowH = tr ? tr.offsetHeight : (wide() ? 48 : 44)
+  const rowH = tr ? tr.getBoundingClientRect().height : (wide() ? 48 : 44)
   const pg = pager && pager.offsetParent ? pager.offsetHeight : 0
   return Math.round(title + head + rowH * n + pg + 3)
 }
