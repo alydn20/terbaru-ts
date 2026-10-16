@@ -9873,6 +9873,115 @@ ${authScript}
     .pro-modal-btn.confirm:hover { transform: translateY(-1px); }
     .pro-modal-btn.danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
     .pro-modal-btn.danger:hover { transform: translateY(-1px); }
+
+    /* =====================================================================
+       PANEL ADMIN v2 — tata letak & gaya baru (fungsi tidak berubah)
+       Desktop: menu samping kiri. HP: menu geser di atas, tabel user jadi kartu.
+       ===================================================================== */
+    body.adm-v2 { background: #000; color: #e7e9ea; padding: 0; margin: 0; }
+    body.adm-v2 .container { max-width: none; margin: 0; padding: 0; }
+    body.adm-v2 #mainContent { padding: 18px 22px 40px; max-width: 1280px; margin: 0 auto; }
+
+    /* ---- menu samping ---- */
+    .adm-side { position: fixed; inset: 0 auto 0 0; width: 236px; z-index: 50; display: flex; flex-direction: column; gap: 6px; padding: 16px 12px; background: #070707; border-right: 1px solid #1c1c1c; overflow-y: auto; }
+    .adm-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; border-bottom: 1px solid #1c1c1c; margin-bottom: 6px; }
+    .adm-brand svg { width: 30px; height: 30px; flex-shrink: 0; }
+    .adm-brand b { display: block; font-size: 0.95em; color: #fff; }
+    .adm-brand span { display: block; font-size: 0.72em; color: #8b8b8b; }
+    body.adm-v2 .adm-side .section-tabs { display: flex; flex-direction: column; gap: 2px; padding: 0; margin: 0; background: none; border: none; box-shadow: none; flex-wrap: nowrap; }
+    body.adm-v2 .adm-side .section-tab { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid transparent; color: #a3a3a3; font-size: 0.86em; font-weight: 600; white-space: nowrap; background: none; transition: background 0.15s, color 0.15s; }
+    body.adm-v2 .adm-side .section-tab:hover { background: #141414; color: #fff; }
+    body.adm-v2 .adm-side .section-tab.active { background: rgba(247,147,26,0.12); border-color: rgba(247,147,26,0.35); color: #f7931a; }
+    body.adm-v2 .adm-side .section-tab svg { width: 17px; height: 17px; flex-shrink: 0; }
+    body.adm-v2 .adm-side .section-tab span[id$="Badge"] { margin-left: auto !important; }
+    .adm-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid #1c1c1c; }
+    body.adm-v2 .adm-side-foot a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; color: #a3a3a3; font-size: 0.85em; font-weight: 600; text-decoration: none; border: none; background: none; }
+    body.adm-v2 .adm-side-foot a:hover { background: #141414; color: #fff; }
+    body.adm-v2 .adm-side-foot a.action-monitoring { color: #f7931a; background: none; box-shadow: none; }
+    body.adm-v2 .adm-side-foot a.logout { color: #f87171; }
+    @media (min-width: 1024px) { body.adm-v2 { padding-left: 236px; } }
+
+    /* ---- header halaman ---- */
+    body.adm-v2 .header { position: static; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 0 0 14px; background: none; border: none; border-bottom: 1px solid #1c1c1c; border-radius: 0; box-shadow: none; }
+    body.adm-v2 .header::before { display: none; }
+    body.adm-v2 .header { flex-direction: row; align-items: center; justify-content: flex-start; text-align: left; }
+    body.adm-v2 .header h1 { justify-content: flex-start; text-align: left; width: auto; }
+    body.adm-v2 .header h1 { font-size: 1.3em; margin: 0; color: #fff; }
+    body.adm-v2 .header h1 svg { color: #f7931a; }
+    body.adm-v2 .header .header-actions { display: none; }
+
+    /* ---- ringkasan angka ---- */
+    body.adm-v2 .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+    body.adm-v2 .stat-card { padding: 14px 16px; text-align: left; background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 14px; box-shadow: none; transform: none !important; }
+    body.adm-v2 .stat-card::after { display: none; }
+    body.adm-v2 .stat-card .stat-value { font-size: 1.6em; color: #f7931a; }
+    body.adm-v2 .stat-card .stat-label { font-size: 0.75em; color: #8b8b8b; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ---- kartu, form, tombol ---- */
+    body.adm-v2 .card { background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 16px; padding: 18px; box-shadow: none; }
+    body.adm-v2 .card:hover { border-color: #262626; transform: none; }
+    body.adm-v2 .card h2 { font-size: 1.02em; color: #fff; margin-bottom: 14px; }
+    body.adm-v2 .card h2 svg { color: #f7931a; }
+    body.adm-v2 .form-group input, body.adm-v2 .form-group select, body.adm-v2 .form-group textarea,
+    body.adm-v2 input[type="text"], body.adm-v2 input[type="number"], body.adm-v2 input[type="date"], body.adm-v2 input[type="password"], body.adm-v2 select, body.adm-v2 textarea {
+      background: #111 !important; border: 1px solid #262626 !important; border-radius: 10px; color: #e7e9ea !important;
+    }
+    body.adm-v2 .form-group input:focus, body.adm-v2 select:focus, body.adm-v2 textarea:focus, body.adm-v2 input:focus { border-color: #f7931a !important; outline: none; box-shadow: 0 0 0 3px rgba(247,147,26,0.15); }
+    body.adm-v2 .btn { border-radius: 10px; font-weight: 700; }
+    body.adm-v2 .btn-primary { background: #f7931a; color: #000; box-shadow: none; }
+    body.adm-v2 .btn-primary:hover { background: #ffa53a; transform: none; }
+    body.adm-v2 .btn-secondary { background: #161616; border: 1px solid #2a2a2a; color: #e7e9ea; }
+
+    /* ---- tabel ---- */
+    body.adm-v2 .user-table-wrapper, body.adm-v2 .pay-table-wrap { border: 1px solid #1c1c1c; border-radius: 12px; background: #070707; }
+    body.adm-v2 .user-table th { position: sticky; top: 0; z-index: 1; background: #101010; color: #8b8b8b; font-size: 0.7em; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid #1c1c1c; }
+    body.adm-v2 .user-table td { border-bottom: 1px solid #141414; }
+    body.adm-v2 .user-table tbody tr:hover { background: #0f0f0f; }
+    body.adm-v2 .action-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+    body.adm-v2 .action-btn { border-radius: 8px; padding: 5px 9px; font-size: 0.74em; font-weight: 700; }
+
+    /* =========================== HP & tablet =========================== */
+    @media (max-width: 1023px) {
+      .adm-side { position: sticky; top: 0; inset: auto; width: auto; flex-direction: row; align-items: center; padding: 8px 10px; border-right: none; border-bottom: 1px solid #1c1c1c; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; background: rgba(7,7,7,0.96); backdrop-filter: blur(12px); }
+      .adm-side::-webkit-scrollbar { display: none; }
+      .adm-brand { display: none; }
+      .adm-side-foot { flex-direction: row; margin: 0; padding: 0 0 0 8px; border-top: none; border-left: 1px solid #1c1c1c; gap: 6px; flex-shrink: 0; }
+      body.adm-v2 .adm-side-foot a { padding: 7px 11px; border: 1px solid #222; border-radius: 999px; font-size: 0.8em; white-space: nowrap; background: #0d0d0d; }
+      body.adm-v2 .adm-side-foot a svg { margin-right: 0 !important; }
+      body.adm-v2 .adm-side .section-tabs { flex-direction: row; gap: 6px; }
+      body.adm-v2 .adm-side .section-tab { padding: 7px 11px; border: 1px solid #222; border-radius: 999px; font-size: 0.8em; background: #0d0d0d; }
+      body.adm-v2 .adm-side .section-tab svg { width: 15px; height: 15px; }
+      body.adm-v2 .adm-side .section-tab span[id$="Badge"] { margin-left: 4px !important; }
+      body.adm-v2 #mainContent { padding: 12px 12px 30px; }
+      body.adm-v2 .header { margin-bottom: 12px; padding-bottom: 10px; }
+      body.adm-v2 .header h1 { font-size: 1.1em; }
+      body.adm-v2 .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      body.adm-v2 .stat-card { padding: 10px 12px; }
+      body.adm-v2 .stat-card .stat-value { font-size: 1.3em; }
+      body.adm-v2 .card { padding: 14px 12px; border-radius: 14px; }
+      body.adm-v2 #mainContent input, body.adm-v2 #mainContent select, body.adm-v2 #mainContent textarea { min-width: 0; max-width: 100%; }
+      body.adm-v2 #mainContent [style*="grid-template-columns"] > *, body.adm-v2 #mainContent [style*="display:flex"] > * { min-width: 0; }
+
+      /* tabel Daftar User jadi kartu per user (tidak perlu geser ke samping) */
+      body.adm-v2 #section-users .user-table-wrapper { border: none; background: none; overflow: visible; }
+      body.adm-v2 #section-users .user-table, body.adm-v2 #section-users .user-table tbody { display: block; width: 100%; min-width: 0; }
+      body.adm-v2 #section-users .user-table thead { display: none; }
+      body.adm-v2 #userList tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 12px; margin-bottom: 8px; background: #0b0b0b; border: 1px solid #1c1c1c; border-radius: 12px; }
+      body.adm-v2 #userList td { display: block; padding: 0; border: none; font-size: 0.85em; min-width: 0; }
+      body.adm-v2 #userList td::before { display: block; font-size: 0.68em; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #6b6b6b; margin-bottom: 2px; }
+      body.adm-v2 #userList td:nth-child(1)::before { content: 'No WA'; }
+      body.adm-v2 #userList td:nth-child(2)::before { content: 'Nama'; }
+      body.adm-v2 #userList td:nth-child(3) { grid-column: 1 / -1; }
+      body.adm-v2 #userList td:nth-child(3)::before { content: 'Status'; }
+      body.adm-v2 #userList td:nth-child(4)::before { content: 'Push'; }
+      body.adm-v2 #userList td:nth-child(5)::before { content: 'PIN'; }
+      body.adm-v2 #userList td:nth-child(6)::before { content: 'Expired'; }
+      body.adm-v2 #userList td:nth-child(7) { grid-column: 1 / -1; padding-top: 6px; border-top: 1px solid #1a1a1a; }
+      body.adm-v2 #userList td:nth-child(7)::before { content: 'Aksi'; }
+      body.adm-v2 #userList td[colspan] { grid-column: 1 / -1; }
+      body.adm-v2 #userList td[colspan]::before { content: none; }
+      body.adm-v2 #userList .action-btn { flex: 1 1 calc(25% - 4px); text-align: center; padding: 7px 4px; }
+    }
   </style>
 </head>
 <body>
@@ -10988,6 +11097,68 @@ ${authScript}
         document.getElementById('section-' + tab.dataset.section).classList.add('active');
       });
     });
+
+    // ===== PANEL ADMIN v2: menu samping (desktop) / menu geser (HP) =====
+    // Tab bagian yang lama DIPINDAH (bukan disalin) ke menu baru, jadi semua fungsi & badge tetap jalan.
+    (function() {
+      var ICON = {
+        users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+        'want-join': '<path d="M12 19V5"/><path d="M5 12h14"/>',
+        online: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+        add: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+        pending: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        whatsapp: '<path d="M3 21l1.65-4.9A8.5 8.5 0 1 1 8 19.3L3 21z"/>',
+        nominal: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',
+        broadcast: '<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/>',
+        settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+        logs: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'
+      };
+      var svg = function(p) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>'; };
+      function build() {
+        var tabs = document.querySelector('.section-tabs');
+        if (!tabs || document.querySelector('.adm-side')) return;
+        var side = document.createElement('aside');
+        side.className = 'adm-side';
+        side.innerHTML = '<div class="adm-brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/></svg><div><b>PemulaOLD</b><span>Panel Admin</span></div></div>';
+        side.appendChild(tabs);
+        // ikon + label tanpa emoji di setiap tab
+        tabs.querySelectorAll('.section-tab').forEach(function(t) {
+          var ic = ICON[t.dataset.section];
+          t.childNodes.forEach(function(n) { if (n.nodeType === 3) n.textContent = n.textContent.replace(/[🙋📋]/g, '').trim() + ' '; });
+          if (ic) t.insertAdjacentHTML('afterbegin', svg(ic));
+        });
+        var foot = document.createElement('div');
+        foot.className = 'adm-side-foot';
+        var acts = document.querySelector('.header-actions');
+        if (acts) acts.querySelectorAll('a').forEach(function(a) {
+          var c = a.cloneNode(true);
+          c.removeAttribute('style');
+          if (/logout/i.test(c.getAttribute('href') || '')) c.className = 'logout';
+          foot.appendChild(c);
+        });
+        side.appendChild(foot);
+        document.body.insertBefore(side, document.body.firstChild);
+        document.body.classList.add('adm-v2');
+        // judul halaman = bagian yang sedang dibuka
+        var h1 = document.querySelector('.header h1');
+        var setTitle = function(t) {
+          if (!h1) return;
+          var label = t.textContent.replace(/[0-9]+ *$/, '').trim();
+          var last = h1.lastChild;
+          if (last && last.nodeType === 3) last.textContent = ' ' + label; else h1.appendChild(document.createTextNode(' ' + label));
+        };
+        tabs.querySelectorAll('.section-tab').forEach(function(t) {
+          t.addEventListener('click', function() {
+            setTitle(t);
+            if (window.innerWidth < 1024) t.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        });
+        var act = tabs.querySelector('.section-tab.active');
+        if (act) setTitle(act);
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+    })();
 
     // Load data langsung saat halaman dibuka
     document.addEventListener('DOMContentLoaded', function() {
