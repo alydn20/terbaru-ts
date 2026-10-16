@@ -1097,6 +1097,9 @@ function addPriceHistory(buy, sell, prevBuy, prevSell, updatedAt, xauUsd) {
 
   const entry = {
     time: timeStr,
+    // jam (WIB) harga ini DITERIMA server kita + lama balasan Treasury (ms); time = jam Treasury
+    recv: new Date(Date.now() + wibOffset).toISOString().substring(11, 19),
+    lat: typeof lastFetchMs === 'number' ? lastFetchMs : null,
     buy: buy,
     sell: sell,
     buyChange: buy - prevBuy,
@@ -3398,6 +3401,7 @@ let latencyHistory = []      // rolling 10 sample terakhir untuk avg
 
 let _lastPollStart = 0
 let _lastNewTsAt = 0
+let _staleIgnored = 0
 async function fastPoll() {
   // Treasury memperbarui harga sekali per menit di detik :01-:05. Polling cepat (tiap 0,5 detik)
   // hanya di detik 0-25 setiap menit, atau kalau harga terakhir sudah > 65 detik (jadwal Treasury
@@ -3453,6 +3457,18 @@ async function fastPoll() {
     const isNewTimestamp = updateTime > lastKnownTimestamp
     const isPriceChanged = lastKnownPrice &&
       (lastKnownPrice.buy !== currentPrice.buy || lastKnownPrice.sell !== currentPrice.sell)
+
+    // Treasury kadang membalas dengan harga LAMA (updated_at lebih lama, mis. dari server/cache
+    // mereka yang tertinggal). Dulu dianggap "harga berubah" -> harga di website & WA bolak-balik
+    // dan riwayat dobel (24 jam: 214 kali). Balasan yang tidak lebih baru dari harga yang sudah
+    // dipegang tapi harganya beda -> diabaikan.
+    if (lastKnownTimestamp && isPriceChanged && updateTime <= lastKnownTimestamp) {
+      _staleIgnored++
+      if (_staleIgnored <= 3 || _staleIgnored % 50 === 0) {
+        pushLog(`TREASURY | Balasan harga lama diabaikan (#${_staleIgnored}): ${treasuryData.data.updated_at} Buy Rp${formatRupiah(currentPrice.buy)} (yang dipegang Rp${formatRupiah(lastKnownPrice.buy)})`)
+      }
+      return
+    }
 
     if (isNewTimestamp) {
       lastKnownTimestamp = updateTime
@@ -16221,6 +16237,7 @@ app.get('/monitoring', async (req, res) => {
     .history-table .price-down { color: #f87171; font-weight: 600; }
     .history-table .time-col { color: var(--text-heading); font-family: 'JetBrains Mono', monospace; font-size: 0.9em; text-align: left; }
     .history-time { display: block; }
+    .history-recv { display: block; font-size: 0.72em; color: #6b7280; font-weight: 500; white-space: nowrap; }
     .history-date { display: block; font-size: 0.72em; color: var(--text-primary); text-align: left; margin-top: 2px; white-space: nowrap; }
     .col-markup { text-align: left; white-space: nowrap; }
     .markup-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.72em; font-weight: 600; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
@@ -19076,7 +19093,7 @@ app.get('/monitoring', async (req, res) => {
         const sellColorStyle = sellChange > 0 ? 'color:#4ade80;font-weight:600;' : sellChange < 0 ? 'color:#f87171;font-weight:600;' : '';
 
         html += '<tr' + (index === 0 && isNewTop ? ' class="history-new-row"' : '') + '>' +
-          '<td class="time-col"><span class="history-time">' + timeStr + '</span></td>' +
+          '<td class="time-col"><span class="history-time">' + timeStr + '</span>' + (item.recv ? '<span class="history-recv" title="Jam harga diterima server' + (item.lat ? ' (balasan Treasury ' + item.lat + ' ms)' : '') + '">diterima ' + item.recv + '</span>' : '') + '</td>' +
           '<td><span style="font-size:' + _hfs.nominal + 'em;' + buyColorStyle + '">' + formatRupiahShortHTML(item.buy) + '</span>' + (arrowHtml ? '<br>' + arrowHtml.trim() : '') + '</td>' +
           '<td><span style="font-size:' + _hfs.nominal + 'em;' + sellColorStyle + '">' + formatRupiahShortHTML(item.sell) + '</span>' + (sellArrowHtml ? '<br>' + sellArrowHtml.trim() : '') + '</td>' +
           '<td class="col-spread ' + spreadClass + '">' + spread + '%</td>' +

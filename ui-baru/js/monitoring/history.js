@@ -36,7 +36,9 @@ function renderPriceRows(items) {
     const priceCell = (v, ch) => h('td', { class: 'px-3 py-2' },
       h('div', { class: 'num font-mono font-bold ' + (ch > 0 ? 'text-up' : ch < 0 ? 'text-down' : '') }, num(v)), changeEl(ch))
     return h('tr', { class: 'odd:bg-transparent even:bg-card2/40' },
-      h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam),
+      // jam Treasury; di bawahnya jam harga diterima server kita
+      h('td', { class: 'sticky left-0 bg-card px-3 py-2 font-mono text-xs text-muted' }, jam,
+        item.recv ? h('div', { class: 'whitespace-nowrap text-[10px] opacity-70', title: 'Jam harga diterima server' + (item.lat ? ' (balasan Treasury ' + item.lat + ' ms)' : '') }, 'diterima ' + item.recv) : null),
       priceCell(item.buy, item.buyChange || 0),
       priceCell(item.sell, item.sellChange || 0),
       h('td', { class: 'px-3 py-2 whitespace-nowrap text-[11px]' }, status),
