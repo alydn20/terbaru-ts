@@ -3637,8 +3637,9 @@ function launchTreasuryPoll() {
     .catch(e => {
       consecutiveErrors++
       _pollFail++
-      // Gagal sesekali itu normal (+-separuh permintaan). Dicatat hanya kalau beruntun.
-      if (consecutiveErrors === 10 || consecutiveErrors % 60 === 0) {
+      // Gagal sesekali itu normal (+-separuh permintaan). Dicatat hanya kalau beruntun lama
+      // (40 = +-20 detik tanpa satu pun balasan), lalu tiap 120 berikutnya (+-1 menit).
+      if (consecutiveErrors === 40 || consecutiveErrors % 120 === 0) {
         pushLog(`TREASURY | ${consecutiveErrors} permintaan beruntun gagal (terakhir: ${e.message})`)
       }
     })
