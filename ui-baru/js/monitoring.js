@@ -376,7 +376,7 @@ export function openLayoutPicker() {
       return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
-          h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + USD/IDR, Limit, Spread, Titik ON')), t)
+          h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga dalam kotak kecil (untung per nominal disembunyikan)')), t)
     })(),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {

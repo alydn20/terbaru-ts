@@ -141,7 +141,7 @@ body.idr-merge #histScroll .hist-idr-col { display: table-cell; }
 body.idr-merge #histMode { display: none; }
 
 /* Kotak harga RINGKAS (ceklis di Tata letak; HP, tablet, desktop): satu baris kecil tanpa kotak
-   "BELI Rp... JUAL Rp... jam PROMO", di bawahnya satu baris kecil USD/IDR, Limit, Spread, Titik ON. */
+   "BELI Rp... JUAL Rp... jam PROMO", di bawahnya kotak-kotak kecil info harga. */
 body.price-compact #sec-harga { display: flex !important; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 1rem; padding: 0.4rem 0.75rem !important; }
 body.price-compact #sec-harga > div:first-child { display: flex; gap: 1rem; }
 /* Beli/Jual tetap berkotak (warna naik/turun ikut), hanya lebih kecil dan tipis */
@@ -151,7 +151,9 @@ body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
 body.price-compact #clockRow > .num { font-size: 1rem; }
 body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
-body.price-compact #nomWrap, body.price-compact #chipHigh, body.price-compact #chipLow, body.price-compact #chipMarkup { display: none !important; }
+/* versi ringkas: semua info tetap tampil sebagai kotak kecil (USD/IDR, Tertinggi, Terendah, Limit,
+   Markup/Markdown, Spread, Titik ON); hanya untung per nominal yang disembunyikan */
+body.price-compact #nomWrap { display: none !important; }
 body.price-compact #chips { width: 100%; margin-top: 0 !important; flex-wrap: wrap; gap: 0.25rem; }
 body.price-compact #chips .stat { flex: none; flex-direction: row; gap: 0.3rem; padding: 0.05rem 0.45rem; border-radius: 0.4rem; }
 body.price-compact #chips .stat-k { font-size: 9px; }
