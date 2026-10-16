@@ -2361,11 +2361,12 @@ async function doPromoBroadcast() {
     }
     if (currentStatus === 'ON') {
       promoLastOnAt = now
-      const titik = (lowestOnPriceCache !== undefined && lowestOnPriceCache !== null) ? lowestOnPriceCache : null
-      const p = titik || (lastKnownPrice && lastKnownPrice.buy) || null
-      // satu sesi ON: simpan harga terendah yang terlihat
-      if (p && (lastPromoStatus !== 'ON' || !promoLastOnPrice || p < promoLastOnPrice || titik === p)) promoLastOnPrice = p
-      if (now - _promoLastOnSavedAt > 60000) {
+      // Harga beli pada saat TERAKHIR status ON (mis. ON di ...71 lalu OFF di ...70 -> tetap ...71).
+      // Tidak pernah dihapus; hanya diganti oleh ON berikutnya.
+      const p = (lastKnownPrice && lastKnownPrice.buy) || null
+      const changed = p && p !== promoLastOnPrice
+      if (p) promoLastOnPrice = p
+      if (changed || now - _promoLastOnSavedAt > 60000) {
         _promoLastOnSavedAt = now
         redis.set(PROMO_LAST_ON_KEY, String(now)).catch(() => {})
         if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
