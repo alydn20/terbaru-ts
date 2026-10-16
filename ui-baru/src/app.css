@@ -74,8 +74,10 @@
   /* navigasi bawah */
   .nav-item { @apply relative flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-muted transition; }
   .nav-item[aria-current='true'] { @apply text-gold; }
+  /* HP: menu bawah hanya ikon (tulisan disembunyikan, tetap terbaca pembaca layar lewat aria-label) */
+  #bottomNav .nav-item { font-size: 0; gap: 0; }
   .nav-item[aria-current='true']::before { content: ''; @apply absolute top-0 h-[2px] w-6 rounded-b bg-gold; }
-  .badge { @apply absolute left-1/2 top-1 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
+  .badge { @apply absolute left-1/2 top-0.5 ml-1.5 h-4 min-w-[16px] rounded-full bg-down px-1 text-center text-[9px] font-extrabold leading-4 text-white; }
 
   /* angka harga: berkedip hijau/merah saat berubah */
   .flash-up { @apply animate-flash-up; }

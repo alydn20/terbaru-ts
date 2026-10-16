@@ -522,6 +522,7 @@ const setActive = key => $$('[data-nav]').forEach(b => b.setAttribute('aria-curr
 function initNav() {
   $$('#bottomNav [data-nav]').forEach(b => {
     const [ic, fn] = NAV[b.dataset.nav]
+    b.setAttribute('aria-label', b.textContent.trim()); b.title = b.textContent.trim()
     b.insertAdjacentHTML('afterbegin', icon(ic, 'h-5 w-5'))
     b.addEventListener('click', fn)
   })

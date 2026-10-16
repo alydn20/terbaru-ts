@@ -30,7 +30,7 @@ function floatNote(title, lines, ms) {
   let box = document.getElementById('newsFloat')
   if (!box) {
     // melayang di pojok kiri bawah, kotak kecil (HP: di atas navigasi bawah)
-    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(62px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
+    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(52px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
     document.body.append(box)
   }
   const close = () => { card.style.opacity = '0'; setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 260) }
@@ -83,7 +83,7 @@ function urgentTick() {
       if (!c) {
         let box = document.getElementById('newsFloat')
         if (!box) {
-          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(62px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
+          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(52px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
           document.body.append(box)
         }
         c = h('div', { class: 'pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
