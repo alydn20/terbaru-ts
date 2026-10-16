@@ -192,8 +192,8 @@ function renderTitikOn() {
   const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
   if (state.promo === 'OFF' && state.lastOnAt) {
     const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
-    lbl.textContent = 'Terakhir ON'
-    val.textContent = pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear()
+    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear()
+    val.textContent = state.lastOnPrice ? num(state.lastOnPrice) : '—'
     val.className = 'stat-v text-muted'
     box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
     box.classList.remove('hidden')
@@ -302,7 +302,7 @@ function connect() {
         if (d.high != null && (state.high === null || d.high > state.high)) { state.high = d.high; $('#dayHigh').textContent = num(d.high) }
         if (d.low != null && (state.low === null || d.low < state.low)) { state.low = d.low; $('#dayLow').textContent = num(d.low) }
         break
-      case 'promo_status': if (d.lastOnAt) state.lastOnAt = d.lastOnAt; setPromoStatus(d.status, true); renderTitikOn(); break
+      case 'promo_status': if (d.lastOnAt) state.lastOnAt = d.lastOnAt; if (d.lastOnPrice) state.lastOnPrice = d.lastOnPrice; setPromoStatus(d.status, true); renderTitikOn(); break
       case 'promo_limit_update': setChip('chipLimit', 'limitVal', d.limit); break
       case 'lowest_on_price': state.titikOn = d.price ?? null; renderTitikOn(); break
       case 'markup_settings_update':
@@ -395,6 +395,7 @@ async function start() {
   getJSON('/api/lowest-on-price').then(d => {
     state.titikOn = d.price ?? null
     if (d.lastOnAt) state.lastOnAt = d.lastOnAt
+    if (d.lastOnPrice) state.lastOnPrice = d.lastOnPrice
     if (d.status && !state.promo) setPromoStatus(d.status, false)
     renderTitikOn()
   }).catch(() => {})
