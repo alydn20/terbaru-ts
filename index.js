@@ -3796,7 +3796,7 @@ app.get('/admin-login', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
-  <title>Admin Login - Gold Price Monitor</title>
+  <title>Login Admin | PemulaOLD</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -5035,22 +5035,11 @@ app.get('/icon.png', (_req, res) => {
 app.get('/icon-rounded.svg', (_req, res) => {
   res.setHeader('Content-Type', 'image/svg+xml')
   res.setHeader('Cache-Control', 'public, max-age=86400')
-  const b64 = iconBuffer ? iconBuffer.toString('base64') : ''
-  // Canvas 512, sudut rx=112 (~22%), logo dalam area aman 352px di tengah
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0c1626"/>
-      <stop offset="1" stop-color="#0a1322"/>
-    </linearGradient>
-    <clipPath id="r"><rect width="512" height="512" rx="112" ry="112"/></clipPath>
-  </defs>
-  <g clip-path="url(#r)">
-    <rect width="512" height="512" fill="url(#bg)"/>
-    ${b64 ? `<image href="data:image/png;base64,${b64}" x="80" y="80" width="352" height="352" preserveAspectRatio="xMidYMid meet"/>` : ''}
-  </g>
-</svg>`
-  res.send(svg)
+  // Logo P (batang + kotak berongga) oranye di kotak hitam, dalam area aman maskable
+  res.send('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">' +
+    '<rect width="512" height="512" rx="112" fill="#000"/>' +
+    '<g transform="translate(96 96) scale(5)"><rect x="12" y="8" width="10" height="48" rx="2" fill="#f7931a"/>' +
+    '<rect x="27" y="13" width="22" height="22" rx="3" fill="none" stroke="#f7931a" stroke-width="9"/></g></svg>')
 })
 
 app.get('/favicon.ico', (_req, res) => {
@@ -5111,7 +5100,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v13';
+    const CACHE_VERSION = 'gold-monitor-v14';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -5251,7 +5240,7 @@ app.get('/admin/api-docs', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dokumentasi API - Gold Price Monitor</title>
+  <title>Dokumentasi API | PemulaOLD</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -5444,7 +5433,7 @@ app.get('/admin/monitoring', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
-  <title>Admin - Gold Price Monitor</title>
+  <title>Panel Admin | PemulaOLD</title>
 ${authScript}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -7999,7 +7988,7 @@ app.get('/login', async (req, res) => {
   <link rel="icon" href="/icon.png">
   ${tsSiteKey ? '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' : ''}
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}</style>
-  <title>Login - Gold Price Monitor</title>
+  <title>Masuk | PemulaOLD</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -9360,7 +9349,7 @@ app.get('/admin/users', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
-  <title>Admin - Kelola User</title>
+  <title>Kelola User | PemulaOLD</title>
 ${authScript}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -13559,7 +13548,7 @@ app.get('/monitoring', async (req, res) => {
   <link rel="icon" type="image/png" href="/icon.png">
   <style>body,*{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-synthesis:none;}code,pre,.mono{font-family:'Courier New',Courier,monospace;}</style>
   <script src="/assets/lucide.min.js"></script>
-  <title>Gold Price Monitor</title>
+  <title>Harga Emas Realtime | PemulaOLD</title>
   <style>
     /* Lucide icons sizing */
     [data-lucide] { display: inline-flex; vertical-align: middle; flex-shrink: 0; }
@@ -14695,6 +14684,44 @@ app.get('/monitoring', async (req, res) => {
     .clk-m { color: #f7931a; }
     .clk-s { color: #22c55e; display: inline-block; transition: color 0.2s ease; }
     .clk-s.clk-s-alert { color: #ef4444 !important; animation: clkSPulse 1s ease-in-out infinite; }
+    /* ===== Mode gelap hitam pekat: semua kartu, header, tabel, panel berlatar #000 ===== */
+    body:not(.light-mode) { --bg-page: #000; --bg-header: #000; --bg-card: #000; --bg-card-hover: #0a0a0a; --bg-input: #0a0a0a; background: #000; }
+    body:not(.light-mode) .header,
+    body:not(.light-mode) .chart-section,
+    body:not(.light-mode) .chart-header,
+    body:not(.light-mode) .stat-item,
+    body:not(.light-mode) .history-section,
+    body:not(.light-mode) .history-header,
+    body:not(.light-mode) .nav-menu-dropdown,
+    body:not(.light-mode) .sound-panel,
+    body:not(.light-mode) .info-item,
+    body:not(.light-mode) .price-high-overlay,
+    body:not(.light-mode) .price-low-overlay,
+    body:not(.light-mode) .limit-label,
+    body:not(.light-mode) .markup-overlay,
+    body:not(.light-mode) .spread-overlay { background-color: #000 !important; }
+    body:not(.light-mode) .history-table th { background-color: #050505 !important; }
+    /* ===== Perbaikan responsif HP (halaman tidak tergeser, label & jam tidak terpotong) ===== */
+    html { overflow-x: hidden; }
+    .info-time { white-space: nowrap; }
+    @media (max-width: 768px) {
+      /* label LIMIT / MARKUP / SPREAD / TERTINGGI / TERENDAH tetap tampil, versi kecil */
+      .limit-label .limit-text, .markup-overlay-text, .spread-overlay-text, .price-highlow-text { display: inline; font-size: 0.85em; opacity: 0.85; margin-right: 3px; }
+      .limit-label .limit-eq { display: none; }
+    }
+    @media (max-width: 420px) {
+      .header { gap: 4px; padding: 0 6px; }
+      .header-right { gap: 2px; }
+      .header-right .nav-icon-btn { width: 30px; height: 30px; min-width: 30px; }
+      .header-title-text { font-size: 0.74em; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.15; }
+      .info-time { font-size: 1.05em; letter-spacing: 0; }
+    }
+    @media (max-width: 480px) {
+      /* baris jam / tertinggi-terendah / limit-markup-spread: jam di atas, sisanya di bawah (tidak bertumpuk) */
+      .chart-bottom-row { flex-wrap: wrap; justify-content: center; row-gap: 6px; column-gap: 6px; }
+      .chart-bottom-row .chart-info-row { order: -1; flex: 0 0 auto; width: auto; margin: 0 auto; }
+      .chart-bottom-row .price-highlow-group, .chart-bottom-row .limit-markup-group { flex: 0 0 100%; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; }
+    }
     @keyframes clkSPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
     /* Goyang layar (pengganti getar untuk iPhone/desktop) */
     body.is-shaking { overflow-x: hidden; }
@@ -16672,7 +16699,7 @@ app.get('/monitoring', async (req, res) => {
       background: rgba(0,0,0,0.85);
       align-items: center;
       justify-content: center;
-      z-index: 9999;
+      z-index: 100100; /* di atas jendela Perpanjang / Grup WA (z-index 100000) */
     }
     .confirm-modal.show { display: flex; }
     .confirm-box {
@@ -16917,8 +16944,7 @@ app.get('/monitoring', async (req, res) => {
       <div class="header-logo" title="PemulaOLD Realtime Price">
         <span style="position:relative;display:inline-flex;flex-shrink:0;align-items:center;">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" style="display:block;" aria-hidden="true">
-            <rect x="7" y="1" width="16" height="16" rx="4" ry="4" fill="#f7931a"/>
-            <path d="M1 23 L1 9 A13 13 0 0 1 14 23 Z" fill="#c97a10" opacity="0.9"/>
+            <rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/>
           </svg>
           <span class="live-dot"></span>
         </span>
@@ -20326,6 +20352,13 @@ app.get('/monitoring', async (req, res) => {
     let fetchCount = 0;
     let currentAppVersion = null; // For force reload detection
 
+    // Judul tab: arah perubahan terakhir + harga beli & jual, contoh "▲ Beli 2.450.408 · Jual 2.370.000 | PemulaOLD"
+    var _titleArrow = '';
+    function _setPriceTitle(change) {
+      if (change > 0) _titleArrow = '▲ '; else if (change < 0) _titleArrow = '▼ ';
+      if (lastBuy > 0 && lastSell > 0) document.title = _titleArrow + 'Beli ' + lastBuy.toLocaleString('id-ID') + ' · Jual ' + lastSell.toLocaleString('id-ID') + ' | PemulaOLD';
+    }
+
     async function fetchPrices() {
       if (isFetching) return;
       isFetching = true;
@@ -20365,6 +20398,8 @@ app.get('/monitoring', async (req, res) => {
           lastUpdatedAt = dataTimestamp;
         }
 
+        // lepas kerangka loading (tingginya terkunci, membuat angka terpotong) begitu harga awal ada
+        ['buyPrice', 'sellPrice', 'usdIdr', 'spreadPercent'].forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.remove('stat-val-skeleton'); });
         if (data.buy) {
           var _bpn = document.getElementById('buyPriceNum');
           if (!_bpn) { var _bp = document.getElementById('buyPrice'); if (_bp) { _bp.innerHTML = '<span class="rp-prefix">Rp </span><span id="buyPriceNum">-</span>'; _bpn = document.getElementById('buyPriceNum'); } }
@@ -20410,7 +20445,7 @@ app.get('/monitoring', async (req, res) => {
 
         // Update tab title
         if (lastBuy > 0 && lastSell > 0) {
-          document.title = 'B ' + Math.round(lastBuy/1000) + 'k | J ' + Math.round(lastSell/1000) + 'k — Gold Monitor';
+          _setPriceTitle();
         }
 
         // Re-apply Beli/Jual font scale setelah update harga
@@ -20747,7 +20782,7 @@ app.get('/monitoring', async (req, res) => {
             const change = parseFloat(data.change) || 0;
             const sign = change >= 0 ? '+' : '';
             const pctChange = data.prevPrice ? ((change / data.prevPrice) * 100).toFixed(2) : '0.00';
-            document.title = 'GOLD ' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + sign + pctChange + '% | Gold Price Monitor';
+            // judul tab tetap menampilkan harga beli/jual (XAU tidak menimpa judul)
           }
           return;
         }
@@ -21030,6 +21065,7 @@ app.get('/monitoring', async (req, res) => {
               const cls = change > 0 ? 'up' : 'down';
               document.getElementById('buyChange').textContent = sign + change.toLocaleString('id-ID');
               document.getElementById('buyChange').className = 'stat-change ' + cls;
+              _titleArrow = change > 0 ? '▲ ' : '▼ ';
               // Pakai sound "besar" jika selisih > 3000
               if (Math.abs(change) > 3000) {
                 playSound(change > 0 ? 'bigUp' : 'bigDown');
@@ -21144,7 +21180,7 @@ app.get('/monitoring', async (req, res) => {
 
           // Update tab title
           if (lastBuy > 0) {
-            document.title = 'Monitor - HB ' + lastBuy.toLocaleString('id-ID');
+            _setPriceTitle();
           }
 
           // Update USD/IDR

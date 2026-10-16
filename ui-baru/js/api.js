@@ -93,7 +93,7 @@ export function applyTheme(t) {
   const theme = t || (() => { try { return localStorage.getItem(THEME_KEY) } catch (e) { return null } })() || 'dark'
   document.documentElement.dataset.theme = theme
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.content = theme === 'light' ? '#eff3ff' : '#070b18'
+  if (meta) meta.content = theme === 'light' ? '#eff3ff' : '#000000'
   return theme
 }
 export function toggleTheme() {

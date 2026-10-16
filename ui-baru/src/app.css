@@ -4,18 +4,18 @@
 
 /* Warna tema (angka RGB, dipakai Tailwind lewat tailwind.config.js) */
 @layer base {
-  /* Tema "malam biru": latar biru tua, aksen cyan, naik emerald, turun rose */
+  /* Mode gelap: hitam pekat + aksen oranye; mode terang: biru muda + cyan */
   :root {
-    --bg: 7 11 24;
-    --card: 14 21 40;
-    --card2: 21 30 54;
-    --line: 148 163 255;
-    --ink: 230 236 255;
-    --muted: 138 151 189;
-    --gold: 34 211 238;   /* aksen utama (cyan) */
-    --up: 16 185 129;
-    --down: 244 63 94;
-    --sky: 129 140 248;
+    --bg: 0 0 0;
+    --card: 12 12 12;
+    --card2: 22 22 22;
+    --line: 255 255 255;
+    --ink: 238 240 243;
+    --muted: 140 140 140;
+    --gold: 247 147 26;   /* aksen utama (oranye) */
+    --up: 14 203 129;
+    --down: 246 70 93;
+    --sky: 59 158 255;
     color-scheme: dark;
   }
   :root[data-theme='light'] {
