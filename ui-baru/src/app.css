@@ -128,6 +128,12 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
   #histScroll .hist-st-inline { display: block; }
 }
 .hist-st-inline { display: none; }
+/* USD/IDR: desktop = kolom di tabel harga (tombol pindah disembunyikan); HP = tabel terpisah */
+.hist-idr-col { display: none; }
+@media (min-width: 1024px) {
+  #histScroll .hist-idr-col { display: table-cell; }
+  #histMode { display: none; }
+}
 
 /* Angka Beli/Jual: ukuran mengikuti lebar kotaknya sendiri (bukan lebar layar), jadi tidak mepet
    ke tepi kotak di lebar mana pun. Browser lama tetap memakai ukuran berbasis lebar layar. */
