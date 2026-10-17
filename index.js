@@ -4107,7 +4107,7 @@ app.get('/admin-login', (req, res) => {
       </div>
       <button type="submit" class="btn">Login Admin</button>
     </form>
-    <a href="/login" class="back-link">← Kembali ke halaman user</a>
+    <a href="/login" class="back-link">${aIco('arrowleft')}Kembali ke halaman user</a>
   </div>
   <script>
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -4203,6 +4203,28 @@ function parseCookies(req) {
 }
 
 // Helper: cek cookie admin_auth dari request
+// Ikon SVG kecil untuk halaman admin / QR (pengganti emoji). Tanpa tanda kutip tunggal & backtick,
+// jadi aman disisipkan di HTML maupun di string JS di dalam template halaman.
+const ADM_ICO = {
+  refresh: '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  logs: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
+  xcircle: '<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',
+  arrowleft: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>'
+}
+function aIco(name) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;flex-shrink:0;">' + (ADM_ICO[name] || '') + '</svg>'
+}
+
 function isAdminCookieValid(req) {
   try {
     const cookies = parseCookies(req)
@@ -4430,7 +4452,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
     <div style="text-align:center;padding:20px;font-family:sans-serif;background:#0f1419;color:#e7e9ea;min-height:100vh;">
       <h2 style="color:#f7931a;">WhatsApp Bot Status</h2>
       <div style="margin:30px 0;padding:20px;background:#1a1f26;border-radius:12px;border:1px solid #2f3640;">
-        <p style="font-size:1.2em;"><span style="color:#00ff88;">✓ WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small></p>
+        <p style="font-size:1.2em;"><span style="color:#00ff88;">${aIco('check')}WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small></p>
       </div>
       <div style="margin:20px 0;padding:15px;background:rgba(0,255,136,0.1);border:1px solid #00ff88;border-radius:10px;">
         <p style="color:#00ff88;margin-bottom:10px;">Bot sudah aktif!</p>
@@ -4451,8 +4473,8 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
       <h2 style="color:#f7931a;" id="title">Hubungkan WhatsApp</h2>
 
       <div style="display:flex;justify-content:center;gap:8px;margin:16px 0 20px;">
-        <button id="tabQrBtn" onclick="switchTab('qr')" style="padding:10px 18px;border-radius:8px;border:1px solid #f7931a;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;">📷 Scan QR</button>
-        <button id="tabPhoneBtn" onclick="switchTab('phone')" style="padding:10px 18px;border-radius:8px;border:1px solid #2f3640;background:#1a1f26;color:#e7e9ea;cursor:pointer;">🔢 Nomor HP</button>
+        <button id="tabQrBtn" onclick="switchTab('qr')" style="padding:10px 18px;border-radius:8px;border:1px solid #f7931a;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;">${aIco('qr')}Scan QR</button>
+        <button id="tabPhoneBtn" onclick="switchTab('phone')" style="padding:10px 18px;border-radius:8px;border:1px solid #2f3640;background:#1a1f26;color:#e7e9ea;cursor:pointer;">${aIco('phone')}Nomor HP</button>
       </div>
 
       <div id="panelQr">
@@ -4525,7 +4547,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
 
       function onConnected() {
         clearInterval(qrCountdownTimer);
-        document.getElementById('title').textContent = '✅ WhatsApp Terhubung!';
+        document.getElementById('title').textContent = 'WhatsApp Terhubung!';
         document.getElementById('title').style.color = '#00ff88';
         document.getElementById('panelQr').style.display = 'none';
         document.getElementById('panelPhone').style.display = 'none';
@@ -4546,7 +4568,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
           } else {
             document.getElementById('qrBox').style.display = 'none';
             document.getElementById('qrStatusBox').style.display = 'block';
-            document.getElementById('qrStatusText').textContent = data.auth === false ? '🔒 Silakan login admin terlebih dahulu.' : '⏳ Menunggu QR dari WhatsApp server...';
+            document.getElementById('qrStatusText').textContent = data.auth === false ? 'Silakan login admin terlebih dahulu.' : 'Menunggu QR dari WhatsApp server...';
             document.getElementById('qrTimerText').textContent = 'Polling tiap 3 detik...';
           }
         } catch(e) {
@@ -4575,7 +4597,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
           }
           document.getElementById('phoneFormBox').style.display = 'none';
           document.getElementById('phoneStatusBox').style.display = 'block';
-          document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+          document.getElementById('phoneStatusText').textContent = 'Menyiapkan kode pairing...';
         } catch (e) {
           errEl.textContent = 'Gagal terhubung ke server, coba lagi';
           errEl.style.display = 'block';
@@ -4594,7 +4616,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
             document.getElementById('codeText').textContent = data.code;
           } else if (data.status === 'waiting') {
             document.getElementById('phoneStatusBox').style.display = 'block';
-            document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+            document.getElementById('phoneStatusText').textContent = 'Menyiapkan kode pairing...';
           }
         } catch (e) {}
       }
@@ -10209,7 +10231,7 @@ ${authScript}
       <!-- Section Tabs -->
       <div class="section-tabs">
         <div class="section-tab active" data-section="users">Daftar User</div>
-        <div class="section-tab" data-section="want-join">🙋 Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
+        <div class="section-tab" data-section="want-join">Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="online">Online <span id="onlineBadge" style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="add">Tambah User</div>
         <div class="section-tab" data-section="pending">Pending <span id="pendingBadge" style="background:#f7931a;color:#000;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
@@ -10217,7 +10239,7 @@ ${authScript}
         <div class="section-tab" data-section="nominal">Nominal</div>
         <div class="section-tab" data-section="broadcast">Broadcast</div>
         <div class="section-tab" data-section="settings">Pengaturan</div>
-        <div class="section-tab" data-section="logs">📋 Logs</div>
+        <div class="section-tab" data-section="logs">Logs</div>
       </div>
 
       <!-- Section: Daftar User -->
@@ -10301,7 +10323,7 @@ ${authScript}
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
               <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>
-            🙋 Ingin Gabung Grup Notifikasi Harga
+            Ingin Gabung Grup Notifikasi Harga
           </h2>
           <p style="color:#9ca3af;margin-bottom:12px;font-size:0.9em;">User yang memilih "Ya, gabung" di website dan belum ditambahkan ke grup WA. Setelah ditambahkan ke grup, tekan tombol "Sudah Ditambahkan".</p>
           <div class="user-table-wrapper">
@@ -10455,10 +10477,10 @@ ${authScript}
               <div id="waStatusPhone" style="font-size:0.78em;color:#6b7280;margin-top:2px;"></div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">🔁 Refresh</button>
-              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">🔗 Hubungkan (QR / Nomor HP)</a>
-              <button class="btn btn-sm" style="background:#22c55e;color:#000;" onclick="repairWaSession()">🛠️ Perbaiki Sesi (tanpa logout)</button>
-              <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">⚠️ Reset / Ganti WA</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">${aIco('refresh')}Refresh</button>
+              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">${aIco('link')}Hubungkan (QR / Nomor HP)</a>
+              <button class="btn btn-sm" style="background:#22c55e;color:#000;" onclick="repairWaSession()">${aIco('wrench')}Perbaiki Sesi (tanpa logout)</button>
+              <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">${aIco('alert')}Reset / Ganti WA</button>
             </div>
           </div>
           <p style="color:#6b7280;font-size:0.78em;margin-bottom:4px;"><strong>Perbaiki Sesi</strong>: untuk bot yang tidak membalas command di grup (error "Bad MAC" di log). Tidak logout, tidak perlu scan ulang.</p>
@@ -10489,7 +10511,7 @@ ${authScript}
 
           <!-- Broadcast Group (Kirim Harga Otomatis) -->
           <div style="margin-top:20px;padding:16px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:12px;">
-            <label style="color:#00ff88;font-weight:600;display:block;margin-bottom:4px;font-size:0.9em;">📢 Grup Broadcast Harga (Grup Beli)</label>
+            <label style="color:#00ff88;font-weight:600;display:block;margin-bottom:4px;font-size:0.9em;">${aIco('megaphone')}Grup Broadcast Harga (Grup Beli)</label>
             <p style="color:#6b7280;font-size:0.8em;margin-bottom:12px;">Harga emas akan otomatis dikirim ke grup ini setiap kali ada perubahan harga. Pesan akan menyertakan Titik ON ▼ dan Limit beli/bln.</p>
             <div class="form-row" style="align-items:flex-end;">
               <div class="form-group" style="flex:2;">
@@ -10802,7 +10824,7 @@ ${authScript}
 
           <!-- Sound Naik Besar -->
           <div style="background:rgba(250,204,21,0.05);padding:16px;border-radius:12px;border:1px solid rgba(250,204,21,0.25);margin-bottom:14px;">
-            <label style="color:#facc15;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">⚡ Sound Naik Besar (&gt;3.000)</label>
+            <label style="color:#facc15;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">${aIco('zap')}Sound Naik Besar (&gt;3.000)</label>
             <p style="color:#6b7280;font-size:0.78em;margin-bottom:10px;">Berbunyi saat harga naik lebih dari Rp 3.000 sekaligus. Jika kosong, memakai sound naik biasa.</p>
             <div class="form-group" style="margin-bottom:10px;">
               <label>Upload File Audio</label>
@@ -10820,7 +10842,7 @@ ${authScript}
 
           <!-- Sound Turun Besar -->
           <div style="background:rgba(251,146,60,0.05);padding:16px;border-radius:12px;border:1px solid rgba(251,146,60,0.25);margin-bottom:16px;">
-            <label style="color:#fb923c;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">⚡ Sound Turun Besar (&gt;3.000)</label>
+            <label style="color:#fb923c;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">${aIco('zap')}Sound Turun Besar (&gt;3.000)</label>
             <p style="color:#6b7280;font-size:0.78em;margin-bottom:10px;">Berbunyi saat harga turun lebih dari Rp 3.000 sekaligus. Jika kosong, memakai sound turun biasa.</p>
             <div class="form-group" style="margin-bottom:10px;">
               <label>Upload File Audio</label>
@@ -11075,7 +11097,7 @@ ${authScript}
       <div class="section-content" id="section-logs">
         <div class="card" style="margin-bottom:18px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-            <h2 style="margin:0;">🔐 Riwayat Login &amp; Logout User</h2>
+            <h2 style="margin:0;">${aIco('lock')}Riwayat Login &amp; Logout User</h2>
             <span id="loginHistoryCount" style="font-size:0.82em;color:#8b949e;"></span>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
@@ -11087,7 +11109,7 @@ ${authScript}
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:140px;outline:none;">
             <input id="filterLoginLocation" type="text" placeholder="Filter kota/provinsi..." oninput="renderLoginHistoryFiltered()"
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:170px;outline:none;">
-            <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">✕ Reset</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">${aIco('x')}Reset</button>
           </div>
           <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:0.82em;">
@@ -11108,10 +11130,10 @@ ${authScript}
           </div>
         </div>
         <div class="card">
-          <h2>📋 System Logs</h2>
+          <h2>${aIco('logs')}System Logs</h2>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="loadAdminLogs()">🔁 Reload</button>
-            <span style="font-size:0.82em;color:#00ff88;">⚡ Realtime via SSE</span>
+            <button class="btn btn-secondary btn-sm" onclick="loadAdminLogs()">${aIco('refresh')}Reload</button>
+            <span style="font-size:0.82em;color:#00ff88;">${aIco('zap')}Realtime via SSE</span>
           </div>
           <div id="logsContainer" style="background:#0a0e13;border-radius:10px;padding:12px;max-height:520px;overflow-y:auto;font-family:monospace;font-size:0.78em;line-height:1.6;"></div>
         </div>
@@ -12888,19 +12910,19 @@ ${authScript}
           if (data.connected) {
             dot.style.background = '#00ff88';
             dot.style.boxShadow = '0 0 8px #00ff88';
-            text.textContent = '✅ Terhubung';
+            text.innerHTML = '${aIco('check')}Terhubung';
             text.style.color = '#00ff88';
             phone.textContent = data.phone ? 'Nomor: ' + data.phone : '';
           } else if (data.hasQr) {
             dot.style.background = '#f7931a';
             dot.style.boxShadow = '0 0 8px #f7931a';
-            text.textContent = '📷 Menunggu scan QR';
+            text.innerHTML = '${aIco('qr')}Menunggu scan QR';
             text.style.color = '#f7931a';
             phone.textContent = 'Buka halaman QR untuk scan';
           } else {
             dot.style.background = '#ef4444';
             dot.style.boxShadow = 'none';
-            text.textContent = '❌ Tidak terhubung';
+            text.innerHTML = '${aIco('xcircle')}Tidak terhubung';
             text.style.color = '#ef4444';
             phone.textContent = 'Klik "Hubungkan" untuk scan QR atau pakai nomor HP';
           }
@@ -12911,7 +12933,7 @@ ${authScript}
     async function repairWaSession() {
       const confirmed = await showConfirm(
         'Hapus sesi enkripsi yang rusak lalu reconnect WA. Tidak logout dan tidak perlu scan ulang.\\n\\nLanjutkan?',
-        { title: '🛠️ Perbaiki Sesi WhatsApp', type: 'warning' }
+        { title: 'Perbaiki Sesi WhatsApp', type: 'warning' }
       );
       if (!confirmed) return;
 
@@ -12928,7 +12950,7 @@ ${authScript}
       .then(data => {
         if (data.success) {
           result.className = 'result-msg success';
-          result.textContent = '✅ ' + data.message;
+          result.textContent = data.message;
           setTimeout(() => loadWaStatus(), 5000);
         } else {
           result.className = 'result-msg error';
@@ -12941,7 +12963,7 @@ ${authScript}
     async function resetWaConnection() {
       const confirmed = await showConfirm(
         'Ini akan logout dari WhatsApp saat ini dan memerlukan login ulang (scan QR atau kode pairing nomor HP) untuk menghubungkan nomor baru.\\n\\nLanjutkan?',
-        { title: '⚠️ Reset Koneksi WhatsApp', type: 'warning' }
+        { title: 'Reset Koneksi WhatsApp', type: 'warning' }
       );
       if (!confirmed) return;
 
@@ -12958,7 +12980,7 @@ ${authScript}
       .then(data => {
         if (data.success) {
           result.className = 'result-msg success';
-          result.textContent = '✅ ' + data.message;
+          result.textContent = data.message;
           setTimeout(() => loadWaStatus(), 3000);
         } else {
           result.className = 'result-msg error';
@@ -13020,9 +13042,9 @@ ${authScript}
           if (data.broadcastGroupId) {
             const bcast = data.groups.find(g => g.id === data.broadcastGroupId);
             if (bcast) {
-              document.getElementById('currentBroadcastGroup').innerHTML = '📢 Broadcast aktif ke: <strong style="color:#00ff88;">' + bcast.name + '</strong>';
+              document.getElementById('currentBroadcastGroup').innerHTML = '${aIco('megaphone')}Broadcast aktif ke: <strong style="color:#00ff88;">' + bcast.name + '</strong>';
             } else {
-              document.getElementById('currentBroadcastGroup').innerHTML = '📢 Broadcast aktif: <strong style="color:#f7931a;">' + data.broadcastGroupId.substring(0, 20) + '...</strong>';
+              document.getElementById('currentBroadcastGroup').innerHTML = '${aIco('megaphone')}Broadcast aktif: <strong style="color:#f7931a;">' + data.broadcastGroupId.substring(0, 20) + '...</strong>';
             }
           } else {
             document.getElementById('currentBroadcastGroup').textContent = 'Broadcast grup belum di-set (tidak ada broadcast ke grup WA)';
@@ -13076,8 +13098,8 @@ ${authScript}
         if (data.success) {
           result.className = 'result-msg success';
           result.textContent = groupId
-            ? '📢 Grup broadcast berhasil di-set! Harga akan otomatis dikirim ke grup ini.'
-            : '📢 Broadcast grup dinonaktifkan.';
+            ? 'Grup broadcast berhasil di-set! Harga akan otomatis dikirim ke grup ini.'
+            : 'Broadcast grup dinonaktifkan.';
           loadWaGroups();
         } else {
           result.className = 'result-msg error';
@@ -13284,7 +13306,7 @@ ${authScript}
         if (td.dataset.copied) return;
         td.dataset.copied = '1';
         const old = td.textContent;
-        td.textContent = '✓ Disalin';
+        td.innerHTML = '${aIco('check')}Disalin';
         td.classList.add('copied');
         setTimeout(function() { td.textContent = old; td.classList.remove('copied'); delete td.dataset.copied; }, 1200);
       };
