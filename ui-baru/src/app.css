@@ -25,9 +25,10 @@
     --line: 30 41 99;
     --ink: 15 23 42;
     --muted: 88 102 140;
-    --gold: 8 145 178;
-    --up: 5 150 105;
-    --down: 225 29 72;
+    /* sedikit lebih gelap dari sebelumnya supaya angka kecil terbaca di latar terang (kontras >= 4.5) */
+    --gold: 14 116 144;
+    --up: 4 120 87;
+    --down: 190 18 60;
     --sky: 79 70 229;
     color-scheme: light;
   }
@@ -627,3 +628,6 @@ body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 
   .info-box #chipOn { flex-direction: column !important; align-items: stretch !important; gap: 0 !important; }
   .info-box #chipOn .stat-v { text-align: right; }
 }
+
+/* badge angka notifikasi (mis. jumlah promo): merah lebih pekat supaya angka putih terbaca di mode gelap */
+#badgePromo { background-color: rgb(220 38 38) !important; color: #fff !important; }
