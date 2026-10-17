@@ -132,10 +132,11 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
   #histScroll td .text-\[11px\] { font-size: 10px; }
   #histScroll .st-long { display: none; }
   #histScroll .st-short { display: inline; }
-  #histScroll .hist-st-col { display: none; }
-  #histScroll .hist-st-inline { display: block; }
 }
-.hist-st-inline { display: none; }
+/* Semua ukuran (HP, tablet, desktop): status MD/MU ditaruh di bawah jam, kolom Status tidak dipakai */
+#histScroll .hist-st-col { display: none; }
+#histScroll .hist-st-inline { display: block; }
+@media (min-width: 768px) { #histScroll .hist-st-inline { font-size: 11px; } }
 /* USD/IDR digabung ke tabel harga (body.idr-merge, pengaturan riwayat): kolom tampil, tombol
    Harga emas | USD/IDR disembunyikan. Bawaan (Otomatis): desktop & tablet gabung, HP terpisah. */
 .hist-idr-col { display: none; }
