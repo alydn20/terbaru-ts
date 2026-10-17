@@ -70,42 +70,64 @@ export function checkNewsReminders() {
     floatNote(upcoming.length + ' news penting hari ini',
       upcoming.slice(0, 12).map(ev => jamWib(ev._wib) + '  ' + ev.title), 15000)
   }
+  // <= 30 menit lagi: news yang rilis di jam yang sama digabung jadi satu kartu (judul bergantian)
+  const soonGroups = {}
   high.forEach(ev => {
     const left = new Date(ev.date).getTime() - now
     const key = ev.title + '|' + ev.date
     if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
       store.soon[key] = 1
-      floatNote(Math.max(1, Math.round(left / 60000)) + ' mnt lagi · News penting', [jamWib(ev._wib) + '  ' + ev.title], 20000)
+      ;(soonGroups[ev.date] = soonGroups[ev.date] || []).push(ev)
     }
+  })
+  Object.values(soonGroups).forEach(list => {
+    const left = new Date(list[0].date).getTime() - now
+    const n = list.length
+    floatNote(Math.max(1, Math.round(left / 60000)) + ' mnt lagi · ' + (n > 1 ? n + ' news ' + jamWib(list[0]._wib).replace(' WIB', '') : 'News penting'),
+      list.map(ev => (n > 1 ? '' : jamWib(ev._wib) + '  ') + ev.title), 20000)
   })
   try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
 }
 setInterval(checkNewsReminders, 30000)
 
-// 3 menit sebelum news dampak tinggi: tidak bisa ditutup, hitung mundur per detik, sampai rilis
+// 3 menit sebelum news dampak tinggi: tidak bisa ditutup, hitung mundur per detik, sampai rilis.
+// Beberapa news di jam rilis yang sama = SATU kartu ("2:59 lagi · 4 news rilis"), nama news bergantian.
 const urgent = {}
 function urgentTick() {
   if (!state.news.length) return
   const now = Date.now()
   const today = dayKey(toWib(new Date(now).toISOString()))
+  const groups = {}
   state.news.forEach(ev => {
     if (ev.impact !== 'High' || dayKey(ev._wib) !== today) return
-    const key = ev.title + '|' + ev.date
-    const left = new Date(ev.date).getTime() - now
+    ;(groups[ev.date] = groups[ev.date] || []).push(ev)
+  })
+  Object.entries(groups).forEach(([key, list]) => {
+    const left = new Date(key).getTime() - now
     let c = urgent[key]
+    const n = list.length
     if (left > 0 && left <= 3 * 60000) {
       if (!c) {
         const box = floatBox()
         c = h('div', { class: 'news-card news-card-urgent anim-float-in', role: 'alert', onclick: openNews },
-          h('div', { class: 'news-card-title' }, ''), h('div', { class: 'news-card-line' }, jamWib(ev._wib) + '  ' + ev.title))
+          h('div', { class: 'news-card-title' }, ''), h('div', { class: 'news-card-line' }, ''))
+        c._i = 0
+        c._lines = list.map((ev, k) => (n > 1 ? (k + 1) + '/' + n + '  ' : jamWib(ev._wib) + '  ') + ev.title)
         box.append(c)
         urgent[key] = c
       }
       const sec = Math.ceil(left / 1000)
-      c.firstChild.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi · News rilis'  // hitung mundur di depan (tidak terpotong di HP)
+      c.firstChild.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi · ' + (n > 1 ? n + ' news rilis' : 'News rilis')
+      // nama news bergantian tiap 3 dtk, urut 1/4 -> 2/4 -> 3/4 -> 4/4
+      const idx = n > 1 ? (n - 1 - Math.floor((sec % (n * 3)) / 3) % n) : 0
+      const line = c.lastChild
+      if (line.textContent !== c._lines[idx]) {
+        line.textContent = c._lines[idx]
+        if (n > 1) { line.classList.remove('news-roll'); void line.offsetWidth; line.classList.add('news-roll') }
+      }
     } else if (c && left <= 0 && !c.dataset.done) {
       c.dataset.done = '1'
-      c.firstChild.textContent = 'Rilis sekarang'
+      c.firstChild.textContent = 'Rilis sekarang' + (n > 1 ? ' · ' + n + ' news' : '')
       setTimeout(() => { const box = c.parentElement; c.classList.add('anim-float-out'); setTimeout(() => { c.remove(); if (box && !box.children.length) box.remove() }, 300); delete urgent[key] }, 8000)
     }
   })

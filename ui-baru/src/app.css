@@ -815,3 +815,13 @@ button.is-busy { display: inline-flex; align-items: center; justify-content: cen
 @keyframes newsRoll { from { opacity: 0; transform: translateY(45%); } to { opacity: 1; transform: none; } }
 .news-roll { animation: newsRoll .35s cubic-bezier(.2, .8, .2, 1); }
 @media (prefers-reduced-motion: reduce) { .news-roll { animation: none; } }
+
+/* HP: isi kartu News boleh 2 baris (nama news panjang tidak terpotong); kartu boleh sedikit menjorok
+   ke bawah bar atas, melayang di atas isi halaman */
+@media (max-width: 767px) {
+  .news-float { align-items: flex-start; top: 0; bottom: auto; }
+  .news-card { padding-top: .2rem; padding-bottom: .2rem; box-shadow: 0 6px 16px rgb(0 0 0 / .35); background-color: rgb(var(--card)); }
+  .news-card-urgent { background-color: rgb(var(--down)); }
+  .news-card-title { font-size: 10.5px; }
+  .news-card-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 10.5px; line-height: 1.25; }
+}
