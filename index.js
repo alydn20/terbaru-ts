@@ -6210,9 +6210,9 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     } catch (e) {}
   }
 
-  // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi).
-  // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
-  if (normalizedPhone !== ADMIN_PHONE) {
+  // Batasi jumlah perangkat (diatur admin di panel). SEMUA nomor admin (utama + yang ditambahkan
+  // di panel) tidak dibatasi. Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
+  if (normalizedPhone !== ADMIN_PHONE && !ADMIN_PHONES.includes(normalizedPhone)) {
     const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
     const userSessions = []
     for (const [sessId, sessPhone] of Object.entries(allSessions)) {
@@ -9335,8 +9335,8 @@ app.get('/auth/:token', async (req, res) => {
       return res.send(getLoginErrorPage('Akun tidak ditemukan atau tidak valid.'))
     }
 
-    // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi)
-    if (phone !== ADMIN_PHONE) {
+    // Batasi jumlah perangkat (diatur admin di panel; semua nomor admin tidak dibatasi)
+    if (phone !== ADMIN_PHONE && !ADMIN_PHONES.includes(phone)) {
       const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
       const userSessions = []
       for (const [sessId, sessPhone] of Object.entries(allSessions)) {
