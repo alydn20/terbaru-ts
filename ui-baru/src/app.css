@@ -255,13 +255,18 @@ body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
 /* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
 .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
 
-/* USD/IDR: kotak paling depan di baris info, sedikit lebih besar dari info lain */
-.stat.usd-pill { flex: none; flex-direction: row; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border-radius: 9999px; }
-.usd-pill .stat-k { font-size: 10px; }
-.usd-pill .stat-v { font-size: 0.875rem; }
-body.price-compact .stat.usd-pill { padding: 0.2rem 0.6rem; }
-body.price-compact .usd-pill .stat-k { font-size: 9px !important; }
-body.price-compact .usd-pill .stat-v { font-size: 0.75rem !important; }
+/* USD/IDR (info penting): kotak paling depan di baris info, angka lebih besar, garis biru */
+.stat.usd-pill { flex: none; flex-direction: row; align-items: center; gap: 0.4rem; padding: 0.3rem 0.8rem; border-radius: 9999px; border-color: rgb(var(--sky) / 0.45); background-color: rgb(var(--sky) / 0.08); }
+.usd-pill .stat-k { font-size: 10.5px; }
+.usd-pill .stat-v { font-size: 1.05rem; }
+body.price-compact .stat.usd-pill { padding: 0.2rem 0.65rem; }
+body.price-compact .usd-pill .stat-k { font-size: 9.5px !important; }
+body.price-compact .usd-pill .stat-v { font-size: 0.9rem !important; }
+@media (min-width: 768px) {
+  .usd-pill .stat-v { font-size: 1.15rem; }
+  body.price-compact .usd-pill .stat-v { font-size: 1rem !important; }
+}
 @media (min-width: 1280px) {
-  body.price-compact .usd-pill .stat-v { font-size: 0.85rem !important; }
+  .usd-pill .stat-v { font-size: 1.25rem; }
+  body.price-compact .usd-pill .stat-v { font-size: 1.1rem !important; }
 }
