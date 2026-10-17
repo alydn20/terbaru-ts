@@ -566,3 +566,28 @@ body.price-compact #nominals { padding-left: 1.7rem; padding-right: 1.7rem; }
 @media (max-width: 479px) { .has-renew > #clkDate { display: none; } }
 /* mode terang: pita PROMO OFF lebih kontras */
 [data-theme="light"] body.price-compact #clockMid #promoStatus.bg-down\/15 { background-color: rgb(var(--down) / 0.18); }
+
+/* Untung per nominal di HP: selalu 2 kolom kiri-kanan; kalau jumlahnya ganjil, yang terakhir di tengah.
+   Ruang untuk ikon atur hanya di kanan. */
+body.price-compact #nominals { padding-left: 0; padding-right: 1.8rem; }
+@media (max-width: 767px) {
+  body.price-compact #nominals { display: flex !important; flex-wrap: wrap; justify-content: center; gap: 0.25rem; }
+  body.price-compact #nominals > .tile { flex: 0 0 calc(50% - 0.125rem) !important; min-width: 0; width: auto !important; justify-content: center; gap: 0.25rem; padding: 0.1rem 0.3rem !important; }
+  body.price-compact #nominals > .tile > div { gap: 0.25rem !important; }
+  body.price-compact #nominals > .tile span { font-size: 10.5px !important; }
+  body.price-compact #nominals > .tile > .font-mono { font-size: 9.5px !important; }
+  /* hanya 1 nominal: satu kotak di tengah, tidak selebar layar */
+  body.price-compact #nominals > .tile:only-child { flex-basis: auto !important; }
+}
+@media (max-width: 374px) {
+  body.price-compact #nominals > .tile { padding: 0.1rem 0.2rem !important; gap: 0.2rem; }
+  body.price-compact #nominals > .tile span { font-size: 9.5px !important; }
+  body.price-compact #nominals > .tile > .font-mono { font-size: 8.5px !important; }
+}
+/* simetris: ruang kiri = ruang kanan (ikon atur di ruang kanan), jadi kotak nominal tepat di tengah kartu */
+body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 1.75rem !important; }
+.price-box-gear { right: 0.1rem; }
+@media (max-width: 767px) {
+  body.price-compact #nominals { padding-left: 1.6rem !important; padding-right: 1.6rem !important; }
+  .price-box-gear { width: 1.35rem; height: 1.35rem; right: 0; }
+}
