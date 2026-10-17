@@ -116,8 +116,12 @@ async function checkUser() {
   try {
     const res = await fetch('/api/check-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: p, 'cf-turnstile-response': token }) })
     const d = await res.json()
-    if (d.success && d.needPinSetup) {
-      // belum punya PIN (akun baru / PIN direset admin): langsung verifikasi nomor lalu buat PIN
+    if (d.success && d.needPinSetup && d.adminReset) {
+      // PIN baru direset admin / akun baru: langsung buat PIN baru (tanpa verifikasi)
+      tsReset(); busy(btn, false)
+      return openNewPin(false)
+    } else if (d.success && d.needPinSetup) {
+      // belum punya PIN dan bukan reset admin: verifikasi nomor lewat WhatsApp lalu buat PIN
       tsReset(); busy(btn, false)
       return startVerify('setup')
     } else if (d.success) {
@@ -239,7 +243,7 @@ async function checkVerify() {
     if (d.verified) {
       stopVerifyPoll()
       vStatus('Nomor terverifikasi', 'v-ok')
-      setTimeout(() => { show('newpin'); setTimeout(() => $('#newPin').focus(), 50) }, 500)
+      setTimeout(() => openNewPin(true), 500)
     } else if (d.expired) {
       stopVerifyPoll(); vToken = ''
       $('#vTimer').textContent = ''
@@ -265,6 +269,16 @@ $('#vRetry').addEventListener('click', () => startVerify('forgot'))
 $('#vBack').addEventListener('click', () => { vToken = ''; msg(''); show('phone') })
 
 // ---------------------------------------------------------------- 4. buat PIN baru
+// verified = true: lewat verifikasi WhatsApp (pakai token). false: setelah reset admin / akun baru.
+function openNewPin(verified) {
+  if (!verified) vToken = ''
+  $('#npVerified').classList.toggle('hidden', !verified)
+  $('#npDesc').textContent = verified ? '6 digit angka. Hindari angka sama atau berurutan (mis. 111111, 123456).'
+    : 'PIN akun +62' + phone + ' belum dibuat. Buat PIN 6 digit (hindari angka sama atau berurutan).'
+  $('#newPin').value = $('#newPin2').value = ''
+  show('newpin')
+  setTimeout(() => $('#newPin').focus(), 50)
+}
 const weakPin = p => /^(\d)\1{5}$/.test(p) || '0123456789012345'.includes(p) || '9876543210987654'.includes(p)
 async function saveNewPin() {
   const a = $('#newPin').value.replace(/\D/g, '')
@@ -275,7 +289,8 @@ async function saveNewPin() {
   const btn = $('#btnSavePin')
   busy(btn, true, 'Menyimpan...')
   try {
-    const d = await (await fetch('/api/pin/set', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: vToken, pin: a, oldSession: session.get() || undefined }) })).json()
+    const d = await (await fetch(vToken ? '/api/pin/set' : '/api/pin/set-after-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: vToken || undefined, phone: '62' + phone, pin: a, oldSession: session.get() || undefined }) })).json()
     if (d.success) {
       session.set(d.sessionId)
       try { localStorage.setItem('gold_sess_ok_at', String(Date.now())) } catch (e) {}
@@ -283,7 +298,7 @@ async function saveNewPin() {
       setTimeout(() => location.replace('/monitoring'), 600)
       return
     }
-    if (d.expired) { busy(btn, false); return startVerify('setup') }
+    if (d.expired || d.needVerify) { busy(btn, false); return startVerify('setup') }
     msg(d.error || 'Gagal menyimpan PIN.', 'error')
   } catch (e) { msg('Terjadi kesalahan. Coba lagi.', 'error') }
   busy(btn, false)

@@ -99,12 +99,12 @@
 
       <!-- 4. buat PIN baru (setelah verifikasi) -->
       <form id="newPinForm" class="hidden" novalidate>
-        <div class="mb-1 flex items-center gap-2 text-sm font-bold text-up">
+        <div id="npVerified" class="mb-1 flex items-center gap-2 text-sm font-bold text-up">
           <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
           Nomor terverifikasi
         </div>
         <div class="text-lg font-extrabold">Buat PIN baru</div>
-        <p class="mt-1 text-sm text-muted">6 digit angka. Hindari angka sama atau berurutan (mis. 111111, 123456).</p>
+        <p id="npDesc" class="mt-1 text-sm text-muted">6 digit angka. Hindari angka sama atau berurutan (mis. 111111, 123456).</p>
         <label class="label mt-4 block" for="newPin">PIN baru</label>
         <input id="newPin" type="password" inputmode="numeric" autocomplete="new-password" maxlength="6" class="input mt-2 text-center font-mono text-2xl tracking-[0.5em]">
         <label class="label mt-3 block" for="newPin2">Ulangi PIN baru</label>
