@@ -13931,7 +13931,6 @@ ${authScript}
                   '<button class="action-btn edit" data-phone="' + u.phone + '" data-name="' + (u.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" onclick="editUserBtn(this)">Edit</button>' +
                   '<button class="action-btn push" onclick="openPushModal(&apos;' + u.phone + '&apos;)">Push</button>' +
                   '<button class="action-btn pin" onclick="resetPin(&apos;' + u.phone + '&apos;)">Reset PIN</button>' +
-                  '<button class="action-btn pin" style="background:#b45309;" title="Atur PIN user secara manual" onclick="setPinManual(&apos;' + u.phone + '&apos;)">Atur PIN</button>' +
                   '<button class="action-btn" style="background:#7c3aed;" title="Ganti nomor HP user ini" onclick="changeUserPhone(&apos;' + u.phone + '&apos;)">Ganti No</button>' +
                   '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
                   '<button class="action-btn" style="background:#475569;" title="Riwayat login dan logout nomor ini" onclick="showUserAuthLog(&apos;' + u.phone + '&apos;)">Log</button>' +
@@ -13985,46 +13984,40 @@ ${authScript}
       .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
     }
 
-    // Reset PIN user (user membuat PIN baru lewat verifikasi WA)
-    async function resetPin(phone) {
-      const confirmed = await showConfirm('Reset PIN user +62' + phone + '? Saat login berikutnya user membuat PIN baru lewat verifikasi WhatsApp.', { title: 'Reset PIN', type: 'warning' });
-      if (!confirmed) return;
-
-      adminFetch('/api/admin/reset-pin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone })
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          showAlert('PIN direset. User membuat PIN baru lewat verifikasi WhatsApp saat login.', 'success');
-          loadUsers();
-        } else {
-          showAlert('Error: ' + data.error, 'danger');
-        }
-      });
-    }
-
-    // Atur PIN user secara manual (aturan sama dengan PIN buatan user & bot Telegram)
-    function setPinManual(phone) {
+    // Reset PIN: pilih reset (user membuat PIN sendiri lewat verifikasi WhatsApp) atau atur PIN manual.
+    // Aturan sama dengan bot Telegram.
+    function resetPin(phone) {
       var old = document.getElementById('setPinBox'); if (old) old.remove();
       var wrap = document.createElement('div');
       wrap.id = 'setPinBox';
       wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
       wrap.innerHTML = '<form style="background:#0f1115;border:1px solid #2a2f37;border-radius:14px;padding:18px;width:100%;max-width:340px;color:#e5e7eb;">' +
-        '<div style="font-weight:800;font-size:1.05em;">Atur PIN manual</div>' +
-        '<div style="color:#9ca3af;font-size:.85em;margin-top:4px;">User +' + phone + '. PIN 6 digit, tidak boleh angka sama / berurutan. Beri tahu user PIN barunya.</div>' +
-        '<input id="spPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="PIN baru" style="width:100%;margin-top:12px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
-        '<input id="spPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Ulangi PIN" style="width:100%;margin-top:8px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
+        '<div style="font-weight:800;font-size:1.05em;">Reset PIN</div>' +
+        '<div style="color:#9ca3af;font-size:.85em;margin-top:2px;">User +62' + phone + '</div>' +
+        '<button type="button" id="spReset" class="action-btn" style="box-sizing:border-box;width:100%;min-height:42px;margin-top:12px;background:#0e7490;">Reset, user buat PIN sendiri</button>' +
+        '<div style="color:#9ca3af;font-size:.78em;margin-top:6px;">Saat login berikutnya user verifikasi lewat WhatsApp lalu membuat PIN baru.</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px;color:#6b7280;font-size:.75em;font-weight:700;"><span style="flex:1;height:1px;background:#2a2f37;"></span>ATAU ATUR PIN MANUAL<span style="flex:1;height:1px;background:#2a2f37;"></span></div>' +
+        '<div style="color:#9ca3af;font-size:.78em;">PIN 6 digit, tidak boleh angka sama / berurutan. Beri tahu user PIN barunya.</div>' +
+        '<input id="spPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="PIN baru" style="box-sizing:border-box;width:100%;margin-top:12px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
+        '<input id="spPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Ulangi PIN" style="box-sizing:border-box;width:100%;margin-top:8px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
         '<div id="spMsg" style="color:#f87171;font-size:.85em;min-height:1.2em;margin-top:8px;"></div>' +
         '<div style="display:flex;gap:8px;margin-top:6px;"><button type="button" id="spCancel" class="action-btn" style="flex:1;min-height:40px;background:#374151;">Batal</button>' +
-        '<button type="submit" id="spSave" class="action-btn" style="flex:1;min-height:40px;background:#b45309;">Simpan PIN</button></div></form>';
+        '<button type="submit" id="spSave" class="action-btn" style="flex:1;min-height:40px;background:#b45309;">Simpan PIN manual</button></div></form>';
       document.body.appendChild(wrap);
       var p1 = document.getElementById('spPin'), p2 = document.getElementById('spPin2'), m = document.getElementById('spMsg');
       [p1, p2].forEach(function(el) { el.addEventListener('input', function() { el.value = el.value.replace(/[^0-9]/g, '').slice(0, 6); }); });
       setTimeout(function() { p1.focus(); }, 50);
       document.getElementById('spCancel').onclick = function() { wrap.remove(); };
+      document.getElementById('spReset').onclick = function() {
+        var rb = this; rb.disabled = true; rb.textContent = 'Mereset...';
+        adminFetch('/api/admin/reset-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone }) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.success) { wrap.remove(); showAlert('PIN direset. User membuat PIN baru lewat verifikasi WhatsApp saat login.', 'success'); loadUsers(); }
+            else { m.textContent = d.error || 'Gagal mereset PIN.'; rb.disabled = false; rb.textContent = 'Reset, user buat PIN sendiri'; }
+          })
+          .catch(function() { m.textContent = 'Gagal terhubung ke server.'; rb.disabled = false; rb.textContent = 'Reset, user buat PIN sendiri'; });
+      };
       wrap.addEventListener('click', function(e) { if (e.target === wrap) wrap.remove(); });
       wrap.querySelector('form').addEventListener('submit', function(e) {
         e.preventDefault();
@@ -14034,10 +14027,10 @@ ${authScript}
         adminFetch('/api/admin/set-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, pin: p1.value }) })
           .then(function(r) { return r.json(); })
           .then(function(d) {
-            if (d.success) { wrap.remove(); showAlert('PIN user +' + phone + ' diatur. Beri tahu user PIN barunya.', 'success'); loadUsers(); }
-            else { m.textContent = d.error || 'Gagal menyimpan PIN.'; btn.disabled = false; btn.textContent = 'Simpan PIN'; }
+            if (d.success) { wrap.remove(); showAlert('PIN user +62' + phone + ' diatur. Beri tahu user PIN barunya.', 'success'); loadUsers(); }
+            else { m.textContent = d.error || 'Gagal menyimpan PIN.'; btn.disabled = false; btn.textContent = 'Simpan PIN manual'; }
           })
-          .catch(function() { m.textContent = 'Gagal terhubung ke server.'; btn.disabled = false; btn.textContent = 'Simpan PIN'; });
+          .catch(function() { m.textContent = 'Gagal terhubung ke server.'; btn.disabled = false; btn.textContent = 'Simpan PIN manual'; });
       });
     }
 
@@ -23475,7 +23468,7 @@ async function tgUserCard(phone, note) {
     (grupStatus === 'tidak_mau' ? (grupPref.askAgainAt > 0 ? ' (ditanya lagi ' + tgDate(grupPref.askAgainAt) + ')' : ' (jangan ditanya lagi)') : '') +
     (grupStatus !== 'masuk' && grupPref.adminMark && grupPref.adminMark.reason ? '\nCatatan admin: tidak dimasukkan - ' + tgEsc(grupPref.adminMark.reason) : '') +
     (blockedRaw ? '\nStatus: diblokir' : '')
-  kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Atur PIN', callback_data: 'u:sp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
+  kb.push([{ text: 'Reset PIN', callback_data: 'u:pq:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
   kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
   kb.push(grupStatus === 'masuk'
     ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
@@ -23970,9 +23963,14 @@ async function handleTelegramCallback(tg, cq) {
   }
 
   // --- ganti nomor HP ---
+  if ((m = /^u:pq:(62[0-9]{8,13})$/.exec(data))) {
+    await show({ text: '<b>Reset PIN</b>\n\nUser: <code>+' + m[1] + '</code>\n\n<b>Reset</b>: user membuat PIN sendiri lewat verifikasi WhatsApp saat login berikutnya.\n<b>Atur PIN manual</b>: Anda menentukan PIN 6 digit, lalu beri tahu user.',
+      kb: [[{ text: 'Reset (user buat sendiri)', callback_data: 'u:rp:' + m[1] }], [{ text: 'Atur PIN manual', callback_data: 'u:sp:' + m[1] }], [{ text: 'Batal', callback_data: 'u:v:' + m[1] }]] })
+    return toast('')
+  }
   if ((m = /^u:sp:(62[0-9]{8,13})$/.exec(data))) {
     tgSetAwait('setpin', m[1])
-    await show({ text: '<b>Atur PIN manual</b>\n\nUser: <code>+' + m[1] + '</code>\n\nKirim PIN baru 6 digit sekarang. Pesan berisi PIN akan langsung dihapus dari chat ini.\nPIN angka sama / berurutan (111111, 123456) ditolak.\n\nKalau ingin user membuat PIN sendiri lewat verifikasi WhatsApp, pakai <b>Reset PIN</b>.', kb: [[{ text: 'Batal', callback_data: 'u:v:' + m[1] }]] })
+    await show({ text: '<b>Atur PIN manual</b>\n\nUser: <code>+' + m[1] + '</code>\n\nKirim PIN baru 6 digit sekarang. Pesan berisi PIN akan langsung dihapus dari chat ini.\nPIN angka sama / berurutan (111111, 123456) ditolak.', kb: [[{ text: 'Batal', callback_data: 'u:v:' + m[1] }]] })
     return toast('')
   }
   if ((m = /^u:cn:(62[0-9]{8,13})$/.exec(data))) {
