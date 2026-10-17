@@ -58,6 +58,8 @@ let lastTopKey = ''
 function animateRows(rows, append) {
   if (!rows.length || append) return
   const key = rows[0].textContent.slice(0, 24)
+  // baris terbaru (halaman pertama) selalu diberi warna tipis; saat baru masuk menyala beberapa detik
+  if (narrow() || page === 1) rows[0].classList.add('row-latest')
   if (lastTopKey && key !== lastTopKey && page === 1) rows[0].classList.add('row-new')
   else if (!lastTopKey || key !== lastTopKey) rows.forEach((r, i) => { r.classList.add('row-in'); r.style.animationDelay = Math.min(i, 8) * 25 + 'ms' })
   lastTopKey = key

@@ -770,3 +770,23 @@ button.is-busy { display: inline-flex; align-items: center; justify-content: cen
 .anim-float-out { animation: floatIn .28s ease reverse forwards; }
 #newsFloat { z-index: 25 !important; }
 @media (prefers-reduced-motion: reduce) { .anim-float-in, .anim-float-out { animation: none !important; } }
+
+/* Riwayat: baris terbaru diberi warna tipis tetap + garis aksen kiri; saat baru masuk menyala lalu
+   memudar halus ke warna tipis dalam beberapa detik (mode gelap & terang memakai warna aksen tema) */
+#histBody tr.row-latest > td { box-shadow: inset 0 0 0 999px rgb(var(--gold) / 0.07); }
+#histBody tr.row-latest > td:first-child { box-shadow: inset 3px 0 0 rgb(var(--gold) / 0.75), inset 0 0 0 999px rgb(var(--gold) / 0.07); }
+@keyframes rowGlow {
+  0% { box-shadow: inset 0 0 0 999px rgb(var(--gold) / 0.30); }
+  25% { box-shadow: inset 0 0 0 999px rgb(var(--gold) / 0.22); }
+  100% { box-shadow: inset 0 0 0 999px rgb(var(--gold) / 0.07); }
+}
+@keyframes rowGlowFirst {
+  0% { box-shadow: inset 3px 0 0 rgb(var(--gold)), inset 0 0 0 999px rgb(var(--gold) / 0.30); }
+  25% { box-shadow: inset 3px 0 0 rgb(var(--gold)), inset 0 0 0 999px rgb(var(--gold) / 0.22); }
+  100% { box-shadow: inset 3px 0 0 rgb(var(--gold) / 0.75), inset 0 0 0 999px rgb(var(--gold) / 0.07); }
+}
+@keyframes rowSlide { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: none; } }
+#histBody tr.row-new { animation: rowSlide .5s cubic-bezier(.2, .8, .2, 1) !important; }
+#histBody tr.row-new > td { animation: rowGlow 4s ease-out; }
+#histBody tr.row-new > td:first-child { animation: rowGlowFirst 4s ease-out; }
+@media (prefers-reduced-motion: reduce) { #histBody tr.row-new > td { animation: none !important; } }
