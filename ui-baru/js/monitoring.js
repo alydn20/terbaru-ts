@@ -489,6 +489,29 @@ function histRowsHeight(n) {
   const pg = pager && pager.offsetParent ? pager.offsetHeight : 0
   return Math.round(title + head + rowH * n + pg + 3)
 }
+// Tinggi kotak riwayat untuk n baris, dihitung dari bagian-bagiannya (judul + kepala tabel + n baris +
+// tombol halaman) — TIDAK bergantung tinggi kotak saat ini, jadi ukuran grafik stabil walau user memilih
+// banyak baris atau data riwayat belum termuat (baris "Memuat..." yang tinggi tidak ikut dihitung).
+function histBaseHeight(n) {
+  const sec = $('#sec-riwayat')
+  if (!sec) return 0
+  const vh = el => (el ? el.getBoundingClientRect().height : 0)
+  const title = vh(sec.firstElementChild)
+  const head = vh($('#histHead')) || 28
+  const tr = $('#histBody tr')
+  const real = tr && !tr.querySelector('td[colspan]')
+  // tinggi baris asli diingat (per lebar layar) supaya perkiraan sebelum data termuat sudah tepat -> grafik tidak melompat
+  const key = 'histRowH_' + Math.round(window.innerWidth / 50)
+  let rowH = real ? vh(tr) : 0
+  try {
+    if (rowH) localStorage.setItem(key, String(Math.round(rowH)))
+    else rowH = +localStorage.getItem(key) || 0
+  } catch (e) {}
+  if (!rowH) rowH = (window.innerWidth < 768 ? 46 : 40) * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1)
+  const pager = $('#histPager')
+  const pg = pager && pager.offsetParent ? vh(pager) : 0
+  return Math.round(title + head + rowH * n + pg + 4)
+}
 // HP: menu bawah disembunyikan setelah 5 detik layar tidak disentuh -> grafik lebih besar.
 // Sentuh / geser / gerak mouse -> menu muncul lagi.
 let idleTimer = null
@@ -549,7 +572,7 @@ function fitChartBox() {
     // Ukuran grafik dihitung dari jumlah baris bawaan (HP 2, tablet 3, desktop 4). Pilih lebih banyak baris:
     // grafik TIDAK mengecil, kotak riwayat memanjang ke bawah (halaman digulir untuk melihatnya).
     const base = !matchMedia('(min-width: 768px)').matches ? 2 : !matchMedia('(min-width: 1280px)').matches ? 3 : 4
-    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(Math.min(nRows, base)) - gap)) + 'px'
+    box.style.height = Math.max(180, Math.round(rest - histBaseHeight(Math.min(nRows, base)) - gap)) + 'px'
     return
   }
   const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
