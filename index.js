@@ -9917,6 +9917,18 @@ ${authScript}
     .user-table td.copy-phone { cursor: copy; user-select: none; }
     .user-table td.copy-phone:hover { color: #f7931a; text-decoration: underline dotted; }
     .user-table td.copy-phone.copied { color: #22c55e; }
+    /* tombol "Aksi": deretan tombol aksi disembunyikan sampai dibuka (HP, tablet & layar < 1400px) */
+    .act-toggle { display: none; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 38px; padding: 8px 12px; border-radius: 10px; border: 1px solid #2f3640; background: #151b22; color: #e5e7eb; font-size: 0.85em; font-weight: 700; cursor: pointer; }
+    .act-caret { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .2s ease; }
+    tr.show-act .act-caret { transform: rotate(-135deg) translateY(-2px); }
+    @media (max-width: 1399px) {
+      .act-toggle { display: inline-flex; }
+      #userList tr:not(.show-act) .action-btns { display: none !important; }
+      #userList tr.show-act .action-btns { margin-top: 6px; animation: actIn .2s ease; }
+    }
+    @media (min-width: 1024px) and (max-width: 1399px) { #userList .act-toggle { width: auto; } }
+    @keyframes actIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
     /* tanda warna per user: baris diwarnai tipis + garis kiri */
     .user-table tr.row-mark td { background-color: var(--mk-bg) !important; }
     .user-table tr.row-mark td:first-child { box-shadow: inset 4px 0 0 var(--mk); }
@@ -10264,7 +10276,22 @@ ${authScript}
       body.adm-v2 #userList td:nth-child(7)::before { content: 'Aksi'; }
       body.adm-v2 #userList td[colspan] { grid-column: 1 / -1; }
       body.adm-v2 #userList td[colspan]::before { content: none; }
-      body.adm-v2 #userList .action-btn { flex: 1 1 calc(25% - 4px); text-align: center; padding: 7px 4px; }
+      body.adm-v2 #userList .action-btn { flex: 1 1 calc(33.33% - 4px); text-align: center; padding: 9px 4px; min-height: 38px; font-size: 0.85em; }
+      /* kartu ringkas: nomor & nama sebaris, label kecil hanya untuk Expired; aksi dibuka lewat tombol "Aksi" */
+      body.adm-v2 #userList tr { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 12px; }
+      body.adm-v2 #userList td:nth-child(1)::before, body.adm-v2 #userList td:nth-child(2)::before, body.adm-v2 #userList td:nth-child(3)::before,
+      body.adm-v2 #userList td:nth-child(4)::before, body.adm-v2 #userList td:nth-child(5)::before, body.adm-v2 #userList td:nth-child(7)::before { content: none; }
+      body.adm-v2 #userList td:nth-child(1) { grid-column: 1; font-size: 0.95em; font-weight: 700; }
+      body.adm-v2 #userList td:nth-child(6) { grid-column: 2; grid-row: 1; text-align: right; font-size: 0.8em; }
+      body.adm-v2 #userList td:nth-child(2) { grid-column: 1; color: #9ca3af; }
+      body.adm-v2 #userList td:nth-child(5) { grid-column: 2; grid-row: 2; text-align: right; }
+      body.adm-v2 #userList td:nth-child(4) { display: none; }
+      body.adm-v2 #userList td:nth-child(3) { grid-column: 1 / -1; }
+      body.adm-v2 #userList td:nth-child(7) { grid-column: 1 / -1; padding-top: 8px; }
+      /* kartu tertutup: status grup & tombol "Aksi" sebaris (kartu +-113px, dulu 266px) */
+      body.adm-v2 #userList tr:not(.show-act) td:nth-child(3) { grid-column: 1; }
+      body.adm-v2 #userList tr:not(.show-act) td:nth-child(7) { grid-column: 2; grid-row: 3; padding-top: 0; align-self: center; }
+      body.adm-v2 #userList tr:not(.show-act) .act-toggle { width: auto; min-height: 34px; padding: 6px 12px; }
       /* HP: deretan menu geser disembunyikan, diganti tombol Menu di judul halaman */
       body.adm-v2 .adm-side { display: none !important; }
       body.adm-v2 .adm-menu-btn { display: inline-flex; }
@@ -13723,6 +13750,7 @@ ${authScript}
               '<td>' + pinStatus + '</td>' +
               '<td>' + expDate + '</td>' +
               '<td>' +
+                '<button type="button" class="act-toggle" onclick="this.closest(&apos;tr&apos;).classList.toggle(&apos;show-act&apos;)">Aksi<span class="act-caret"></span></button>' +
                 '<div class="action-btns">' +
                   '<button class="action-btn edit" data-phone="' + u.phone + '" data-name="' + (u.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" onclick="editUserBtn(this)">Edit</button>' +
                   '<button class="action-btn push" onclick="openPushModal(&apos;' + u.phone + '&apos;)">Push</button>' +
