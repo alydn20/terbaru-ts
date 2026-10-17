@@ -6667,6 +6667,35 @@ app.post('/api/logout', express.json(), async (req, res) => {
   res.json({ success: true })
 })
 
+// ==================== PIN user oleh admin (panel & bot Telegram memakai fungsi yang sama) ====================
+// Reset: PIN dihapus -> saat login user memverifikasi nomor lewat WhatsApp lalu membuat PIN baru.
+async function resetUserPin(phone, via) {
+  if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return { ok: false, error: 'User tidak ditemukan' }
+  await redis.hdel(REDIS_KEYS.USER_PINS, phone)
+  _pinFails.delete(phone)
+  pushLog(`Admin | Reset PIN user +${phone} (${via})`)
+  return { ok: true }
+}
+// Atur PIN manual: admin menentukan PIN 6 digit; aturan sama dengan PIN buatan user (tidak boleh lemah)
+async function adminSetUserPin(phone, pin, via) {
+  pin = String(pin || '').replace(/[^0-9]/g, '')
+  if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return { ok: false, error: 'User tidak ditemukan' }
+  if (pin.length !== 6) return { ok: false, error: 'PIN harus 6 digit angka' }
+  if (weakPin(pin)) return { ok: false, error: 'PIN terlalu mudah ditebak (angka sama / berurutan). Pilih PIN lain.' }
+  await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin(pin), pinChanged: true, setByAdmin: Date.now() }) })
+  _pinFails.delete(phone)
+  pushLog(`Admin | PIN user +${phone} diatur manual (${via})`)
+  return { ok: true }
+}
+
+app.post('/api/admin/set-pin', express.json(), async (req, res) => {
+  const { password, phone, pin } = req.body || {}
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Password admin salah' })
+  if (!phone) return res.json({ success: false, error: 'Nomor HP wajib diisi' })
+  const r = await adminSetUserPin(normalizePhone(phone), pin, 'panel admin')
+  res.json(r.ok ? { success: true, message: 'PIN user diatur. Beri tahu user PIN barunya.' } : { success: false, error: r.error })
+})
+
 // API: Admin Reset User PIN (PIN dihapus, user membuat PIN baru lewat verifikasi WhatsApp)
 app.post('/api/admin/reset-pin', express.json(), async (req, res) => {
   const { password, phone } = req.body
@@ -6686,10 +6715,7 @@ app.post('/api/admin/reset-pin', express.json(), async (req, res) => {
   }
 
   // PIN dihapus: saat login berikutnya user memverifikasi nomor lewat WhatsApp lalu membuat PIN baru
-  await redis.hdel(REDIS_KEYS.USER_PINS, normalizedPhone)
-  _pinFails.delete(normalizedPhone)
-
-  pushLog(`Admin | Reset PIN for user +${normalizedPhone}`)
+  await resetUserPin(normalizedPhone, 'panel admin')
   res.json({ success: true, message: 'PIN direset. User membuat PIN baru lewat verifikasi WhatsApp saat login.' })
 })
 
@@ -13905,6 +13931,7 @@ ${authScript}
                   '<button class="action-btn edit" data-phone="' + u.phone + '" data-name="' + (u.name||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;') + '" onclick="editUserBtn(this)">Edit</button>' +
                   '<button class="action-btn push" onclick="openPushModal(&apos;' + u.phone + '&apos;)">Push</button>' +
                   '<button class="action-btn pin" onclick="resetPin(&apos;' + u.phone + '&apos;)">Reset PIN</button>' +
+                  '<button class="action-btn pin" style="background:#b45309;" title="Atur PIN user secara manual" onclick="setPinManual(&apos;' + u.phone + '&apos;)">Atur PIN</button>' +
                   '<button class="action-btn" style="background:#7c3aed;" title="Ganti nomor HP user ini" onclick="changeUserPhone(&apos;' + u.phone + '&apos;)">Ganti No</button>' +
                   '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
                   '<button class="action-btn" style="background:#475569;" title="Riwayat login dan logout nomor ini" onclick="showUserAuthLog(&apos;' + u.phone + '&apos;)">Log</button>' +
@@ -13976,6 +14003,41 @@ ${authScript}
         } else {
           showAlert('Error: ' + data.error, 'danger');
         }
+      });
+    }
+
+    // Atur PIN user secara manual (aturan sama dengan PIN buatan user & bot Telegram)
+    function setPinManual(phone) {
+      var old = document.getElementById('setPinBox'); if (old) old.remove();
+      var wrap = document.createElement('div');
+      wrap.id = 'setPinBox';
+      wrap.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+      wrap.innerHTML = '<form style="background:#0f1115;border:1px solid #2a2f37;border-radius:14px;padding:18px;width:100%;max-width:340px;color:#e5e7eb;">' +
+        '<div style="font-weight:800;font-size:1.05em;">Atur PIN manual</div>' +
+        '<div style="color:#9ca3af;font-size:.85em;margin-top:4px;">User +' + phone + '. PIN 6 digit, tidak boleh angka sama / berurutan. Beri tahu user PIN barunya.</div>' +
+        '<input id="spPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="PIN baru" style="width:100%;margin-top:12px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
+        '<input id="spPin2" type="password" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Ulangi PIN" style="width:100%;margin-top:8px;padding:12px;border-radius:10px;border:1px solid #2f3640;background:#151b22;color:#fff;font-size:1.4em;letter-spacing:.4em;text-align:center;">' +
+        '<div id="spMsg" style="color:#f87171;font-size:.85em;min-height:1.2em;margin-top:8px;"></div>' +
+        '<div style="display:flex;gap:8px;margin-top:6px;"><button type="button" id="spCancel" class="action-btn" style="flex:1;min-height:40px;background:#374151;">Batal</button>' +
+        '<button type="submit" id="spSave" class="action-btn" style="flex:1;min-height:40px;background:#b45309;">Simpan PIN</button></div></form>';
+      document.body.appendChild(wrap);
+      var p1 = document.getElementById('spPin'), p2 = document.getElementById('spPin2'), m = document.getElementById('spMsg');
+      [p1, p2].forEach(function(el) { el.addEventListener('input', function() { el.value = el.value.replace(/[^0-9]/g, '').slice(0, 6); }); });
+      setTimeout(function() { p1.focus(); }, 50);
+      document.getElementById('spCancel').onclick = function() { wrap.remove(); };
+      wrap.addEventListener('click', function(e) { if (e.target === wrap) wrap.remove(); });
+      wrap.querySelector('form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (p1.value.length !== 6) { m.textContent = 'PIN harus 6 digit.'; return; }
+        if (p1.value !== p2.value) { m.textContent = 'Ulangi PIN tidak cocok.'; p2.value = ''; p2.focus(); return; }
+        var btn = document.getElementById('spSave'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+        adminFetch('/api/admin/set-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, pin: p1.value }) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.success) { wrap.remove(); showAlert('PIN user +' + phone + ' diatur. Beri tahu user PIN barunya.', 'success'); loadUsers(); }
+            else { m.textContent = d.error || 'Gagal menyimpan PIN.'; btn.disabled = false; btn.textContent = 'Simpan PIN'; }
+          })
+          .catch(function() { m.textContent = 'Gagal terhubung ke server.'; btn.disabled = false; btn.textContent = 'Simpan PIN'; });
       });
     }
 
@@ -23225,11 +23287,7 @@ async function tgRemoveSessions(phone) {
 }
 
 async function tgResetPin(phone, via) {
-  if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return false
-  await redis.hdel(REDIS_KEYS.USER_PINS, phone)
-  _pinFails.delete(phone)
-  pushLog(`Admin | Reset PIN for user +${phone} (Telegram${via ? ' ' + via : ''})`)
-  return true
+  return (await resetUserPin(phone, 'Telegram' + (via ? ' ' + via : ''))).ok
 }
 
 // ===== Halaman menu: masing-masing mengembalikan { text, kb } =====
@@ -23412,12 +23470,12 @@ async function tgUserCard(phone, note) {
   const left = u.expired ? tgDaysLeft(u.expired) : null
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
-    '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'belum dibuat (dibuat lewat verifikasi WA)') +
+    '\nPIN: ' + (pinChanged ? 'sudah dibuat' : 'belum dibuat (dibuat user lewat verifikasi WA)') +
     '\nGrup WA: ' + GROUP_STATUS_LABEL[grupStatus] +
     (grupStatus === 'tidak_mau' ? (grupPref.askAgainAt > 0 ? ' (ditanya lagi ' + tgDate(grupPref.askAgainAt) + ')' : ' (jangan ditanya lagi)') : '') +
     (grupStatus !== 'masuk' && grupPref.adminMark && grupPref.adminMark.reason ? '\nCatatan admin: tidak dimasukkan - ' + tgEsc(grupPref.adminMark.reason) : '') +
     (blockedRaw ? '\nStatus: diblokir' : '')
-  kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
+  kb.push([{ text: 'Reset PIN', callback_data: 'u:rp:' + phone }, { text: 'Atur PIN', callback_data: 'u:sp:' + phone }, { text: 'Perpanjang', callback_data: 'u:ex:' + phone }])
   kb.push([blockedRaw ? { text: 'Buka blokir', callback_data: 'u:ub:' + phone } : { text: 'Blokir', callback_data: 'u:bl:' + phone }, { text: 'Kick + hapus', callback_data: 'u:kq:' + phone }])
   kb.push(grupStatus === 'masuk'
     ? [{ text: 'Tandai TIDAK di grup', callback_data: 'g:out:' + phone }]
@@ -23912,6 +23970,11 @@ async function handleTelegramCallback(tg, cq) {
   }
 
   // --- ganti nomor HP ---
+  if ((m = /^u:sp:(62[0-9]{8,13})$/.exec(data))) {
+    tgSetAwait('setpin', m[1])
+    await show({ text: '<b>Atur PIN manual</b>\n\nUser: <code>+' + m[1] + '</code>\n\nKirim PIN baru 6 digit sekarang. Pesan berisi PIN akan langsung dihapus dari chat ini.\nPIN angka sama / berurutan (111111, 123456) ditolak.\n\nKalau ingin user membuat PIN sendiri lewat verifikasi WhatsApp, pakai <b>Reset PIN</b>.', kb: [[{ text: 'Batal', callback_data: 'u:v:' + m[1] }]] })
+    return toast('')
+  }
   if ((m = /^u:cn:(62[0-9]{8,13})$/.exec(data))) {
     tgSetAwait('chg', m[1])
     await show({ text: '<b>Ganti nomor HP</b>\n\nNomor lama: <code>+' + m[1] + '</code>\n\nKirim nomor BARU sekarang (format bebas: 0851..., +62851...).\nNama, masa aktif, PIN, status grup, dan catatan order ikut pindah. Ia harus login lagi dengan nomor baru.', kb: [[{ text: '« Batal', callback_data: 'u:v:' + m[1] }]] })
@@ -24066,6 +24129,30 @@ async function handleTelegramMessage(tg, msg) {
     return say(out.join('\n'))
   }
 
+  // /setpin <nomor> <pin 6 digit>, atau balasan PIN setelah tombol "Atur PIN"
+  const isSetPinCmd = /^[/]set[-_]?pin(@[A-Za-z0-9_]+)?([^A-Za-z0-9_]|$)/i.test(text)
+  if (isSetPinCmd || (awaiting === 'setpin' && !text.startsWith('/'))) {
+    // pesan berisi PIN dihapus dari chat Telegram supaya tidak tersimpan di riwayat
+    telegramApi(tg.token, 'deleteMessage', { chat_id: tg.chatId, message_id: msg.message_id }).catch(() => {})
+    let phone = '', pin = ''
+    if (isSetPinCmd) {
+      const parts = body.trim().split(/\s+/)
+      pin = parts.length >= 2 ? parts[parts.length - 1] : ''
+      phone = tgParsePhones(parts.slice(0, -1).join(' '), 1)[0] || ''
+      if (!phone || !/^[0-9]{6}$/.test(pin)) return say('Format: <code>/setpin 0851xxxxxxx 482915</code> (nomor HP lalu PIN 6 digit).')
+    } else {
+      phone = _tgAwait.orderId
+      pin = text.replace(/[^0-9]/g, '')
+    }
+    const r = await adminSetUserPin(phone, pin, 'Telegram')
+    if (!r.ok) {
+      if (!isSetPinCmd && r.error !== 'User tidak ditemukan') { tgSetAwait('setpin', phone); return say('Gagal: ' + tgEsc(r.error) + '\nKirim PIN 6 digit lain.') }
+      return say('Gagal: ' + tgEsc(r.error))
+    }
+    tgSetAwait('')
+    return send(await tgUserCard(phone, 'PIN diatur manual. Beri tahu user PIN barunya (pesan PIN sudah dihapus dari chat).'))
+  }
+
   if (awaiting === 'chg' && !text.startsWith('/')) {
     const oldPhone = _tgAwait.orderId
     const newPhone = tgParsePhones(text, 1)[0]
@@ -24155,7 +24242,7 @@ async function telegramPollLoop() {
       if (!tg.token) { await _tgSleep(5000); continue }
       if (tg.token !== _tgPollToken) {
         _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null
-        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'menu', description: 'Buka panel admin' }, { command: 'resetpin', description: 'Reset PIN user (isi nomor HP)' }] }).catch(() => {})
+        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'menu', description: 'Buka panel admin' }, { command: 'resetpin', description: 'Reset PIN user (isi nomor HP)' }, { command: 'setpin', description: 'Atur PIN user: /setpin <nomor> <pin>' }] }).catch(() => {})
       }
       const res = await fetch(`https://api.telegram.org/bot${tg.token}/getUpdates`, {
         method: 'POST',
