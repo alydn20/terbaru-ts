@@ -368,7 +368,7 @@ body.price-compact .clock-pill { padding: 0.15rem 0.7rem; }
 }
 
 /* PROMO ON/OFF berkedip pelan (2,4 dtk/siklus, tidak hilang penuh) supaya mudah terlihat tanpa mengganggu */
-@keyframes promoPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes promoPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
 #promoStatus { animation: promoPulse 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { #promoStatus { animation: none; } }
 
@@ -557,3 +557,12 @@ body.price-compact #nominals { padding-left: 1.7rem; padding-right: 1.7rem; }
   .hilo-box .stat-k { font-size: 7px !important; }
   .hilo-box .stat-v { font-size: 9px !important; }
 }
+
+/* Perpanjang mendesak (sisa <= 7 hari / habis): merah berkedip pelan */
+@keyframes renewPulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(var(--down) / 0.55); } 50% { opacity: 0.6; box-shadow: 0 0 0 4px rgb(var(--down) / 0); } }
+.renew-urgent { animation: renewPulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .renew-urgent { animation: none; } }
+/* HP kecil: saat tombol Perpanjang tampil, tanggal di bar atas disembunyikan (tidak terpotong "...") */
+@media (max-width: 479px) { .has-renew > #clkDate { display: none; } }
+/* mode terang: pita PROMO OFF lebih kontras */
+[data-theme="light"] body.price-compact #clockMid #promoStatus.bg-down\/15 { background-color: rgb(var(--down) / 0.18); }

@@ -69,7 +69,7 @@ export function mountPayment(root, opts) {
     uploadBtn = h('button', { class: 'btn-green w-full py-4 text-base', onclick: () => fileInput.click(), html: icon('upload') + '<span>Upload bukti pembayaran</span>' })
     const saveLink = order.qrDataUrl ? h('a', { href: order.qrDataUrl, download: 'qris-pemulaold.png', class: 'mt-2 inline-block text-xs font-semibold text-gold' }, 'Simpan gambar QRIS') : null
     box.replaceChildren(
-      (order.months || 1) !== asked ? h('div', { class: 'mb-3 rounded-xl bg-gold/10 p-3 text-xs font-semibold text-gold' }, 'Bukti untuk pilihan ' + (order.months || 1) + ' bulan sudah terkirim, jadi pilihan itu yang dipakai.') : null,
+      (order.months || 1) !== asked ? h('div', { class: 'mb-3 rounded-xl bg-gold/10 p-3 text-xs font-semibold text-gold' }, 'Bukti untuk pilihan ' + (order.months || 1) + ' bulan sudah terkirim, jadi pilihan itu yang dipakai.') : '',  // '' bukan null: replaceChildren menulis null sebagai teks "null"
       h('div', { class: 'tile mb-3 p-4 text-center' },
         h('div', { class: 'label mb-1' }, '1. Scan QRIS, bayar persis'),
         h('div', { class: 'num mb-3 text-3xl font-extrabold text-gold' }, rp(order.amount)),
