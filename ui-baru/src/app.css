@@ -290,3 +290,11 @@ body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 0.95rem; }
   body:not(.price-compact) #chips .stat-v { font-size: 13px; }
   body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 1.1rem; }
 }
+
+/* Desktop: riwayat tipis seperti HP/tablet (judul, tombol, dan baris tabel rapat) */
+@media (min-width: 1280px) {
+  #histMode { padding: 2px; }
+  #histMode > button { padding: 0.15rem 0.6rem; font-size: 12px; }
+  #histScroll th, #histScroll td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+  #histScroll td { line-height: 1.25; }
+}
