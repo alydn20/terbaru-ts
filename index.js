@@ -5290,7 +5290,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v15';
+    const CACHE_VERSION = 'gold-monitor-v16';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -5311,13 +5311,13 @@ app.get('/sw.js', (_req, res) => {
       );
     });
 
-    function offlinePage() {
+    function offlinePage(busy) {
       const html = '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-        '<title>Tidak ada koneksi</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#e7e9ea;' +
+        '<title>' + (busy ? 'Server sibuk' : 'Tidak ada koneksi') + '</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#e7e9ea;' +
         'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:24px}@media(prefers-color-scheme:light){body{background:#eef2ff;color:#0f172a}}' +
         'h1{font-size:1.15rem;margin:0 0 8px}p{margin:0 0 18px;color:#8c8c8c;font-size:.95rem;line-height:1.5}button{border:0;border-radius:12px;padding:12px 22px;' +
-        'font-weight:800;background:#f7931a;color:#000;font-size:.95rem}</style></head><body><div><h1>Tidak ada koneksi internet</h1>' +
-        '<p>Halaman akan terbuka otomatis saat sinyal kembali.</p><button onclick="location.reload()">Coba lagi</button></div>' +
+        'font-weight:800;background:#f7931a;color:#000;font-size:.95rem}</style></head><body><div><h1>' + (busy ? 'Server sedang sibuk' : 'Tidak ada koneksi internet') + '</h1>' +
+        '<p>' + (busy ? 'Mencoba lagi otomatis tiap beberapa detik, tidak perlu refresh.' : 'Halaman akan terbuka otomatis saat sinyal kembali.') + '</p><button onclick="location.reload()">Coba lagi</button></div>' +
         '<script>addEventListener("online",function(){location.reload()});setInterval(function(){if(navigator.onLine)fetch("/health",{cache:"no-store"}).then(function(r){if(r.ok)location.reload()}).catch(function(){})},5000)<\/script></body></html>';
       return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
@@ -5336,15 +5336,19 @@ app.get('/sw.js', (_req, res) => {
       // Halaman (buka / muat ulang): ambil dari internet; kalau tidak ada sinyal pakai salinan terakhir
       // yang tersimpan, kalau belum ada tampilkan halaman "Tidak ada koneksi" yang mencoba lagi sendiri
       // (dulu: tulisan polos "Service unavailable").
+      // Server sibuk / gangguan (502, 503, 504, 520-524 dari Cloudflare): jangan tampilkan halaman
+      // error mentah ("Service unavailable") — pakai salinan terakhir, atau halaman yang mencoba lagi sendiri.
       if (e.request.method === 'GET' && e.request.mode === 'navigate') {
+        const key = new URL(url).pathname;
         e.respondWith(
           fetch(e.request).then((res) => {
+            if (res && res.status >= 500) return caches.match(key).then((hit) => hit || offlinePage(true));
             if (res && res.ok && res.type === 'basic') {
               const copy = res.clone();
-              caches.open(CACHE_VERSION).then((c) => c.put(new URL(url).pathname, copy)).catch(() => {});
+              caches.open(CACHE_VERSION).then((c) => c.put(key, copy)).catch(() => {});
             }
             return res;
-          }).catch(() => caches.match(new URL(url).pathname).then((hit) => hit || offlinePage()))
+          }).catch(() => caches.match(key).then((hit) => hit || offlinePage(false)))
         );
         return;
       }
