@@ -307,8 +307,8 @@ body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 0.95rem; }
 @media (min-width: 400px) and (max-width: 767px) { :root { --ui-zoom: 1.05; } }
 @media (min-width: 768px) { :root { --ui-zoom: 1.12; } }
 @media (min-width: 1024px) { :root { --ui-zoom: 1.18; } }
-@media (min-width: 1280px) { :root { --ui-zoom: 1.12; } }
-@media (min-width: 1536px) { :root { --ui-zoom: 1.22; } }
+@media (min-width: 1280px) { :root { --ui-zoom: 1.18; } }
+@media (min-width: 1536px) { :root { --ui-zoom: 1.24; } }
 @media (min-width: 1920px) { :root { --ui-zoom: 1.35; } }
 header > div, #sec-harga, #sec-riwayat > div:first-child, #histScroll, #histPager { zoom: var(--ui-zoom); }
 /* bar atas diskalakan: batas lebarnya dibagi skala supaya tetap sejajar dengan isi halaman */
@@ -590,4 +590,40 @@ body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 
 @media (max-width: 767px) {
   body.price-compact #nominals { padding-left: 1.6rem !important; padding-right: 1.6rem !important; }
   .price-box-gear { width: 1.35rem; height: 1.35rem; right: 0; }
+}
+
+/* ===== Penyelarasan ukuran font (hasil audit 320-2560px) =====
+   - font tidak boleh mengecil saat layar membesar (skala 1280px dinaikkan ke 1.18, 1536px ke 1.24)
+   - teks terkecil di HP minimal +-9px; angka USD/IDR tidak lebih besar dari angka Beli/Jual */
+@media (max-width: 767px) {
+  body.price-compact .usd-tile .stat-v { font-size: clamp(0.74rem, 3.6vw, 0.9rem) !important; }
+  .hilo-box .stat-k { font-size: 8.5px !important; }
+  .hilo-box .stat-v { font-size: 10.5px !important; }
+  body.price-compact #nominals > .tile > .font-mono { font-size: 10px !important; }
+  #histHead th { font-size: 11px; }
+}
+@media (max-width: 374px) {
+  .hilo-box .stat-k { font-size: 8.5px !important; }
+  .hilo-box .stat-v { font-size: 10px !important; }
+  body.price-compact #nominals > .tile span { font-size: 10px !important; }
+  body.price-compact #nominals > .tile > .font-mono { font-size: 9.5px !important; }
+}
+/* HP: jam sedikit lebih ramping supaya kotak info (baris "ON 16/10 2.475.162") & Max/Min tidak terpotong */
+@media (max-width: 429px) {
+  body.price-compact #clockNum { font-size: 1rem !important; }
+  body.price-compact #clockMid #clockBox { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
+  body.price-compact #clockRow { column-gap: 0.25rem !important; }
+  .hilo-box { padding: 0.1rem 0.3rem !important; }
+  .hilo-box .stat { gap: 0.25rem !important; }
+}
+@media (max-width: 359px) {
+  body.price-compact #clockNum { font-size: 0.95rem !important; }
+  .hilo-box .stat-k { font-size: 8px !important; }
+  .hilo-box .stat-v { font-size: 9.5px !important; }
+}
+/* HP kecil (< 400px): baris ON di kotak info jadi 2 baris ("ON 16/10" di atas, angka di bawah rata kanan)
+   supaya tidak terpotong tanpa mengecilkan font & jam tetap di tengah */
+@media (max-width: 399px) {
+  .info-box #chipOn { flex-direction: column !important; align-items: stretch !important; gap: 0 !important; }
+  .info-box #chipOn .stat-v { text-align: right; }
 }
