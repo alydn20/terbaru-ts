@@ -298,3 +298,19 @@ body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 0.95rem; }
   #histScroll th, #histScroll td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
   #histScroll td { line-height: 1.25; }
 }
+
+/* Skala tampilan mengikuti lebar layar: HP kecil sedikit diperkecil, HP besar/tablet/desktop/monitor lebar
+   diperbesar bertahap. Berlaku untuk bar atas, kotak harga, dan riwayat (ukuran teks riwayat pilihan user
+   tetap dikalikan di atasnya). Grafik tidak ikut diskalakan. */
+:root { --ui-zoom: 1; }
+@media (max-width: 359px) { :root { --ui-zoom: 0.92; } }
+@media (min-width: 400px) and (max-width: 767px) { :root { --ui-zoom: 1.05; } }
+@media (min-width: 768px) { :root { --ui-zoom: 1.12; } }
+@media (min-width: 1024px) { :root { --ui-zoom: 1.18; } }
+@media (min-width: 1280px) { :root { --ui-zoom: 1.12; } }
+@media (min-width: 1536px) { :root { --ui-zoom: 1.22; } }
+@media (min-width: 1920px) { :root { --ui-zoom: 1.35; } }
+header > div, #sec-harga, #sec-riwayat > div:first-child, #histScroll, #histPager { zoom: var(--ui-zoom); }
+/* bar atas diskalakan: batas lebarnya dibagi skala supaya tetap sejajar dengan isi halaman */
+header > div { max-width: calc(1400px / var(--ui-zoom)) !important; }
+@media (min-width: 1600px) { header > div { max-width: calc(min(96vw, 1920px) / var(--ui-zoom)) !important; } }

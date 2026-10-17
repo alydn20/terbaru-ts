@@ -300,7 +300,8 @@ function fitHistPanel() {
   if (!wrap || !t) return
   if (!wide() || !document.body.classList.contains('lay-split')) { wrap.style.gridTemplateColumns = ''; return }
   t.style.width = 'max-content'
-  const need = t.offsetWidth + 2
+  // lebar yang benar-benar tampil (tabel & kotaknya bisa diskalakan: ukuran teks + --ui-zoom)
+  const need = Math.ceil(t.getBoundingClientRect().width) + 4
   t.style.width = ''
   const w = Math.max(360, Math.min(Math.round(wrap.clientWidth * 0.55), need))
   wrap.style.gridTemplateColumns = 'minmax(0, 1fr) ' + w + 'px'
@@ -451,7 +452,9 @@ function histRowsHeight(n) {
     for (let i = 0; i < Math.min(n, trs.length); i++) need += vh(trs[i])
     if (trs.length < n) need += vh(trs[0]) * (n - trs.length)
     const headH = $('#histHead') ? vh($('#histHead')) : 0
-    return Math.round(sec.offsetHeight + need - (scroll.clientHeight - headH))
+    // kotak gulir ikut diskalakan (--ui-zoom): clientHeight masih dalam ukuran sebelum skala
+    const z = scroll.offsetHeight ? vh(scroll) / scroll.offsetHeight : 1
+    return Math.round(sec.offsetHeight + need - (scroll.clientHeight * z - headH))
   }
   const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
   const head = $('#histHead') ? $('#histHead').offsetHeight : 28
