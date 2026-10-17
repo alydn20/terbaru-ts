@@ -2555,6 +2555,9 @@ async function doPromoBroadcast() {
     // - OFF→ON: langsung kirim (detik berapa saja) + tag semua member grup (1x)
     // - ON biasa: kirim ✅ ON di detik 50+ tiap menit, tanpa tag & tanpa link
     // - OFF biasa: kirim ❌ OFF di detik 50+ (1x per menit), max 5x
+    // Server baru start / restart (deploy) saat promo sudah OFF: OFF itu bukan kejadian baru,
+    // jadi jangan kirim "❌ OFF" ke grup. Siklus OFF (maks 5x) hanya berjalan setelah ON -> OFF.
+    if (isFirstCheck && currentStatus === 'OFF') offWaCount = 5
     if (sock && isReady && (broadcastGroupId || subscriptions.size > 0)) {
       const seconds = new Date(now).getSeconds()
       const isNewWaMinute = currentMinute !== lastPromoWaMinute
