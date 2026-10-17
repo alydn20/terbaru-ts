@@ -1,11 +1,11 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
 import './monitoring/defaults.js'
-import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
+import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, toggleTheme, tanggalPanjang, openSheet } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
 import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHistRows } from './monitoring/history.js'
-import { initChart } from './monitoring/chart.js'
+import { initChart, loadChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
 import { startTour, tourDone } from './monitoring/tour.js'
 import { openMore, openRenew, openIndicators, openNominalSettings, openPriceBox, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
@@ -727,6 +727,21 @@ async function start() {
   applyLayout()
   $('#btnLayout').innerHTML = icon('panels', 'h-4 w-4') + '<span class="hidden lg:inline">Tata letak</span>'
   $('#btnLayout').addEventListener('click', openLayoutPicker)
+  // HP: tombol Tata letak diganti sakelar mode gelap/terang (Tata letak tetap ada di menu pengaturan)
+  {
+    const sw = h('button', { id: 'btnTheme', class: 'theme-switch', type: 'button', 'aria-label': 'Ganti mode gelap / terang', title: 'Mode gelap / terang' },
+      h('span', { class: 'theme-knob', html: icon('moon', 'h-3.5 w-3.5 knob-moon') + icon('sun', 'h-3.5 w-3.5 knob-sun') }))
+    const sync = () => sw.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'))
+    sync()
+    // mode diganti dari mana pun (menu pengaturan / sakelar) -> posisi sakelar ikut
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    sw.addEventListener('click', () => {
+      toggleTheme(); sync()
+      // grafik TradingView ikut berganti tema setelah animasi selesai (supaya perpindahan tetap mulus)
+      setTimeout(loadChart, 450)
+    })
+    $('#btnLayout').after(sw)
+  }
   applyHistSize()
   applyIdrMode()
   // USD/IDR: kotak ke-3 sejajar Beli/Jual di semua ukuran layar

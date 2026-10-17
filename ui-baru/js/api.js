@@ -100,10 +100,20 @@ export function applyTheme(t) {
   if (meta) meta.content = theme === 'light' ? '#eff3ff' : '#000000'
   return theme
 }
+// Ganti mode gelap/terang dengan transisi halus: View Transitions (memudar menyeluruh) bila didukung,
+// selain itu warna latar/teks/garis berpindah perlahan lewat kelas .theme-fade.
 export function toggleTheme() {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'
   try { localStorage.setItem(THEME_KEY, next) } catch (e) {}
-  applyTheme(next)
+  const root = document.documentElement
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!reduce && document.startViewTransition) {
+    document.startViewTransition(() => applyTheme(next))
+  } else if (!reduce) {
+    root.classList.add('theme-fade')
+    applyTheme(next)
+    setTimeout(() => root.classList.remove('theme-fade'), 600)
+  } else applyTheme(next)
   return next
 }
 
