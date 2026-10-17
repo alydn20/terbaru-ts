@@ -25,23 +25,36 @@ function predictGold(ev) {
   return null
 }
 
-// ---- Pengingat news dampak tinggi (3 batang): kecil, melayang di atas navigasi, tidak menghalangi ----
-function floatNote(title, lines, ms) {
+// ---- Pengingat news dampak tinggi (3 batang): muncul di bar atas, menutupi judul "Harga PemulaOLD",
+// status akun & tanggal selama ada pemberitahuan (satu kartu terbaru, ringkas 2 baris). Hilang -> judul kembali.
+function floatBox() {
   let box = document.getElementById('newsFloat')
   if (!box) {
-    // melayang di pojok kiri bawah, kotak kecil (HP: di atas navigasi bawah)
-    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[25] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
-    document.body.append(box)
+    const host = document.getElementById('brandBox') || document.body
+    box = h('div', { id: 'newsFloat', class: 'news-float' })
+    host.append(box)
   }
-  const close = () => { card.classList.add('anim-float-out'); setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 300) }
-  const card = h('div', { class: 'pointer-events-auto relative max-w-full cursor-pointer rounded-lg border border-down/50 border-l-[3px] border-l-down bg-card/95 py-1 pl-2 pr-6 text-[11px] leading-snug shadow-lg backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
-    h('div', { class: 'mb-0.5 font-extrabold text-down' }, title),
-    lines.map(l => h('div', {}, l)),
-    h('button', { class: 'absolute right-1 top-0.5 px-1 text-[15px] leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
-  card.style.opacity = '1'
-  card.classList.add('anim-float-in')
+  return box
+}
+function floatNote(title, lines, ms) {
+  const box = floatBox()
+  const close = () => { card.classList.add('anim-float-out'); setTimeout(() => { card.remove(); if (!box.children.length) box.remove() }, 300) }
+  const card = h('div', { class: 'news-card anim-float-in', role: 'status', onclick: e => { if (!e.target.closest('button')) openNews() } },
+    h('div', { class: 'news-card-title' }, title),
+    h('div', { class: 'news-card-line' }, lines[0] || ''),
+    h('button', { class: 'news-card-x', 'aria-label': 'Tutup', onclick: e => { e.stopPropagation(); close() } }, '×'))
   box.append(card)
-  setTimeout(close, ms || 12000)
+  // banyak news: baris kedua bergantian tiap 2,5 dtk (1/6, 2/6, ...) supaya semua terbaca di tempat kecil
+  let timer = null
+  if (lines.length > 1) {
+    const line = card.querySelector('.news-card-line')
+    let i = 0
+    const show = () => { line.textContent = (i + 1) + '/' + lines.length + '  ' + lines[i]; line.classList.remove('news-roll'); void line.offsetWidth; line.classList.add('news-roll') }
+    show()
+    timer = setInterval(() => { if (!card.isConnected) return clearInterval(timer); i = (i + 1) % lines.length; show() }, 2500)
+  }
+  // tampil cukup lama untuk melihat semua news (minimal sekali putaran)
+  setTimeout(() => { clearInterval(timer); close() }, Math.max(ms || 12000, lines.length * 2500 + 1500))
 }
 export function checkNewsReminders() {
   if (!state.news.length) return
@@ -54,15 +67,15 @@ export function checkNewsReminders() {
   const upcoming = high.filter(ev => new Date(ev.date).getTime() > now)
   if (!store.list && upcoming.length) {
     store.list = true
-    floatNote('News dampak tinggi hari ini (' + upcoming.length + ')',
-      upcoming.slice(0, 4).map(ev => jamWib(ev._wib) + '  ' + ev.title).concat(upcoming.length > 4 ? ['...dan ' + (upcoming.length - 4) + ' lagi'] : []), 15000)
+    floatNote(upcoming.length + ' news penting hari ini',
+      upcoming.slice(0, 12).map(ev => jamWib(ev._wib) + '  ' + ev.title), 15000)
   }
   high.forEach(ev => {
     const left = new Date(ev.date).getTime() - now
     const key = ev.title + '|' + ev.date
     if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
       store.soon[key] = 1
-      floatNote(Math.max(1, Math.round(left / 60000)) + ' menit lagi: news dampak tinggi', [jamWib(ev._wib) + '  ' + ev.title], 20000)
+      floatNote(Math.max(1, Math.round(left / 60000)) + ' mnt lagi · News penting', [jamWib(ev._wib) + '  ' + ev.title], 20000)
     }
   })
   try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
@@ -82,22 +95,18 @@ function urgentTick() {
     let c = urgent[key]
     if (left > 0 && left <= 3 * 60000) {
       if (!c) {
-        let box = document.getElementById('newsFloat')
-        if (!box) {
-          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[25] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
-          document.body.append(box)
-        }
-        c = h('div', { class: 'anim-float-in pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
-          h('div', { class: 'font-extrabold' }, ''), h('div', {}, jamWib(ev._wib) + '  ' + ev.title))
+        const box = floatBox()
+        c = h('div', { class: 'news-card news-card-urgent anim-float-in', role: 'alert', onclick: openNews },
+          h('div', { class: 'news-card-title' }, ''), h('div', { class: 'news-card-line' }, jamWib(ev._wib) + '  ' + ev.title))
         box.append(c)
         urgent[key] = c
       }
       const sec = Math.ceil(left / 1000)
-      c.firstChild.textContent = 'News dampak tinggi ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi'
+      c.firstChild.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi · News rilis'  // hitung mundur di depan (tidak terpotong di HP)
     } else if (c && left <= 0 && !c.dataset.done) {
       c.dataset.done = '1'
       c.firstChild.textContent = 'Rilis sekarang'
-      setTimeout(() => { c.remove(); delete urgent[key] }, 8000)
+      setTimeout(() => { const box = c.parentElement; c.classList.add('anim-float-out'); setTimeout(() => { c.remove(); if (box && !box.children.length) box.remove() }, 300); delete urgent[key] }, 8000)
     }
   })
 }

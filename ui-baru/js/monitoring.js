@@ -363,7 +363,7 @@ function applyIdrMode() {
 window.addEventListener('resize', () => { applyIdrMode(); applyLayout(); fitChart() })
 // Pengaturan riwayat (tombol Aa): ukuran teks + USD/IDR digabung / terpisah. Diingat per perangkat.
 function openHistSize() {
-  const opt = (active, label, note, onclick, style) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), onclick },
+  const opt = (active, label, note, onclick, style, group) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), 'data-pick': group || '', onclick: e => { markPicked(e.currentTarget); onclick() } },
     h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (active ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: active ? icon('check', 'h-3 w-3') : '' }),
     h('span', { class: 'min-w-0' },
       h('span', { class: 'block font-bold', style: style || '' }, label),
@@ -371,23 +371,23 @@ function openHistSize() {
   const cur = histSize(), im = idrMode()
   const sheet = openSheet('Pengaturan riwayat', h('div', { class: 'flex flex-col gap-1.5' },
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
-    HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
+    HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize() }, 'font-size:' + Math.round(14 * Number(v)) + 'px', 'size')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
     h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 2 baris; geser riwayat untuk melihat yang lebih lama.'),
     (() => {
       // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
       let n = histRowsSetting() || 10
       const val = h('span', { class: 'num w-14 text-center font-mono text-lg font-extrabold' }, histRowsSetting() ? String(n) : 'Auto')
-      const apply = v => { n = Math.max(1, Math.min(30, v)); val.textContent = String(n); setHistRows(n); setTimeout(fitChart, 400) }
+      const apply = v => { n = Math.max(1, Math.min(30, v)); val.textContent = String(n); setHistRows(n); auto.classList.remove('border-gold/60', 'bg-gold/10', 'text-gold'); setTimeout(fitChart, 400) }
       const auto = h('button', { class: 'tile px-3 py-2 text-sm font-bold ' + (!histRowsSetting() ? 'border-gold/60 bg-gold/10 text-gold' : ''),
-        onclick: () => { setHistRows(0); sheet.close(); setTimeout(fitChart, 400) } }, 'Otomatis')
+        onclick: () => { setHistRows(0); val.textContent = 'Auto'; auto.classList.add('border-gold/60', 'bg-gold/10', 'text-gold'); setTimeout(fitChart, 400) } }, 'Otomatis')
       return h('div', { class: 'flex items-center gap-2' },
         h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n - 1) }, '−'), val,
         h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n + 1) }, '+'),
         h('span', { class: 'text-xs text-muted' }, 'baris'), h('span', { class: 'flex-1' }), auto)
     })(),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
-    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))), { peek: true })
+    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode() }, '', 'idr'))), { peek: true })
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 // bawaan: kotak harga ringkas (aktif kecuali user mematikannya)
@@ -442,12 +442,27 @@ export function setLayout(v) {
   })
 }
 // Lembar pilihan tata letak (dibuka dari Lainnya, dan tombol "Tata letak" di judul grafik)
+// Pilihan di panel (tata letak, ukuran teks, mode USD/IDR): panel TIDAK ditutup, tanda centang langsung
+// pindah ke pilihan baru sehingga user bisa mencoba beberapa pilihan sambil melihat hasilnya.
+function markPicked(btn) {
+  const group = btn.parentElement ? [...btn.parentElement.children].filter(b => b.dataset && b.dataset.pick === btn.dataset.pick) : [btn]
+  group.forEach(b => {
+    const on = b === btn
+    b.classList.toggle('border-gold/60', on); b.classList.toggle('bg-gold/10', on)
+    const dot = b.firstElementChild
+    if (dot) {
+      dot.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ' + (on ? 'border-gold bg-gold text-bg' : 'border-line/30')
+      dot.innerHTML = on ? icon('check', 'h-3 w-3') : ''
+    }
+  })
+}
 export function openLayoutPicker() {
   const sheet = openSheet('Tata letak', h('div', { class: 'flex flex-col gap-1.5' },
     h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih bagian yang ingin ditampilkan. Diingat di perangkat ini.'),
     LAYOUTS.map(([id, label, note]) => h('button', {
       class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (id === layout ? 'border-gold/60 bg-gold/10' : ''),
-      onclick: () => { setLayout(id); sheet.close() }
+      'data-pick': 'layout',
+      onclick: e => { const b = e.currentTarget; markPicked(b); setLayout(id) }
     },
       h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (id === layout ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: id === layout ? icon('check', 'h-3 w-3') : '' }),
       h('span', { class: 'min-w-0' },
@@ -469,14 +484,19 @@ export function openLayoutPicker() {
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
       const side = histSide()
-      const pick = v => { try { localStorage.setItem('histSide', v ? '1' : '0') } catch (e) {} sheet.close(); smoothLayout(() => { applyLayout(); fitChart() }) }
+      const pick = (v, e) => {
+        try { localStorage.setItem('histSide', v ? '1' : '0') } catch (x) {}
+        const seg = e.currentTarget.parentElement
+        ;[...seg.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === (v ? 0 : 1))))
+        smoothLayout(() => { applyLayout(); fitChart() })
+      }
       return h('div', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
           h('span', { class: 'block text-[11px] text-muted' }, 'Saat grafik & riwayat tampil sekaligus')),
         h('div', { class: 'seg shrink-0' },
-          h('button', { 'aria-pressed': String(side), onclick: () => pick(true) }, 'Di samping'),
-          h('button', { 'aria-pressed': String(!side), onclick: () => pick(false) }, 'Di bawah')))
+          h('button', { 'aria-pressed': String(side), onclick: e => pick(true, e) }, 'Di samping'),
+          h('button', { 'aria-pressed': String(!side), onclick: e => pick(false, e) }, 'Di bawah')))
     })() : null), { peek: true })
 }
 function fitChart() { fitClock(); fitPriceOnly(); fitChartBox(); fitHist() }

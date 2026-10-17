@@ -790,3 +790,28 @@ button.is-busy { display: inline-flex; align-items: center; justify-content: cen
 #histBody tr.row-new > td { animation: rowGlow 4s ease-out; }
 #histBody tr.row-new > td:first-child { animation: rowGlowFirst 4s ease-out; }
 @media (prefers-reduced-motion: reduce) { #histBody tr.row-new > td { animation: none !important; } }
+
+/* ===== Pemberitahuan News di bar atas: menutupi judul, status akun & tanggal (bukan logo/ikon) ===== */
+.news-float { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; background: rgb(var(--bg)); }
+.news-float > .news-card:not(:last-child) { display: none; } /* hanya kartu terbaru yang tampil */
+.news-card { position: relative; width: 100%; min-width: 0; cursor: pointer; border-radius: .55rem; border: 1px solid rgb(var(--down) / .45);
+  border-left: 3px solid rgb(var(--down)); background: rgb(var(--down) / .1); padding: .15rem 1.4rem .15rem .45rem; line-height: 1.25; }
+.news-card-title { font-size: 11px; font-weight: 800; color: rgb(var(--down)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-card-line { font-size: 10.5px; color: rgb(var(--ink)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.news-card-x { position: absolute; right: .3rem; top: 50%; transform: translateY(-50%); font-size: 15px; line-height: 1; color: rgb(var(--muted)); padding: 0 .15rem; }
+.news-card-urgent { background: rgb(var(--down)); border-color: rgb(var(--down)); padding-right: .45rem; }
+.news-card-urgent .news-card-title, .news-card-urgent .news-card-line { color: #fff; }
+.news-card-urgent { animation: floatIn .38s cubic-bezier(.2, .9, .3, 1.1), promoPulse 2s ease-in-out .4s infinite; }
+@media (min-width: 768px) { .news-card-title { font-size: 12px; } .news-card-line { font-size: 11.5px; } }
+/* masuk dari atas (bar atas) */
+@keyframes floatIn { from { opacity: 0; transform: translateY(-10px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* kartu News di bar atas: selebar isinya (tidak memanjang 1 header penuh di desktop), tetap menutupi
+   judul + status akun + tanggal */
+.news-float { right: auto; width: max-content; max-width: 100%; min-width: 100%; background: transparent; }
+@media (min-width: 768px) { .news-float { min-width: min(17rem, 100%); } .news-card { max-width: 26rem; } }
+.news-float::before { content: ''; position: absolute; inset: 0; background: rgb(var(--bg)); z-index: -1; border-radius: .55rem; }
+
+@keyframes newsRoll { from { opacity: 0; transform: translateY(45%); } to { opacity: 1; transform: none; } }
+.news-roll { animation: newsRoll .35s cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .news-roll { animation: none; } }
