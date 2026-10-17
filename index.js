@@ -6340,9 +6340,9 @@ async function issueLoginSession(req, res, normalizedPhone, check) {
 }
 
 // ==================== Verifikasi nomor lewat WhatsApp (buat PIN pertama / lupa PIN / PIN direset) ====================
-// User mengirim pesan "VERIFIKASI 123456" dari WhatsApp-nya ke nomor bot. Bot hanya MENERIMA pesan itu
-// dan mencocokkan nomor pengirim dengan nomor akun, lalu menandai sudah dibaca. Bot TIDAK membalas atau
-// mengirim pesan apa pun (aman dari pembekuan nomor bot). Setelah cocok, halaman login meminta PIN baru.
+// User mengirim pesan "VERIFIKASI 123456" dari WhatsApp-nya ke nomor bot. Bot mencocokkan nomor pengirim
+// dengan nomor akun, lalu hanya MEMBALAS chat itu (2 pesan singkat: verifikasi berhasil & PIN berhasil
+// direset). Bot tidak pernah mengirim pesan duluan. Setelah cocok, halaman login meminta PIN baru.
 const PIN_VERIFY_TTL = 10 * 60000
 const PIN_ADMIN_RESET_TTL = 24 * 3600000   // jalur langsung "Buat PIN baru": 24 jam setelah reset admin / akun dibuat
 const _pinVerify = new Map()        // token -> { phone, code, mode, created, verified, verifiedAt, mismatch }
@@ -6450,9 +6450,18 @@ app.post('/api/pin/set', rateLimit(10, 60000), express.json(), async (req, res) 
   _pinVerify.delete(token); _pinVerifyByCode.delete(v.code)
   _pinFails.delete(v.phone)
   pushLog(`Auth | +${v.phone} membuat PIN baru lewat verifikasi WhatsApp (${v.mode === 'forgot' ? 'lupa PIN' : 'PIN pertama'})`)
+  pinVerifyReply(v.jid, '🔐 PIN berhasil ' + (v.mode === 'forgot' ? 'direset' : 'dibuat') + '.\nAnda sudah bisa masuk dengan PIN baru.\n\nBukan Anda yang melakukan ini? Segera hubungi admin.')
   const sessionId = await issueLoginSession(req, res, v.phone, check)
   res.json({ success: true, sessionId, user: check.user })
 })
+
+// Balasan bot untuk verifikasi PIN: hanya membalas chat yang dimulai user, jeda 1-2 detik seperti manusia
+function pinVerifyReply(jid, text, quoted) {
+  if (!jid || !sock) return
+  setTimeout(() => {
+    sock.sendMessage(jid, { text }, quoted ? { quoted } : {}).catch(e => pushLog('PIN | Balasan WA gagal - ' + (e && e.message ? e.message : e)))
+  }, 1000 + Math.floor(Math.random() * 1000))
+}
 
 // Pesan "VERIFIKASI 123456" yang masuk ke nomor bot (dipanggil dari penerima pesan WA)
 async function handlePinVerifyMessage(msg, code) {
@@ -6481,7 +6490,10 @@ async function handlePinVerifyMessage(msg, code) {
   v.verified = true
   v.verifiedAt = Date.now()
   v.mismatch = ''
+  v.jid = key.remoteJid
   try { await sock.readMessages([key]) } catch (e) {}
+  // balasan singkat ke chat yang dikirim user sendiri (bukan pesan duluan ke nomor lain)
+  pinVerifyReply(v.jid, '✅ Verifikasi berhasil.\nSilakan kembali ke halaman PemulaOLD dan buat PIN baru.', msg)
   pushLog(`PIN | +${v.phone} terverifikasi lewat WhatsApp (${v.mode === 'forgot' ? 'lupa PIN' : 'PIN pertama'})`)
 }
 
