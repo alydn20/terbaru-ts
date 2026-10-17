@@ -230,7 +230,7 @@ function renderTitikOn() {
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
   el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
-  el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span><span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
+  el.innerHTML = '<span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
 }
