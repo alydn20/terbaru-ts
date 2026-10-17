@@ -11229,12 +11229,15 @@ ${authScript}
       </div>
       <div class="form-group">
         <label>Tanggal Expired</label>
-        <input type="date" id="editExpiredDate">
-        <small style="color:#6b7280;font-size:0.8em;">Kosongkan untuk lifetime</small>
+        <input type="date" id="editExpiredDate" oninput="if (this.value) document.getElementById('editLifetime').checked = false">
       </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:2px 0 12px;font-size:0.9em;cursor:pointer;">
+        <input type="checkbox" id="editLifetime" style="width:auto;margin:0;" onchange="if (this.checked) { document.getElementById('editExpiredDate').value = ''; document.getElementById('editAddDays').value = ''; }">
+        Lifetime (tanpa batas waktu)
+      </label>
       <div class="form-group">
         <label>Atau Tambah Hari dari Sekarang</label>
-        <input type="number" id="editAddDays" placeholder="30" min="0">
+        <input type="number" id="editAddDays" placeholder="30" min="0" oninput="if (this.value) document.getElementById('editLifetime').checked = false">
       </div>
       <button class="btn btn-primary" style="width:100%;margin-top:12px;" onclick="saveUser()">Simpan</button>
     </div>
@@ -13582,7 +13585,6 @@ ${authScript}
                   '<button class="action-btn" style="background:#475569;" title="Riwayat login dan logout nomor ini" onclick="showUserAuthLog(&apos;' + u.phone + '&apos;)">Log</button>' +
                   blockBtn +
                   '<button class="action-btn delete" onclick="deleteUser(&apos;' + u.phone + '&apos;)">Hapus</button>' +
-                  '<button class="action-btn kick" onclick="kickUser(&apos;' + u.phone + '&apos;)">Kick</button>' +
                 '</div>' +
               '</td>' +
             '</tr>';
@@ -13759,13 +13761,16 @@ ${authScript}
     });
 
     function editUserBtn(btn) {
-      editUser(btn.getAttribute('data-phone'), btn.getAttribute('data-name'));
+      const tr = btn.closest('tr');
+      const exp = tr ? Number(tr.getAttribute('data-exp') || 0) : 0;
+      editUser(btn.getAttribute('data-phone'), btn.getAttribute('data-name'), exp || 'Lifetime');
     }
 
     function editUser(phone, name, expired) {
       document.getElementById('editPhone').value = phone;
       document.getElementById('editName').value = name;
       document.getElementById('editAddDays').value = '';
+      document.getElementById('editLifetime').checked = !expired || expired === 'Lifetime';
       // Set expired date if exists
       if (expired && expired !== 'Lifetime') {
         // Parse from timestamp or date string
@@ -13797,8 +13802,10 @@ ${authScript}
         name
       };
 
-      // If date is set, use it
-      if (expiredDate) {
+      // Lifetime dicentang: masa aktif dihapus (tanpa batas). Selain itu pakai tanggal / tambah hari.
+      if (document.getElementById('editLifetime').checked) {
+        bodyData.expiredDays = 0;
+      } else if (expiredDate) {
         bodyData.expiredTimestamp = new Date(expiredDate + 'T23:59:59').getTime();
       } else if (addDays) {
         bodyData.addDays = parseInt(addDays);
