@@ -23,6 +23,7 @@ export function openMore() {
     ]],
     ['Notifikasi & alat', [
       ['sound', 'Suara & notifikasi', openSound],
+      hooks.openPromos ? ['tag', 'Promo aktif', () => hooks.openPromos()] : null,
       ['calc', 'Kalkulator emas', openCalc],
       isInstalled() ? null : ['download', 'Install aplikasi', install]
     ]],

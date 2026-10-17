@@ -463,7 +463,33 @@ export function openLayoutPicker() {
           h('button', { 'aria-pressed': String(!side), onclick: () => pick(false) }, 'Di bawah')))
     })() : null), { peek: true })
 }
-function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
+function fitChart() { fitClock(); fitPriceOnly(); fitChartBox(); fitHist() }
+// Jam (kotak PROMO + jam di baris bawah) membesar mengisi ruang kosong di kiri-kanannya, tetap
+// menyisakan tempat untuk kotak info & Max/Min. Dihitung ulang tiap ukuran layar berubah.
+function fitClock() {
+  const row = $('#clockRow'), mid = $('#clockMid'), num = $('#clockNum'), promo = $('#promoStatus')
+  if (!row || !mid || !num || !document.body.classList.contains('price-compact') || !mid.offsetWidth) {
+    if (num) num.style.removeProperty('font-size')
+    if (promo) promo.style.removeProperty('font-size')
+    return
+  }
+  num.style.removeProperty('font-size'); promo.style.removeProperty('font-size')
+  const cs = getComputedStyle(row)
+  const inner = row.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+  const gap = parseFloat(cs.columnGap) || 0
+  const w = mid.getBoundingClientRect().width / (row.getBoundingClientRect().width / row.offsetWidth || 1)
+  const side = Math.max(($('#infoBox') || {}).offsetWidth || 0, ($('#hiloBox') || {}).offsetWidth || 0)
+  // ruang yang boleh dipakai jam: semua sisa kecuali kolom kiri/kanan (+ jarak aman)
+  const room = inner - 2 * (side + gap) - 12
+  // jam tidak boleh lebih dari 1,6x angka harga Beli (supaya tetap serasi, harga tetap utama)
+  const base = parseFloat(getComputedStyle(num).fontSize)
+  const beli = parseFloat(getComputedStyle($('#buyPrice')).fontSize) || base
+  const scale = Math.max(1, Math.min(room / w * 0.85, (beli * 1.6) / base, 1.8))
+  if (scale > 1.02) {
+    num.style.setProperty('font-size', (base * scale).toFixed(1) + 'px', 'important')
+    promo.style.setProperty('font-size', (parseFloat(getComputedStyle(promo).fontSize) * Math.min(scale, 1.35)).toFixed(1) + 'px', 'important')
+  }
+}
 // Tinggi menu bawah (0 di desktop, dan saat disembunyikan karena layar lama tidak disentuh)
 function navH() { return document.body.classList.contains('nav-idle') ? 0 : $('#bottomNav').offsetHeight }
 // Tinggi kotak riwayat untuk n baris: judul + kepala tabel + n baris + tombol halaman (kalau tampil)
@@ -688,7 +714,8 @@ function placeNav() {
   const top = $('#topNav')
   if (!top) return
   const to = top
-  ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
+  // tombol Promo tidak ditampilkan di bar atas (daftar promo ada di menu pengaturan)
+  ;['news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
 }
 window.addEventListener('resize', placeNav)
 // tab aktif mengikuti bagian yang sedang terlihat
@@ -785,7 +812,7 @@ async function start() {
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ openPromos, refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()
