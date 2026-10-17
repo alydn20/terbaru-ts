@@ -44,8 +44,14 @@ function handleInvalid(d) {
   endSession('Sesi Anda telah berakhir. Silakan login kembali.', 'Sesi berakhir')
 }
 /** null = jaringan/server tidak terjangkau (jangan keluarkan user) */
+// null = tidak bisa dicek (tidak ada sinyal / server sibuk) -> sesi TIDAK diakhiri.
+// Hanya jawaban asli server ({ valid: true/false }) yang dipakai untuk memutuskan sesi berakhir.
 async function verify() {
-  try { return await getJSON('/api/verify-session') } catch (e) { return null }
+  if (navigator.onLine === false) return null
+  try {
+    const d = await getJSON('/api/verify-session')
+    return d && typeof d.valid === 'boolean' ? d : null
+  } catch (e) { return null }
 }
 
 // ===================================================================== HEADER: sisa masa aktif

@@ -55,11 +55,23 @@ let _signalDecryptFails = 0
       orig(...args)
     }
   }
+  // Badai "Bad MAC" (mis. 17/10 18:53: 81 gagal/menit dari perangkat bot sendiri setelah restart) membuat
+  // CPU 100% dan server macet. Kalau >= 40 gagal per menit 2 kali berturut-turut, sesi enkripsi
+  // diperbaiki otomatis (hapus session & sender-key, tanpa logout / scan QR). Maks sekali per jam.
+  let _decryptStorm = 0
   setInterval(() => {
+    _decryptStorm = _signalDecryptFails >= 40 ? _decryptStorm + 1 : 0
     if (_signalDecryptFails > 0) {
       try { pushLog(`WA | ${_signalDecryptFails} pesan gagal didekripsi (Bad MAC) dalam 1 menit terakhir`) } catch (_) {}
       _signalDecryptFails = 0
     }
+    try {
+      if (_decryptStorm >= 2 && sock && sock.user && Date.now() - _lastWaAutoRepair > 3600000) {
+        _lastWaAutoRepair = Date.now()
+        _decryptStorm = 0
+        repairWaSession('Otomatis (badai Bad MAC, server melambat)').catch(e => pushLog('WA | Auto-repair error: ' + e.message))
+      }
+    } catch (_) {}
   }, 60000)
 }
 
@@ -5278,7 +5290,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v14';
+    const CACHE_VERSION = 'gold-monitor-v15';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -5299,6 +5311,17 @@ app.get('/sw.js', (_req, res) => {
       );
     });
 
+    function offlinePage() {
+      const html = '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<title>Tidak ada koneksi</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#e7e9ea;' +
+        'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:24px}@media(prefers-color-scheme:light){body{background:#eef2ff;color:#0f172a}}' +
+        'h1{font-size:1.15rem;margin:0 0 8px}p{margin:0 0 18px;color:#8c8c8c;font-size:.95rem;line-height:1.5}button{border:0;border-radius:12px;padding:12px 22px;' +
+        'font-weight:800;background:#f7931a;color:#000;font-size:.95rem}</style></head><body><div><h1>Tidak ada koneksi internet</h1>' +
+        '<p>Halaman akan terbuka otomatis saat sinyal kembali.</p><button onclick="location.reload()">Coba lagi</button></div>' +
+        '<script>addEventListener("online",function(){location.reload()});setInterval(function(){if(navigator.onLine)fetch("/health",{cache:"no-store"}).then(function(r){if(r.ok)location.reload()}).catch(function(){})},5000)<\/script></body></html>';
+      return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
     self.addEventListener('fetch', (e) => {
       // Jangan intercept URL eksternal - biarkan browser handle sendiri
       if (!e.request.url.startsWith(self.location.origin)) return;
@@ -5310,16 +5333,45 @@ app.get('/sw.js', (_req, res) => {
         || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
         || url.includes('/price-history') || url.includes('/api/')
         || url.includes('/stats') || url.includes('/health');
+      // Halaman (buka / muat ulang): ambil dari internet; kalau tidak ada sinyal pakai salinan terakhir
+      // yang tersimpan, kalau belum ada tampilkan halaman "Tidak ada koneksi" yang mencoba lagi sendiri
+      // (dulu: tulisan polos "Service unavailable").
+      if (e.request.method === 'GET' && e.request.mode === 'navigate') {
+        e.respondWith(
+          fetch(e.request).then((res) => {
+            if (res && res.ok && res.type === 'basic') {
+              const copy = res.clone();
+              caches.open(CACHE_VERSION).then((c) => c.put(new URL(url).pathname, copy)).catch(() => {});
+            }
+            return res;
+          }).catch(() => caches.match(new URL(url).pathname).then((hit) => hit || offlinePage()))
+        );
+        return;
+      }
+      // Tampilan baru (CSS/JS/suara): internet dulu, tidak ada sinyal pakai salinan tersimpan
+      if (e.request.method === 'GET' && url.includes('/ui-baru/')) {
+        e.respondWith(
+          fetch(e.request).then((res) => {
+            if (res && res.ok && res.type === 'basic') {
+              const copy = res.clone();
+              caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy)).catch(() => {});
+            }
+            return res;
+          }).catch(() => caches.match(e.request).then((hit) => hit || new Response('', { status: 503 })))
+        );
+        return;
+      }
       if (noCache) {
         e.respondWith(
           fetch(e.request).catch(() => {
+            // offline: tandai jelas sebagai gangguan jaringan (BUKAN sesi tidak valid)
             if (url.includes('/api/')) {
-              return new Response(JSON.stringify({ success: false, error: 'Network error' }), {
+              return new Response(JSON.stringify({ success: false, offline: true, error: 'Network error' }), {
                 status: 503,
                 headers: { 'Content-Type': 'application/json' }
               });
             }
-            return new Response('Service unavailable', { status: 503 });
+            return new Response('', { status: 503 });
           })
         );
         return;

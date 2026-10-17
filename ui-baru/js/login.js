@@ -42,7 +42,8 @@ async function checkExisting() {
       location.replace('/monitoring')
       return false
     }
-    if (v.reason !== 'server_error') session.clear()
+    // sesi dihapus hanya kalau server benar-benar menjawab tidak valid (bukan saat tidak ada sinyal)
+    if (v && v.valid === false && v.reason !== 'server_error') session.clear()
   } catch (e) {}
   return true
 }
