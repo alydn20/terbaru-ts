@@ -1,6 +1,6 @@
 // Halaman login (tampilan baru): nomor -> PIN -> (wajib ganti PIN awal) -> monitoring.
 // Nomor belum terdaftar / masa aktif habis -> pembayaran QRIS di halaman ini juga.
-import { $, session, getJSON, applyTheme, contactAdmin } from './api.js'
+import { $, session, getJSON, applyTheme } from './api.js'
 import { mountPayment } from './payment.js'
 
 applyTheme()
@@ -91,7 +91,7 @@ async function checkUser() {
     waitingTs = true
     msg('Memverifikasi keamanan, mohon tunggu...')
     clearTimeout(giveUp)
-    giveUp = setTimeout(() => { if (waitingTs) { waitingTs = false; busy(btn, false); msg('Verifikasi keamanan tidak merespons. Tekan "Masuk ke akun" lagi.', 'error'); tsReset() } }, 90000)
+    giveUp = setTimeout(() => { if (waitingTs) { waitingTs = false; busy(btn, false); msg('Verifikasi keamanan tidak merespons. Tekan "Masuk / Daftar" lagi.', 'error'); tsReset() } }, 90000)
     return
   }
   waitingTs = false
@@ -189,7 +189,6 @@ $('#pin').addEventListener('input', e => { e.target.value = e.target.value.repla
 $('#btnBack').addEventListener('click', () => { $('#pin').value = ''; msg(''); show('phone') })
 $('#btnPayBack').addEventListener('click', () => { msg(''); show('phone') })
 $('#changePinForm').addEventListener('submit', e => { e.preventDefault(); saveNewPin() })
-$('#btnHelp').addEventListener('click', () => contactAdmin(phone ? '62' + phone : '', null))
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {})
 
 checkExisting().then(stay => {
