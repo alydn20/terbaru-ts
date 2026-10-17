@@ -12,16 +12,22 @@ function msg(text, type = 'info', id = '#msg') {
   const el = $(id)
   if (!text) { el.classList.add('hidden'); return }
   el.textContent = text
-  el.className = 'mb-4 rounded-xl px-4 py-3 text-sm font-semibold ' + ({ error: 'bg-down/10 text-down', success: 'bg-up/10 text-up' }[type] || 'bg-sky/10 text-sky')
+  // pesan muncul dengan geser halus; pesan error ditambah goyang kecil
+  el.className = 'anim-msg mb-4 rounded-xl px-4 py-3 text-sm font-semibold ' + ({ error: 'anim-shake bg-down/10 text-down', success: 'bg-up/10 text-up' }[type] || 'bg-sky/10 text-sky')
 }
 function busy(btn, on, text) {
-  if (on) { if (!btn.disabled) btn.dataset.text = btn.textContent; btn.textContent = text; btn.disabled = true }
-  else { btn.textContent = btn.dataset.text || btn.textContent; btn.disabled = false }
+  // tombol sibuk: putaran kecil + teks (bukan sekadar teks berubah)
+  if (on) { if (!btn.disabled) btn.dataset.text = btn.textContent; btn.innerHTML = '<span class="spinner spinner-sm"></span><span>' + (text || '') + '</span>'; btn.disabled = true; btn.classList.add('is-busy') }
+  else { btn.textContent = btn.dataset.text || btn.textContent; btn.disabled = false; btn.classList.remove('is-busy') }
 }
 function show(step) {
-  $('#phoneForm').classList.toggle('hidden', step !== 'phone')
-  $('#pinForm').classList.toggle('hidden', step !== 'pin')
-  $('#payWrap').classList.toggle('hidden', step !== 'pay')
+  // langkah berganti (nomor -> PIN -> pembayaran) dengan geser + memudar
+  ;[['#phoneForm', 'phone'], ['#pinForm', 'pin'], ['#payWrap', 'pay']].forEach(([sel, k]) => {
+    const el = $(sel)
+    const on = step === k
+    if (on && el.classList.contains('hidden')) { el.classList.remove('hidden', 'anim-step'); void el.offsetWidth; el.classList.add('anim-step') }
+    else el.classList.toggle('hidden', !on)
+  })
   $('#step2').className = 'h-1.5 flex-1 rounded-full ' + (step === 'phone' ? 'bg-line/15' : 'bg-gold')
   if (step !== 'pay' && stopPay) { stopPay(); stopPay = null }
 }
@@ -42,7 +48,8 @@ async function checkExisting() {
       location.replace('/monitoring')
       return false
     }
-    if (v.reason !== 'server_error') session.clear()
+    // sesi dihapus hanya kalau server benar-benar menjawab tidak valid (bukan saat tidak ada sinyal)
+    if (v && v.valid === false && v.reason !== 'server_error') session.clear()
   } catch (e) {}
   return true
 }

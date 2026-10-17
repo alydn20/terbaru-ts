@@ -100,14 +100,51 @@ export function applyTheme(t) {
   if (meta) meta.content = theme === 'light' ? '#eff3ff' : '#000000'
   return theme
 }
-export function toggleTheme() {
+// Ganti mode gelap/terang dengan transisi halus: View Transitions (memudar menyeluruh) bila didukung,
+// selain itu warna latar/teks/garis berpindah perlahan lewat kelas .theme-fade.
+// opts.origin = { x, y } titik awal lingkaran (mis. tengah sakelar); opts.after = dijalankan tepat setelah
+// mode berganti (mis. menukar grafik) supaya ikut dalam animasi yang sama.
+export function toggleTheme(opts = {}) {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'
   try { localStorage.setItem(THEME_KEY, next) } catch (e) {}
-  applyTheme(next)
+  const root = document.documentElement
+  const apply = () => { applyTheme(next); if (opts.after) opts.after() }
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce) { apply(); return next }
+  const o = opts.origin || { x: innerWidth - 40, y: 30 }
+  if (document.startViewTransition) {
+    // lingkaran mode baru melebar dari sakelar sampai menutup seluruh layar
+    root.classList.add('vt-theme')
+    const t = document.startViewTransition(apply)
+    t.finished.finally(() => root.classList.remove('vt-theme'))
+    const r = Math.hypot(Math.max(o.x, innerWidth - o.x), Math.max(o.y, innerHeight - o.y))
+    t.ready.then(() => {
+      root.animate({ clipPath: ['circle(0px at ' + o.x + 'px ' + o.y + 'px)', 'circle(' + r + 'px at ' + o.x + 'px ' + o.y + 'px)'] },
+        { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' })
+    }).catch(() => {})
+    return next
+  }
+  // browser lama: lapisan warna mode lama memudar perlahan di atas mode baru
+  const veil = document.createElement('div')
+  veil.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;background:' + getComputedStyle(document.body).backgroundColor + ';opacity:1;transition:opacity .55s ease'
+  document.body.append(veil)
+  root.classList.add('theme-fade')
+  apply()
+  requestAnimationFrame(() => requestAnimationFrame(() => { veil.style.opacity = '0' }))
+  setTimeout(() => { veil.remove(); root.classList.remove('theme-fade') }, 650)
   return next
 }
 
 // ------------------------------------------------------------------ toast
+// Angka berganti dengan gulir halus: naik = angka baru masuk dari bawah, turun = dari atas.
+export function rollText(el, text, dir = 0) {
+  if (!el) return
+  text = String(text)
+  if (el.textContent === text) return
+  el.textContent = text
+  el.classList.remove('roll-up', 'roll-down', 'roll-in'); void el.offsetWidth
+  el.classList.add(dir > 0 ? 'roll-up' : dir < 0 ? 'roll-down' : 'roll-in')
+}
 export function toast(msg, type = 'info', ms = 3200) {
   let box = document.getElementById('toasts')
   if (!box) {
@@ -116,8 +153,9 @@ export function toast(msg, type = 'info', ms = 3200) {
   }
   const color = { success: 'border-up/40', error: 'border-down/40', warning: 'border-gold/40' }[type] || 'border-line/20'
   const t = h('div', { class: `pointer-events-auto max-w-md rounded-xl border ${color} bg-card px-4 py-3 text-sm font-semibold shadow-2xl` }, msg)
+  t.classList.add('anim-toast-in')
   box.append(t)
-  setTimeout(() => t.remove(), ms)
+  setTimeout(() => { t.classList.add('anim-toast-out'); setTimeout(() => t.remove(), 260) }, ms)
 }
 
 // ------------------------------------------------------------------ lembar bawah (sheet)
@@ -171,9 +209,10 @@ export function closeAllSheets(instant) {
 // ------------------------------------------------------------------ dialog konfirmasi
 export function confirmDialog(message, { title = 'Konfirmasi', ok = 'Ya', cancel = 'Batal', danger = false } = {}) {
   return new Promise(resolve => {
-    const wrap = h('div', { class: 'fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-5' })
-    const done = v => { wrap.remove(); resolve(v) }
-    wrap.append(h('div', { class: 'card w-full max-w-sm p-5 text-center shadow-2xl' },
+    const wrap = h('div', { class: 'anim-fade-in fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-5' })
+    // tutup dengan animasi (memudar + mengecil) sebelum dihapus
+    const done = v => { wrap.classList.add('anim-fade-out'); setTimeout(() => wrap.remove(), 200); resolve(v) }
+    wrap.append(h('div', { class: 'anim-pop card w-full max-w-sm p-5 text-center shadow-2xl' },
       h('div', { class: 'mb-1 text-lg font-extrabold' }, title),
       h('p', { class: 'mb-5 text-sm leading-relaxed text-muted' }, message),
       h('div', { class: 'flex gap-2' },

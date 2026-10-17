@@ -7,7 +7,7 @@
   <title>Harga Emas Realtime | PemulaOLD</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/favicon.ico?v=2">
-  <link rel="apple-touch-icon" href="/icon.png?v=3">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4">
   <meta name="apple-mobile-web-app-title" content="Harga PemulaOLD">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
-<body class="min-h-screen pb-[env(safe-area-inset-bottom)]">
+<body class="loading-data min-h-screen pb-[env(safe-area-inset-bottom)]">
 
   <!-- ============================== BAR ATAS ============================== -->
   <header class="sticky top-0 z-30 border-b border-line/[0.07] bg-bg/90 backdrop-blur-xl" style="padding-top: env(safe-area-inset-top)">
@@ -25,7 +25,7 @@
         <svg viewBox="0 0 24 24" class="h-7 w-7 lg:h-8 lg:w-8" aria-hidden="true"><rect x="4.5" y="3" width="3.75" height="18" rx="0.75" fill="#f7931a"/><rect x="10.1" y="4.9" width="8.25" height="8.25" rx="1.1" fill="none" stroke="#f7931a" stroke-width="3.4"/></svg>
         <span id="liveDot" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-up ring-2 ring-bg" title="Data live"></span>
       </div>
-      <div class="min-w-0 flex-1 leading-tight">
+      <div id="brandBox" class="relative min-w-0 flex-1 leading-tight">
         <div class="truncate text-sm font-extrabold lg:text-[15px]">Harga PemulaOLD</div>
         <div class="flex min-w-0 items-center gap-1.5">
           <button id="sisaHari" class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold"></button>
@@ -85,7 +85,7 @@
               <button id="btnNominal" class="absolute right-0.5 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-gold">Atur</button>
             </div>
             <div id="nominals" class="flex flex-wrap justify-center gap-1 lg:gap-2">
-              <div class="py-2 text-sm text-muted">Memuat...</div>
+              <div class="skel h-6 w-24"></div><div class="skel h-6 w-24"></div><div class="skel h-6 w-24"></div>
             </div>
           </div>
         </section>
@@ -118,7 +118,7 @@
           <div id="histScroll" class="overflow-x-auto border-t border-line/[0.07]">
             <table class="w-full min-w-[440px] text-sm">
               <thead id="histHead" class="bg-card2 text-left text-[10px] uppercase tracking-wider text-muted"></thead>
-              <tbody id="histBody" class="divide-y divide-line/[0.06]"></tbody>
+              <tbody id="histBody" class="divide-y divide-line/[0.06]"><tr class="skel-row"><td colspan="20" class="px-3 py-2"><div class="skel h-7 w-full"></div></td></tr><tr class="skel-row"><td colspan="20" class="px-3 py-2"><div class="skel h-7 w-full"></div></td></tr><tr class="skel-row"><td colspan="20" class="px-3 py-2"><div class="skel h-7 w-full"></div></td></tr></tbody>
             </table>
           </div>
           <div id="histPager" class="flex items-center justify-between gap-2 border-t border-line/[0.07] px-3 py-1 text-[11px] lg:px-4 lg:text-xs">

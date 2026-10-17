@@ -5,6 +5,7 @@ import { state, setNominalVisible, isNominalVisible } from './state.js'
 import { settings as sound, setSetting, SOUND_TYPES, SHAKE_TYPES } from './sound.js'
 import { INDICATORS, indicatorDef, activeIndicators, saveIndicators, loadChart } from './chart.js'
 import { mountPayment } from '../payment.js'
+import { openInstall, isInstalled } from './install.js'
 
 let hooks = {}
 /** main.js memberi fungsi yang dibutuhkan menu (render ulang nominal/riwayat, sisa hari) */
@@ -17,14 +18,16 @@ export function openMore() {
   const groups = [
     ['Tampilan', [
       hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
-      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
+      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { closeAllSheets(); toggleTheme({ after: loadChart }) }],
       ['activity', 'Indikator grafik', openIndicators],
       ['sliders', 'Atur kotak harga', openPriceBox]
     ]],
     ['Notifikasi & alat', [
       ['sound', 'Suara & notifikasi', openSound],
+      hooks.openPromos ? ['tag', 'Promo aktif', () => hooks.openPromos()] : null,
       ['calc', 'Kalkulator emas', openCalc],
-      isInstalled() ? null : ['download', 'Install aplikasi', install]
+      // selalu ada: belum terpasang -> pasang / panduan; sudah terpasang -> keterangan
+      ['download', isInstalled() ? 'Aplikasi terpasang' : 'Install aplikasi', openInstall]
     ]],
     ['Akun', [
       state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
@@ -70,7 +73,7 @@ function openMoreDropdown(groups, logoutItem, profile) {
   }
   const row = ([ic, label, fn, , cls = '']) =>
     h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-card2 ' + cls, onclick: () => { close(); fn() }, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
-  const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
+  const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'anim-drop card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
     profile(),
     groups.map(([title, items], i) => h('div', {},
       h('div', { class: 'label px-3 pb-1 text-[10px] ' + (i ? 'mt-2 border-t border-line/[0.08] pt-2.5' : 'pt-1') }, title),
@@ -240,23 +243,10 @@ async function enablePush() {
   toast((await subscribePush()) ? 'Notifikasi HP aktif' : 'Notifikasi aktif di browser ini', 'success')
 }
 
-// ===================================================================== INSTALL
-let deferredPrompt = null
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e })
-const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
-async function install() {
-  closeAllSheets()
-  if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return }
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  await confirmDialog(ios
-    ? 'Di Safari: ketuk tombol Bagikan (kotak dengan panah ke atas), lalu pilih "Tambahkan ke Layar Utama".'
-    : 'Buka menu browser (⋮), lalu pilih "Install aplikasi" atau "Tambahkan ke Layar Utama".', { title: 'Cara install', ok: 'Mengerti', cancel: null })
-}
-
 // ===================================================================== PERPANJANG
 export async function openRenew() {
   if (state.user && !state.user.expired) { toast('Akun Lifetime, tidak perlu diperpanjang.'); return }
-  const root = h('div', {}, h('div', { class: 'py-10 text-center text-sm text-muted' }, 'Memuat...'))
+  const root = h('div', {}, h('div', { class: 'loader-box' }, h('span', { class: 'spinner' }), 'Memuat...'))
   let stop = null
   openSheet('Perpanjang masa aktif', h('div', {},
     state.user && state.user.expired ? h('p', { class: 'mb-3 text-xs text-muted' }, 'Aktif sampai ' + tanggalPanjang(state.user.expired) + '. Sisa hari Anda tidak hilang.') : null,

@@ -25,22 +25,39 @@ function predictGold(ev) {
   return null
 }
 
-// ---- Pengingat news dampak tinggi (3 batang): kecil, melayang di atas navigasi, tidak menghalangi ----
-function floatNote(title, lines, ms) {
+// ---- Pengingat news dampak tinggi (3 batang): muncul di bar atas, menutupi judul "Harga PemulaOLD",
+// status akun & tanggal selama ada pemberitahuan (satu kartu terbaru, ringkas 2 baris). Hilang -> judul kembali.
+function floatBox() {
   let box = document.getElementById('newsFloat')
   if (!box) {
-    // melayang di pojok kiri bawah, kotak kecil (HP: di atas navigasi bawah)
-    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
-    document.body.append(box)
+    const host = document.getElementById('brandBox') || document.body
+    box = h('div', { id: 'newsFloat', class: 'news-float' })
+    host.append(box)
   }
-  const close = () => { card.style.opacity = '0'; setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 260) }
-  const card = h('div', { class: 'pointer-events-auto relative max-w-full cursor-pointer rounded-lg border border-down/50 border-l-[3px] border-l-down bg-card/95 py-1 pl-2 pr-6 text-[11px] leading-snug shadow-lg backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
-    h('div', { class: 'mb-0.5 font-extrabold text-down' }, title),
-    lines.map(l => h('div', {}, l)),
-    h('button', { class: 'absolute right-1 top-0.5 px-1 text-[15px] leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
-  box.append(card)
-  requestAnimationFrame(() => { card.style.opacity = '1' })
-  setTimeout(close, ms || 12000)
+  return box
+}
+function floatNote(title, lines, ms) {
+  const box = floatBox()
+  const close = () => { card.classList.add('anim-float-out'); setTimeout(() => { card.remove(); if (!box.children.length) box.remove() }, 300) }
+  const card = h('div', { class: 'news-card anim-float-in', role: 'status', onclick: e => { if (!e.target.closest('button')) openNews() } },
+    h('div', { class: 'news-card-title' }, title),
+    h('div', { class: 'news-card-line' }, lines[0] || ''),
+    h('button', { class: 'news-card-x', 'aria-label': 'Tutup', onclick: e => { e.stopPropagation(); close() } }, '×'))
+  // kartu hitung mundur yang sedang tampil tetap paling depan (pengingat baru diselipkan di belakangnya)
+  const urgentCard = box.querySelector('.news-card-urgent')
+  if (urgentCard) box.insertBefore(card, urgentCard)
+  else box.append(card)
+  // banyak news: baris kedua bergantian tiap 2,5 dtk (1/6, 2/6, ...) supaya semua terbaca di tempat kecil
+  let timer = null
+  if (lines.length > 1) {
+    const line = card.querySelector('.news-card-line')
+    let i = 0
+    const show = () => { line.textContent = (i + 1) + '/' + lines.length + '  ' + lines[i]; line.classList.remove('news-roll'); void line.offsetWidth; line.classList.add('news-roll') }
+    show()
+    timer = setInterval(() => { if (!card.isConnected) return clearInterval(timer); i = (i + 1) % lines.length; show() }, 2500)
+  }
+  // tampil cukup lama untuk melihat semua news (minimal sekali putaran)
+  setTimeout(() => { clearInterval(timer); close() }, Math.max(ms || 12000, lines.length * 2500 + 1500))
 }
 export function checkNewsReminders() {
   if (!state.news.length) return
@@ -53,50 +70,70 @@ export function checkNewsReminders() {
   const upcoming = high.filter(ev => new Date(ev.date).getTime() > now)
   if (!store.list && upcoming.length) {
     store.list = true
-    floatNote('News dampak tinggi hari ini (' + upcoming.length + ')',
-      upcoming.slice(0, 4).map(ev => jamWib(ev._wib) + '  ' + ev.title).concat(upcoming.length > 4 ? ['...dan ' + (upcoming.length - 4) + ' lagi'] : []), 15000)
+    floatNote(upcoming.length + ' news penting hari ini',
+      upcoming.slice(0, 12).map(ev => jamWib(ev._wib) + '  ' + ev.title), 15000)
   }
+  // <= 30 menit lagi: news yang rilis di jam yang sama digabung jadi satu kartu (judul bergantian)
+  const soonGroups = {}
   high.forEach(ev => {
     const left = new Date(ev.date).getTime() - now
     const key = ev.title + '|' + ev.date
-    if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
+    // <= 3 menit sudah ditangani kartu hitung mundur merah -> pengingat biasa tidak dimunculkan (tidak bentrok)
+    if (left > 3 * 60000 && left <= 30 * 60000 && !store.soon[key]) {
       store.soon[key] = 1
-      floatNote(Math.max(1, Math.round(left / 60000)) + ' menit lagi: news dampak tinggi', [jamWib(ev._wib) + '  ' + ev.title], 20000)
+      ;(soonGroups[ev.date] = soonGroups[ev.date] || []).push(ev)
     }
+  })
+  Object.values(soonGroups).forEach(list => {
+    const left = new Date(list[0].date).getTime() - now
+    const n = list.length
+    // judul singkat supaya muat di HP: "25 mnt · 4 news 19:30" / "25 mnt lagi · News penting"
+    floatNote(Math.max(1, Math.round(left / 60000)) + (n > 1 ? ' mnt · ' + n + ' news ' + jamWib(list[0]._wib).replace(' WIB', '') : ' mnt lagi · News penting'),
+      list.map(ev => (n > 1 ? '' : jamWib(ev._wib) + '  ') + ev.title), 20000)
   })
   try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
 }
 setInterval(checkNewsReminders, 30000)
 
-// 3 menit sebelum news dampak tinggi: tidak bisa ditutup, hitung mundur per detik, sampai rilis
+// 3 menit sebelum news dampak tinggi: tidak bisa ditutup, hitung mundur per detik, sampai rilis.
+// Beberapa news di jam rilis yang sama = SATU kartu ("2:59 lagi · 4 news rilis"), nama news bergantian.
 const urgent = {}
 function urgentTick() {
   if (!state.news.length) return
   const now = Date.now()
   const today = dayKey(toWib(new Date(now).toISOString()))
+  const groups = {}
   state.news.forEach(ev => {
     if (ev.impact !== 'High' || dayKey(ev._wib) !== today) return
-    const key = ev.title + '|' + ev.date
-    const left = new Date(ev.date).getTime() - now
+    ;(groups[ev.date] = groups[ev.date] || []).push(ev)
+  })
+  Object.entries(groups).forEach(([key, list]) => {
+    const left = new Date(key).getTime() - now
     let c = urgent[key]
+    const n = list.length
     if (left > 0 && left <= 3 * 60000) {
       if (!c) {
-        let box = document.getElementById('newsFloat')
-        if (!box) {
-          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
-          document.body.append(box)
-        }
-        c = h('div', { class: 'pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
-          h('div', { class: 'font-extrabold' }, ''), h('div', {}, jamWib(ev._wib) + '  ' + ev.title))
+        const box = floatBox()
+        c = h('div', { class: 'news-card news-card-urgent anim-float-in', role: 'alert', onclick: openNews },
+          h('div', { class: 'news-card-title' }, ''), h('div', { class: 'news-card-line' }, ''))
+        c._i = 0
+        c._lines = list.map((ev, k) => (n > 1 ? (k + 1) + '/' + n + '  ' : jamWib(ev._wib) + '  ') + ev.title)
         box.append(c)
         urgent[key] = c
       }
       const sec = Math.ceil(left / 1000)
-      c.firstChild.textContent = 'News dampak tinggi ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi'
+      c.firstChild.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') + ' lagi · ' + (n > 1 ? n + ' news rilis' : 'News rilis')
+      // nama news bergantian tiap 3 dtk, urut 1/4 -> 2/4 -> 3/4 -> 4/4
+      const idx = n > 1 ? (n - 1 - Math.floor((sec % (n * 3)) / 3) % n) : 0
+      const line = c.lastChild
+      if (line.textContent !== c._lines[idx]) {
+        line.textContent = c._lines[idx]
+        if (n > 1) { line.classList.remove('news-roll'); void line.offsetWidth; line.classList.add('news-roll') }
+      }
     } else if (c && left <= 0 && !c.dataset.done) {
       c.dataset.done = '1'
-      c.firstChild.textContent = 'Rilis sekarang'
-      setTimeout(() => { c.remove(); delete urgent[key] }, 8000)
+      c.firstChild.textContent = 'Rilis sekarang' + (n > 1 ? ' · ' + n + ' news' : '')
+      setTimeout(() => { const box = c.parentElement; c.classList.add('anim-float-out'); setTimeout(() => { c.remove(); if (box && !box.children.length) box.remove() }, 300); delete urgent[key] }, 8000)
     }
   })
 }
@@ -171,7 +208,7 @@ function renderNews(list) {
 }
 
 export function openNews() {
-  const list = h('div', { class: 'pb-2' }, h('div', { class: 'py-10 text-center text-sm text-muted' }, 'Memuat kalender...'))
+  const list = h('div', { class: 'pb-2' }, h('div', { class: 'loader-box' }, h('span', { class: 'spinner' }), 'Memuat kalender...'))
   const filterRow = h('div', { class: 'mb-3 flex gap-2' }, Object.entries(IMPACT).map(([k, [lbl]]) => {
     const b = h('button', { class: 'chip', 'aria-pressed': String(filters.has(k)) }, lbl)
     const paint = () => { b.className = 'chip ' + (filters.has(k) ? 'border-gold text-gold' : 'opacity-50') }

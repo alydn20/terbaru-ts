@@ -1,13 +1,14 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
 import './monitoring/defaults.js'
-import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
+import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, toggleTheme, tanggalPanjang, openSheet, rollText } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
 import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHistRows } from './monitoring/history.js'
-import { initChart } from './monitoring/chart.js'
+import { initChart, loadChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
 import { startTour, tourDone } from './monitoring/tour.js'
+import { scheduleInstallInvite, isInstalled } from './monitoring/install.js'
 import { openMore, openRenew, openIndicators, openNominalSettings, openPriceBox, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
 
 applyTheme()
@@ -44,8 +45,14 @@ function handleInvalid(d) {
   endSession('Sesi Anda telah berakhir. Silakan login kembali.', 'Sesi berakhir')
 }
 /** null = jaringan/server tidak terjangkau (jangan keluarkan user) */
+// null = tidak bisa dicek (tidak ada sinyal / server sibuk) -> sesi TIDAK diakhiri.
+// Hanya jawaban asli server ({ valid: true/false }) yang dipakai untuk memutuskan sesi berakhir.
 async function verify() {
-  try { return await getJSON('/api/verify-session') } catch (e) { return null }
+  if (navigator.onLine === false) return null
+  try {
+    const d = await getJSON('/api/verify-session')
+    return d && typeof d.valid === 'boolean' ? d : null
+  } catch (e) { return null }
 }
 
 // ===================================================================== HEADER: sisa masa aktif
@@ -181,7 +188,8 @@ function applyPrice(d, fromSse) {
   if (d.buy) {
     const prev = fromSse ? d.prevBuy : state.buy
     const change = prev ? d.buy - prev : 0
-    $('#buyPrice').textContent = num(d.buy)
+    rollText($('#buyPrice'), num(d.buy), change)
+    document.body.classList.remove('loading-data')
     if (change) {
       state.arrow = change > 0 ? '▲ ' : '▼ '
       setChange('buyChange', change); flash('buyCard', change)
@@ -199,7 +207,7 @@ function applyPrice(d, fromSse) {
   if (d.sell) {
     const prev = fromSse ? d.prevSell : state.sell
     const change = prev ? d.sell - prev : 0
-    $('#sellPrice').textContent = num(d.sell)
+    rollText($('#sellPrice'), num(d.sell), change)
     if (change) { setChange('sellChange', change); flash('sellCard', change) }
     state.sell = d.sell
   }
@@ -219,8 +227,9 @@ function setUsdIdr(rate) {
     // kotak USD/IDR berkedip & berwarna sama seperti kotak Beli/Jual
     if ($('#chipUsd')) flash('chipUsd', c)
   }
+  const dir = state.usdIdr ? r - Math.round(state.usdIdr) : 0
   state.usdIdr = rate
-  $('#usdIdr').textContent = num(r)
+  rollText($('#usdIdr'), num(r), dir)
 }
 /** Promo ON: harga terendah selama ON (Titik ON). Promo OFF: tanggal terakhir ON (dd-mm-yyyy, WIB). */
 function renderTitikOn() {
@@ -243,7 +252,10 @@ function renderTitikOn() {
 }
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
+  const changed = state.promo && state.promo !== status
   el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
+  // OFF <-> ON: pita membalik (flip) halus
+  if (changed) { void el.offsetWidth; el.classList.add('promo-flip') }
   el.innerHTML = '<span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
@@ -352,7 +364,7 @@ function applyIdrMode() {
 window.addEventListener('resize', () => { applyIdrMode(); applyLayout(); fitChart() })
 // Pengaturan riwayat (tombol Aa): ukuran teks + USD/IDR digabung / terpisah. Diingat per perangkat.
 function openHistSize() {
-  const opt = (active, label, note, onclick, style) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), onclick },
+  const opt = (active, label, note, onclick, style, group) => h('button', { class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (active ? 'border-gold/60 bg-gold/10' : ''), 'data-pick': group || '', onclick: e => { markPicked(e.currentTarget); onclick() } },
     h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (active ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: active ? icon('check', 'h-3 w-3') : '' }),
     h('span', { class: 'min-w-0' },
       h('span', { class: 'block font-bold', style: style || '' }, label),
@@ -360,23 +372,23 @@ function openHistSize() {
   const cur = histSize(), im = idrMode()
   const sheet = openSheet('Pengaturan riwayat', h('div', { class: 'flex flex-col gap-1.5' },
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
-    HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize(); sheet.close() }, 'font-size:' + Math.round(14 * Number(v)) + 'px')),
+    HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize() }, 'font-size:' + Math.round(14 * Number(v)) + 'px', 'size')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
     h('p', { class: 'px-0.5 text-[11px] text-muted' }, 'Baris sedikit = grafik lebih besar (saat grafik & riwayat tampil sekaligus). Di HP bawaan 2 baris; geser riwayat untuk melihat yang lebih lama.'),
     (() => {
       // 1-30 baris lewat tombol - / +, atau Otomatis (10 baris, tinggi mengikuti layar)
       let n = histRowsSetting() || 10
       const val = h('span', { class: 'num w-14 text-center font-mono text-lg font-extrabold' }, histRowsSetting() ? String(n) : 'Auto')
-      const apply = v => { n = Math.max(1, Math.min(30, v)); val.textContent = String(n); setHistRows(n); setTimeout(fitChart, 400) }
+      const apply = v => { n = Math.max(1, Math.min(30, v)); val.textContent = String(n); setHistRows(n); auto.classList.remove('border-gold/60', 'bg-gold/10', 'text-gold'); setTimeout(fitChart, 400) }
       const auto = h('button', { class: 'tile px-3 py-2 text-sm font-bold ' + (!histRowsSetting() ? 'border-gold/60 bg-gold/10 text-gold' : ''),
-        onclick: () => { setHistRows(0); sheet.close(); setTimeout(fitChart, 400) } }, 'Otomatis')
+        onclick: () => { setHistRows(0); val.textContent = 'Auto'; auto.classList.add('border-gold/60', 'bg-gold/10', 'text-gold'); setTimeout(fitChart, 400) } }, 'Otomatis')
       return h('div', { class: 'flex items-center gap-2' },
         h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n - 1) }, '−'), val,
         h('button', { class: 'icon-btn h-10 w-10 text-lg', onclick: () => apply(n + 1) }, '+'),
         h('span', { class: 'text-xs text-muted' }, 'baris'), h('span', { class: 'flex-1' }), auto)
     })(),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
-    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))), { peek: true })
+    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode() }, '', 'idr'))), { peek: true })
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 // bawaan: kotak harga ringkas (aktif kecuali user mematikannya)
@@ -411,21 +423,47 @@ export function chipSection() {
 }
 export function openChipSettings() { openPriceBox() }
 export function getLayout() { return layout }
+// Perubahan tata letak oleh user: berpindah halus (bagian lama memudar/bergeser ke posisi baru)
+function smoothLayout(fn) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce || !document.startViewTransition) { fn(); return }
+  const root = document.documentElement
+  root.classList.add('vt-layout')
+  const t = document.startViewTransition(fn)
+  t.finished.finally(() => root.classList.remove('vt-layout'))
+}
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
   try { localStorage.setItem(LAYOUT_KEY, layout) } catch (e) {}
   chartFull = false
-  applyLayout()
-  fitChart()
-  window.scrollTo({ top: 0 })
+  smoothLayout(() => {
+    applyLayout()
+    fitChart()
+    window.scrollTo({ top: 0 })
+  })
 }
 // Lembar pilihan tata letak (dibuka dari Lainnya, dan tombol "Tata letak" di judul grafik)
+// Pilihan di panel (tata letak, ukuran teks, mode USD/IDR): panel TIDAK ditutup, tanda centang langsung
+// pindah ke pilihan baru sehingga user bisa mencoba beberapa pilihan sambil melihat hasilnya.
+function markPicked(btn) {
+  const group = btn.parentElement ? [...btn.parentElement.children].filter(b => b.dataset && b.dataset.pick === btn.dataset.pick) : [btn]
+  group.forEach(b => {
+    const on = b === btn
+    b.classList.toggle('border-gold/60', on); b.classList.toggle('bg-gold/10', on)
+    const dot = b.firstElementChild
+    if (dot) {
+      dot.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ' + (on ? 'border-gold bg-gold text-bg' : 'border-line/30')
+      dot.innerHTML = on ? icon('check', 'h-3 w-3') : ''
+    }
+  })
+}
 export function openLayoutPicker() {
   const sheet = openSheet('Tata letak', h('div', { class: 'flex flex-col gap-1.5' },
     h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih bagian yang ingin ditampilkan. Diingat di perangkat ini.'),
     LAYOUTS.map(([id, label, note]) => h('button', {
       class: 'tile flex items-center gap-3 px-3 py-2.5 text-left ' + (id === layout ? 'border-gold/60 bg-gold/10' : ''),
-      onclick: () => { setLayout(id); sheet.close() }
+      'data-pick': 'layout',
+      onclick: e => { const b = e.currentTarget; markPicked(b); setLayout(id) }
     },
       h('span', { class: 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ' + (id === layout ? 'border-gold bg-gold text-bg' : 'border-line/30'), html: id === layout ? icon('check', 'h-3 w-3') : '' }),
       h('span', { class: 'min-w-0' },
@@ -434,7 +472,7 @@ export function openLayoutPicker() {
     (() => {
       const t = h('input', { type: 'checkbox', class: 'toggle' })
       t.checked = priceCompact()
-      t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
+      t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} smoothLayout(() => { applyLayout(); fitChart() }) })
       return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
@@ -447,17 +485,48 @@ export function openLayoutPicker() {
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
       const side = histSide()
-      const pick = v => { try { localStorage.setItem('histSide', v ? '1' : '0') } catch (e) {} applyLayout(); fitChart(); sheet.close() }
+      const pick = (v, e) => {
+        try { localStorage.setItem('histSide', v ? '1' : '0') } catch (x) {}
+        const seg = e.currentTarget.parentElement
+        ;[...seg.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === (v ? 0 : 1))))
+        smoothLayout(() => { applyLayout(); fitChart() })
+      }
       return h('div', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
           h('span', { class: 'block text-[11px] text-muted' }, 'Saat grafik & riwayat tampil sekaligus')),
         h('div', { class: 'seg shrink-0' },
-          h('button', { 'aria-pressed': String(side), onclick: () => pick(true) }, 'Di samping'),
-          h('button', { 'aria-pressed': String(!side), onclick: () => pick(false) }, 'Di bawah')))
+          h('button', { 'aria-pressed': String(side), onclick: e => pick(true, e) }, 'Di samping'),
+          h('button', { 'aria-pressed': String(!side), onclick: e => pick(false, e) }, 'Di bawah')))
     })() : null), { peek: true })
 }
-function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
+function fitChart() { fitClock(); fitPriceOnly(); fitChartBox(); fitHist() }
+// Jam (kotak PROMO + jam di baris bawah) membesar mengisi ruang kosong di kiri-kanannya, tetap
+// menyisakan tempat untuk kotak info & Max/Min. Dihitung ulang tiap ukuran layar berubah.
+function fitClock() {
+  const row = $('#clockRow'), mid = $('#clockMid'), num = $('#clockNum'), promo = $('#promoStatus')
+  if (!row || !mid || !num || !document.body.classList.contains('price-compact') || !mid.offsetWidth) {
+    if (num) num.style.removeProperty('font-size')
+    if (promo) promo.style.removeProperty('font-size')
+    return
+  }
+  num.style.removeProperty('font-size'); promo.style.removeProperty('font-size')
+  const cs = getComputedStyle(row)
+  const inner = row.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+  const gap = parseFloat(cs.columnGap) || 0
+  const w = mid.getBoundingClientRect().width / (row.getBoundingClientRect().width / row.offsetWidth || 1)
+  const side = Math.max(($('#infoBox') || {}).offsetWidth || 0, ($('#hiloBox') || {}).offsetWidth || 0)
+  // ruang yang boleh dipakai jam: semua sisa kecuali kolom kiri/kanan (+ jarak aman)
+  const room = inner - 2 * (side + gap) - 12
+  // jam tidak boleh lebih dari 1,6x angka harga Beli (supaya tetap serasi, harga tetap utama)
+  const base = parseFloat(getComputedStyle(num).fontSize)
+  const beli = parseFloat(getComputedStyle($('#buyPrice')).fontSize) || base
+  const scale = Math.max(1, Math.min(room / w * 0.85, (beli * 1.6) / base, 1.8))
+  if (scale > 1.02) {
+    num.style.setProperty('font-size', (base * scale).toFixed(1) + 'px', 'important')
+    promo.style.setProperty('font-size', (parseFloat(getComputedStyle(promo).fontSize) * Math.min(scale, 1.35)).toFixed(1) + 'px', 'important')
+  }
+}
 // Tinggi menu bawah (0 di desktop, dan saat disembunyikan karena layar lama tidak disentuh)
 function navH() { return document.body.classList.contains('nav-idle') ? 0 : $('#bottomNav').offsetHeight }
 // Tinggi kotak riwayat untuk n baris: judul + kepala tabel + n baris + tombol halaman (kalau tampil)
@@ -482,6 +551,29 @@ function histRowsHeight(n) {
   const rowH = tr ? tr.getBoundingClientRect().height : (wide() ? 48 : 44)
   const pg = pager && pager.offsetParent ? pager.offsetHeight : 0
   return Math.round(title + head + rowH * n + pg + 3)
+}
+// Tinggi kotak riwayat untuk n baris, dihitung dari bagian-bagiannya (judul + kepala tabel + n baris +
+// tombol halaman) — TIDAK bergantung tinggi kotak saat ini, jadi ukuran grafik stabil walau user memilih
+// banyak baris atau data riwayat belum termuat (baris "Memuat..." yang tinggi tidak ikut dihitung).
+function histBaseHeight(n) {
+  const sec = $('#sec-riwayat')
+  if (!sec) return 0
+  const vh = el => (el ? el.getBoundingClientRect().height : 0)
+  const title = vh(sec.firstElementChild)
+  const head = vh($('#histHead')) || 28
+  const tr = $('#histBody tr')
+  const real = tr && !tr.querySelector('td[colspan]')
+  // tinggi baris asli diingat (per lebar layar) supaya perkiraan sebelum data termuat sudah tepat -> grafik tidak melompat
+  const key = 'histRowH_' + Math.round(window.innerWidth / 50)
+  let rowH = real ? vh(tr) : 0
+  try {
+    if (rowH) localStorage.setItem(key, String(Math.round(rowH)))
+    else rowH = +localStorage.getItem(key) || 0
+  } catch (e) {}
+  if (!rowH) rowH = (window.innerWidth < 768 ? 46 : 40) * (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')) || 1)
+  const pager = $('#histPager')
+  const pg = pager && pager.offsetParent ? vh(pager) : 0
+  return Math.round(title + head + rowH * n + pg + 4)
 }
 // HP: menu bawah disembunyikan setelah 5 detik layar tidak disentuh -> grafik lebih besar.
 // Sentuh / geser / gerak mouse -> menu muncul lagi.
@@ -543,7 +635,7 @@ function fitChartBox() {
     // Ukuran grafik dihitung dari jumlah baris bawaan (HP 2, tablet 3, desktop 4). Pilih lebih banyak baris:
     // grafik TIDAK mengecil, kotak riwayat memanjang ke bawah (halaman digulir untuk melihatnya).
     const base = !matchMedia('(min-width: 768px)').matches ? 2 : !matchMedia('(min-width: 1280px)').matches ? 3 : 4
-    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(Math.min(nRows, base)) - gap)) + 'px'
+    box.style.height = Math.max(180, Math.round(rest - histBaseHeight(Math.min(nRows, base)) - gap)) + 'px'
     return
   }
   const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
@@ -565,8 +657,9 @@ async function syncTime() { try { const d = await (await fetch('/time')).json();
 function tick() {
   const now = new Date(Date.now() + offset)
   const s = now.getSeconds()
-  $('#clkH').textContent = pad2(now.getHours())
-  $('#clkM').textContent = pad2(now.getMinutes())
+  // jam & menit bergulir halus saat berganti
+  rollText($('#clkH'), pad2(now.getHours()), 1)
+  rollText($('#clkM'), pad2(now.getMinutes()), 1)
   const sEl = $('#clkS')
   // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
   if (sEl.textContent !== pad2(s)) {
@@ -584,7 +677,7 @@ function tick() {
 // ===================================================================== PEMBERITAHUAN ADMIN
 function showNotice(d) {
   const color = { promo: 'border-up/40 bg-up/10', warning: 'border-gold/40 bg-gold/10', urgent: 'border-down/40 bg-down/10' }[d.notifType] || 'border-sky/40 bg-sky/10'
-  const card = h('div', { class: 'flex items-start gap-3 rounded-2xl border p-3 ' + color },
+  const card = h('div', { class: 'anim-msg flex items-start gap-3 rounded-2xl border p-3 ' + color },
     h('div', { class: 'min-w-0 flex-1' }, h('div', { class: 'text-sm font-extrabold' }, d.title || 'Info'), h('div', { class: 'mt-0.5 whitespace-pre-line text-sm text-muted' }, d.message || '')),
     h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Tutup', html: icon('close', 'h-4 w-4'), onclick: () => card.remove() }))
   $('#notifs').prepend(card)
@@ -659,7 +752,8 @@ function placeNav() {
   const top = $('#topNav')
   if (!top) return
   const to = top
-  ;['promo', 'news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
+  // tombol Promo tidak ditampilkan di bar atas (daftar promo ada di menu pengaturan)
+  ;['news', 'lainnya'].forEach(k => { const b = document.querySelector('[data-nav="' + k + '"]'); if (b && b.parentNode !== to) to.append(b) })
 }
 window.addEventListener('resize', placeNav)
 // tab aktif mengikuti bagian yang sedang terlihat
@@ -698,6 +792,22 @@ async function start() {
   applyLayout()
   $('#btnLayout').innerHTML = icon('panels', 'h-4 w-4') + '<span class="hidden lg:inline">Tata letak</span>'
   $('#btnLayout').addEventListener('click', openLayoutPicker)
+  // HP: tombol Tata letak diganti sakelar mode gelap/terang (Tata letak tetap ada di menu pengaturan)
+  {
+    const sw = h('button', { id: 'btnTheme', class: 'theme-switch', type: 'button', 'aria-label': 'Ganti mode gelap / terang', title: 'Mode gelap / terang' },
+      h('span', { class: 'theme-knob', html: icon('moon', 'h-3.5 w-3.5 knob-moon') + icon('sun', 'h-3.5 w-3.5 knob-sun') }))
+    const sync = () => sw.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'))
+    sync()
+    // mode diganti dari mana pun (menu pengaturan / sakelar) -> posisi sakelar ikut
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    sw.addEventListener('click', () => {
+      const r = sw.getBoundingClientRect()
+      // grafik ditukar di dalam animasi yang sama (grafik tema lain sudah disiapkan di belakang)
+      toggleTheme({ origin: { x: r.left + r.width / 2, y: r.top + r.height / 2 }, after: loadChart })
+      sync()
+    })
+    $('#btnLayout').after(sw)
+  }
   applyHistSize()
   applyIdrMode()
   // USD/IDR: kotak ke-3 sejajar Beli/Jual di semua ukuran layar
@@ -740,7 +850,7 @@ async function start() {
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ openPromos, refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()
@@ -756,6 +866,19 @@ async function start() {
     fitChart()
     setTimeout(renewReminder, 2500)
     // Pengguna baru: panduan penggunaan wajib tampil dulu, baru pertanyaan gabung grup WA
+    // ajakan pasang aplikasi (maks. sekali tiap 3 hari, tidak muncul bila sudah terpasang / saat panduan)
+    scheduleInstallInvite(tourDone() ? 40000 : 90000)
+    // baru dipasang & dibuka dari layar utama: tawarkan notifikasi harga sekali
+    if (isInstalled() && 'Notification' in window && Notification.permission === 'default') {
+      let asked = false
+      try { asked = localStorage.getItem('pushAskInstalled') === '1' } catch (e) {}
+      if (!asked) setTimeout(async () => {
+        try { localStorage.setItem('pushAskInstalled', '1') } catch (e) {}
+        const ok = await confirmDialog('Aplikasi sudah terpasang. Aktifkan notifikasi supaya mendapat kabar harga naik/turun & promo walau aplikasi ditutup?', { title: 'Notifikasi harga', ok: 'Aktifkan', cancel: 'Nanti' })
+        if (!ok) return
+        if ((await Notification.requestPermission()) === 'granted') toast((await subscribePush()) ? 'Notifikasi harga aktif' : 'Notifikasi aktif di perangkat ini', 'success')
+      }, 8000)
+    }
     if (tourDone()) setTimeout(() => joinGroup(true), 6000)
     else setTimeout(() => startTour(true).then(() => setTimeout(() => joinGroup(true), 1500)), 1500)
     getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})
@@ -810,4 +933,4 @@ async function start() {
 start()
 
 // Uji tampilan lokal saja (localhost): simulasi perubahan harga / kurs tanpa menunggu pasar
-if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators, renderSisaHari }
+if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators, renderSisaHari, setPromoStatus, setLayout }

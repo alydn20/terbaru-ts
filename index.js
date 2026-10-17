@@ -55,11 +55,23 @@ let _signalDecryptFails = 0
       orig(...args)
     }
   }
+  // Badai "Bad MAC" (mis. 17/10 18:53: 81 gagal/menit dari perangkat bot sendiri setelah restart) membuat
+  // CPU 100% dan server macet. Kalau >= 40 gagal per menit 2 kali berturut-turut, sesi enkripsi
+  // diperbaiki otomatis (hapus session & sender-key, tanpa logout / scan QR). Maks sekali per jam.
+  let _decryptStorm = 0
   setInterval(() => {
+    _decryptStorm = _signalDecryptFails >= 40 ? _decryptStorm + 1 : 0
     if (_signalDecryptFails > 0) {
       try { pushLog(`WA | ${_signalDecryptFails} pesan gagal didekripsi (Bad MAC) dalam 1 menit terakhir`) } catch (_) {}
       _signalDecryptFails = 0
     }
+    try {
+      if (_decryptStorm >= 2 && sock && sock.user && Date.now() - _lastWaAutoRepair > 3600000) {
+        _lastWaAutoRepair = Date.now()
+        _decryptStorm = 0
+        repairWaSession('Otomatis (badai Bad MAC, server melambat)').catch(e => pushLog('WA | Auto-repair error: ' + e.message))
+      }
+    } catch (_) {}
   }, 60000)
 }
 
@@ -2949,8 +2961,18 @@ setTimeout(() => {
 // Cooldown TERPISAH untuk price dan promo agar tidak saling blocking
 let lastPricePushTime = 0
 let lastPromoPushTime = 0
-const PRICE_PUSH_COOLDOWN = 60000 // 1 menit untuk price
+const PRICE_PUSH_COOLDOWN = 40000 // 40 dtk: harga berubah ~tiap menit; 60 dtk dulu membuat notif terlewat
 const PROMO_PUSH_COOLDOWN = 300000 // 5 menit untuk promo (karena hanya saat status berubah)
+
+// Isi notifikasi harga yang sama di semua jalur: "Harga emas NAIK ▲ +312" / isi "Beli Rp2.470.021 (+312)
+// · Jual Rp2.386.288 (+366)". Notifikasi baru menggantikan yang lama (tag sama), jadi yang tampil selalu terbaru.
+function pricePushText(price, change) {
+  const b = Math.round(change.buyChange || 0), s = Math.round(change.sellChange || 0)
+  const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '') + formatRupiah(Math.abs(v))
+  const title = 'Harga emas ' + (b > 0 ? 'NAIK ▲ ' : b < 0 ? 'TURUN ▼ ' : 'tetap ') + (b ? sign(b) : '')
+  const body = 'Beli Rp' + formatRupiah(price.buy) + ' (' + sign(b) + ')\nJual Rp' + formatRupiah(price.sell) + ' (' + sign(s) + ')'
+  return { title: title.trim(), body }
+}
 
 async function sendPushToAll(title, body, type = 'price') {
   pushLog(`📱 PUSH | Attempting: "${title}" (type: ${type})`)
@@ -2990,8 +3012,8 @@ async function sendPushToAll(title, body, type = 'price') {
     const payload = JSON.stringify({
       title,
       body,
-      icon: '/icon.png?v=2',
-      badge: '/icon.png?v=2',
+      icon: '/icon-192.png?v=4',
+      badge: '/badge-96.png?v=4', // ikon kecil bilah status Android: P putih transparan (dulu kotak putih polos)
       type,
       url: '/monitoring'
     })
@@ -3051,7 +3073,7 @@ async function sendRenewReminders() {
       const payload = JSON.stringify({
         title: hari <= 1 ? 'Masa aktif habis besok' : 'Masa aktif tinggal ' + hari + ' hari',
         body: 'Ketuk untuk perpanjang: bayar QRIS lalu upload bukti, langsung dari website.',
-        icon: '/icon.png?v=2', badge: '/icon.png?v=2', type: 'info', url: '/monitoring?perpanjang=1'
+        icon: '/icon-192.png?v=4', badge: '/badge-96.png?v=4', type: 'info', url: '/monitoring?perpanjang=1'
       })
       const subscription = typeof subRaw === 'string' ? JSON.parse(subRaw) : subRaw
       await webpush.sendNotification(subscription, payload).then(() => { n++ }).catch(async e => {
@@ -3389,11 +3411,8 @@ async function checkPriceUpdate() {
     doBroadcastInstant(message)
 
     // 📱 PUSH NOTIFICATION - Kirim ke HP walaupun browser tertutup
-    const buyDir = finalPriceChange.buyChange > 0 ? '📈' : '📉'
-    const sellDir = finalPriceChange.sellChange > 0 ? '📈' : '📉'
-    const pushTitle = `${buyDir} Harga Emas Update`
-    const pushBody = `Beli: Rp ${currentPrice.buy.toLocaleString('id-ID')} (${finalPriceChange.buyChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.buyChange)})\nJual: Rp ${currentPrice.sell.toLocaleString('id-ID')} (${finalPriceChange.sellChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.sellChange)})`
-    sendPushToAll(pushTitle, pushBody, 'price').catch(() => {})
+    const pp = pricePushText(currentPrice, finalPriceChange)
+    sendPushToAll(pp.title, pp.body, 'price').catch(() => {})
 
   } catch (e) {
     // Track error per interval
@@ -3618,10 +3637,9 @@ async function fastPoll(treasuryData, _fetchMs) {
           doBroadcastInstant(waMessage)
 
           // Push notification ke HP
-          const buyDir = finalPriceChange.buyChange > 0 ? '📈' : '📉'
-          const pushTitle = `${buyDir} Harga Emas Update`
-          const pushBody = `Beli: Rp ${currentPrice.buy.toLocaleString('id-ID')} (${finalPriceChange.buyChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.buyChange)})`
-          sendPushToAll(pushTitle, pushBody, 'price').catch(() => {})
+          // sama dengan jalur utama: Beli & Jual lengkap (dulu jalur ini hanya Beli)
+          const pp = pricePushText(currentPrice, finalPriceChange)
+          sendPushToAll(pp.title, pp.body, 'price').catch(() => {})
         }
       }
     } else {
@@ -5200,6 +5218,20 @@ try {
 } catch (e) {
 }
 
+// Ikon aplikasi terpasang (PWA): 192/512 sudut membulat ('any'), maskable kotak penuh (Android memotong
+// sendiri bentuknya), apple-touch-icon kotak penuh tanpa transparansi (iPhone membulatkan sendiri).
+const APP_ICONS = {}
+for (const f of ['icon-192.png', 'icon-512.png', 'icon-maskable.png', 'apple-touch-icon.png', 'badge-96.png']) {
+  try { APP_ICONS[f] = readFileSync(join(__dirname, f)) } catch (e) {}
+}
+app.get(['/icon-192.png', '/icon-512.png', '/icon-maskable.png', '/apple-touch-icon.png', '/badge-96.png'], (req, res) => {
+  const buf = APP_ICONS[req.path.slice(1)]
+  if (!buf) return res.status(404).send('Icon not found')
+  res.setHeader('Content-Type', 'image/png')
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(buf)
+})
+
 app.get('/icon.png', (_req, res) => {
   if (iconBuffer) {
     res.setHeader('Content-Type', 'image/png')
@@ -5243,25 +5275,13 @@ app.get('/manifest.json', (req, res) => {
     display: 'standalone',
     background_color: '#0f1419',
     theme_color: '#f7931a',
+    // ikon terpisah per keperluan (dulu satu file 512px dipakai untuk semua & ditandai 'any maskable',
+    // sehingga logo terpotong / sudut berwarna aneh saat dipasang di sebagian HP)
     icons: [
-      {
-        src: '/icon-rounded.svg?v=3',
-        sizes: 'any',
-        type: 'image/svg+xml',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icon.png?v=3',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icon.png?v=3',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any maskable'
-      }
+      { src: '/icon-192.png?v=4', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-rounded.svg?v=4', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
     ],
     related_applications: [
       {
@@ -5278,7 +5298,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v14';
+    const CACHE_VERSION = 'gold-monitor-v16';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -5299,6 +5319,17 @@ app.get('/sw.js', (_req, res) => {
       );
     });
 
+    function offlinePage(busy) {
+      const html = '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+        '<title>' + (busy ? 'Server sibuk' : 'Tidak ada koneksi') + '</title><style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#e7e9ea;' +
+        'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:24px}@media(prefers-color-scheme:light){body{background:#eef2ff;color:#0f172a}}' +
+        'h1{font-size:1.15rem;margin:0 0 8px}p{margin:0 0 18px;color:#8c8c8c;font-size:.95rem;line-height:1.5}button{border:0;border-radius:12px;padding:12px 22px;' +
+        'font-weight:800;background:#f7931a;color:#000;font-size:.95rem}</style></head><body><div><h1>' + (busy ? 'Server sedang sibuk' : 'Tidak ada koneksi internet') + '</h1>' +
+        '<p>' + (busy ? 'Mencoba lagi otomatis tiap beberapa detik, tidak perlu refresh.' : 'Halaman akan terbuka otomatis saat sinyal kembali.') + '</p><button onclick="location.reload()">Coba lagi</button></div>' +
+        '<script>addEventListener("online",function(){location.reload()});setInterval(function(){if(navigator.onLine)fetch("/health",{cache:"no-store"}).then(function(r){if(r.ok)location.reload()}).catch(function(){})},5000)<\/script></body></html>';
+      return new Response(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    }
+
     self.addEventListener('fetch', (e) => {
       // Jangan intercept URL eksternal - biarkan browser handle sendiri
       if (!e.request.url.startsWith(self.location.origin)) return;
@@ -5310,16 +5341,49 @@ app.get('/sw.js', (_req, res) => {
         || url.includes('/monitoring') || url.includes('/login') || url.includes('/install')
         || url.includes('/price-history') || url.includes('/api/')
         || url.includes('/stats') || url.includes('/health');
+      // Halaman (buka / muat ulang): ambil dari internet; kalau tidak ada sinyal pakai salinan terakhir
+      // yang tersimpan, kalau belum ada tampilkan halaman "Tidak ada koneksi" yang mencoba lagi sendiri
+      // (dulu: tulisan polos "Service unavailable").
+      // Server sibuk / gangguan (502, 503, 504, 520-524 dari Cloudflare): jangan tampilkan halaman
+      // error mentah ("Service unavailable") — pakai salinan terakhir, atau halaman yang mencoba lagi sendiri.
+      if (e.request.method === 'GET' && e.request.mode === 'navigate') {
+        const key = new URL(url).pathname;
+        e.respondWith(
+          fetch(e.request).then((res) => {
+            if (res && res.status >= 500) return caches.match(key).then((hit) => hit || offlinePage(true));
+            if (res && res.ok && res.type === 'basic') {
+              const copy = res.clone();
+              caches.open(CACHE_VERSION).then((c) => c.put(key, copy)).catch(() => {});
+            }
+            return res;
+          }).catch(() => caches.match(key).then((hit) => hit || offlinePage(false)))
+        );
+        return;
+      }
+      // Tampilan baru (CSS/JS/suara): internet dulu, tidak ada sinyal pakai salinan tersimpan
+      if (e.request.method === 'GET' && url.includes('/ui-baru/')) {
+        e.respondWith(
+          fetch(e.request).then((res) => {
+            if (res && res.ok && res.type === 'basic') {
+              const copy = res.clone();
+              caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy)).catch(() => {});
+            }
+            return res;
+          }).catch(() => caches.match(e.request).then((hit) => hit || new Response('', { status: 503 })))
+        );
+        return;
+      }
       if (noCache) {
         e.respondWith(
           fetch(e.request).catch(() => {
+            // offline: tandai jelas sebagai gangguan jaringan (BUKAN sesi tidak valid)
             if (url.includes('/api/')) {
-              return new Response(JSON.stringify({ success: false, error: 'Network error' }), {
+              return new Response(JSON.stringify({ success: false, offline: true, error: 'Network error' }), {
                 status: 503,
                 headers: { 'Content-Type': 'application/json' }
               });
             }
-            return new Response('Service unavailable', { status: 503 });
+            return new Response('', { status: 503 });
           })
         );
         return;
@@ -5346,8 +5410,8 @@ app.get('/sw.js', (_req, res) => {
 
       const options = {
         body: data.body,
-        icon: data.icon || '/icon.png?v=2',
-        badge: data.badge || '/icon.png?v=2',
+        icon: data.icon || '/icon-192.png?v=4',
+        badge: data.badge || '/badge-96.png?v=4',
         vibrate: [200, 100, 200],
         tag: data.type || 'notification',
         renotify: true,

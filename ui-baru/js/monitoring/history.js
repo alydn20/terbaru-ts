@@ -45,7 +45,24 @@ function renderHead() {
 }
 
 function empty(text) {
-  $('#histBody').replaceChildren(h('tr', {}, h('td', { colspan: 20, class: 'px-4 py-8 text-center text-sm text-muted' }, text)))
+  // sedang memuat: baris kerangka berkilau (bukan tulisan "Memuat...")
+  if (/^Memuat/i.test(text)) {
+    $('#histBody').replaceChildren(...[0, 1, 2].map(() => h('tr', { class: 'skel-row' },
+      h('td', { colspan: 20, class: 'px-3 py-2' }, h('div', { class: 'skel h-7 w-full' })))))
+    return
+  }
+  $('#histBody').replaceChildren(h('tr', {}, h('td', { colspan: 20, class: 'anim-fade-in px-4 py-8 text-center text-sm text-muted' }, text)))
+}
+// Baris riwayat baru (harga berubah) masuk dari atas dengan halus; ganti halaman / tab memudar masuk
+let lastTopKey = ''
+function animateRows(rows, append) {
+  if (!rows.length || append) return
+  const key = rows[0].textContent.slice(0, 24)
+  // baris terbaru (halaman pertama) selalu diberi warna tipis; saat baru masuk menyala beberapa detik
+  if (narrow() || page === 1) rows[0].classList.add('row-latest')
+  if (lastTopKey && key !== lastTopKey && page === 1) rows[0].classList.add('row-new')
+  else if (!lastTopKey || key !== lastTopKey) rows.forEach((r, i) => { r.classList.add('row-in'); r.style.animationDelay = Math.min(i, 8) * 25 + 'ms' })
+  lastTopKey = key
 }
 
 function idrCell(rate, prev) {
@@ -88,6 +105,7 @@ function renderPriceRows(items, append) {
           h('div', { class: 'num text-[11px] font-bold ' + (p.profit >= 0 ? 'text-up' : 'text-down') }, (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit))))
       }))
   })
+  animateRows(rows, append)
   if (append) $('#histBody').append(...rows)
   else $('#histBody').replaceChildren(...rows)
 }
@@ -99,6 +117,7 @@ function renderUsdRows() {
     h('td', { class: 'px-3 py-2 font-mono text-xs text-muted' }, typeof item.time === 'string' ? item.time.substring(11, 19) : '—'),
     h('td', { class: 'num px-3 py-2 font-mono font-bold' }, 'Rp' + num(item.rate)),
     h('td', { class: 'px-3 py-2' }, changeEl(Math.round(item.change || 0)) || h('span', { class: 'text-muted' }, '—'))))
+  animateRows(rows, false)
   $('#histBody').replaceChildren(...rows)
 }
 
