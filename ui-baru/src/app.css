@@ -350,3 +350,20 @@ body.price-compact .clock-pill { padding: 0.15rem 0.7rem; }
 /* Label info: HP singkat (IDR, Max, Min, MD, Spr, ON), tablet & desktop lengkap */
 .lbl-l { display: none; }
 @media (min-width: 768px) { .lbl-s { display: none; } .lbl-l { display: inline; } }
+
+/* Baris atas: jam, PROMO, USD/IDR. Tablet: jam di tengah (PROMO kiri, USD/IDR kanan).
+   HP: PROMO cukup "ON/OFF" dan USD/IDR lebih kecil supaya muat satu baris. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  #promoStatus { order: -1; }
+  #clockRow { justify-content: center; }
+}
+@media (max-width: 767px) {
+  #clockRow { flex-wrap: nowrap; gap: 0.4rem; }
+  body #clockRow .stat.usd-pill { padding: 0.15rem 0.55rem; gap: 0.3rem; }
+  body #clockRow .usd-pill .stat-k { font-size: 9px !important; }
+  body #clockRow .usd-pill .stat-v { font-size: 0.95rem !important; }
+  #promoStatus { padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
+}
+@media (max-width: 359px) {
+  body #clockRow .usd-pill .stat-k { display: none; }
+}

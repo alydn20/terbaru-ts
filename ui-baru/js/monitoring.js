@@ -230,7 +230,7 @@ function renderTitikOn() {
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
   el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
-  el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span>PROMO ' + (status === 'ON' ? 'ON' : 'OFF')
+  el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span><span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
 }
@@ -678,20 +678,9 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
-  // USD/IDR: kotak paling depan di baris info, sedikit lebih besar (baris jam hanya jam + PROMO)
+  // USD/IDR: di baris atas bersama jam & PROMO (semua ukuran layar), sedikit lebih kecil dari Beli/Jual
   const usd = $('#chipUsd')
-  if (usd) {
-    usd.classList.add('usd-pill')
-    // Tablet & desktop (>= 768px): IDR naik ke baris atas sesudah PROMO, lebih besar dari info lain (tetap lebih kecil dari Beli/Jual)
-    const mq = matchMedia('(min-width: 768px)')
-    const placeUsd = () => {
-      if (mq.matches) { if (usd.parentElement !== $('#clockRow')) $('#clockRow').append(usd) }
-      else if (usd.parentElement !== $('#chips')) $('#chips').prepend(usd)
-      fitChart()
-    }
-    placeUsd()
-    mq.addEventListener('change', placeUsd)
-  }
+  if (usd) { usd.classList.add('usd-pill'); $('#clockRow').append(usd) }
   applyChipPrefs()
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
