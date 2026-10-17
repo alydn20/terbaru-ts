@@ -1,5 +1,6 @@
 // Pembayaran QRIS: dipakai untuk daftar baru (halaman login) dan perpanjang (monitoring).
-// Alur: buat order -> tampilkan QRIS + nominal unik -> upload bukti -> pantau status sampai lunas/ditolak.
+// Alur: tombol "Tampilkan QRIS" -> buat order -> QRIS + nominal unik -> upload bukti -> pantau sampai lunas/ditolak.
+// QRIS baru dibuat setelah tombol ditekan (tidak setiap kali halaman dibuka), supaya order tidak menumpuk.
 import { h, icon, rp, session, confirmDialog, shrinkImage, contactAdmin } from './api.js'
 
 /**
@@ -12,6 +13,7 @@ export function mountPayment(root, opts) {
   let timer = null
   let uploading = false
   let loadToken = 0
+  let started = false
   const stop = () => { if (timer) clearInterval(timer); timer = null }
 
   const chooser = h('div', { class: 'mb-4' })
@@ -26,14 +28,26 @@ export function mountPayment(root, opts) {
       h('div', { class: 'grid grid-cols-3 gap-2' }, opts.monthOptions.map(m =>
         h('button', {
           class: 'rounded-xl border px-2 py-2.5 text-center transition ' + (m === active ? 'border-gold bg-gold text-bg' : 'border-line/[0.12] bg-card2'),
-          onclick: () => load(m)
+          onclick: () => (started ? load(m) : showStart(m))
         },
         h('div', { class: 'text-sm font-extrabold' }, m + ' bulan'),
         h('div', { class: 'num text-[11px] font-semibold opacity-80' }, rp((opts.pricePerMonth || 0) * m))))))
   }
 
+  // ---------- sebelum QRIS: ringkasan + tombol "Tampilkan QRIS" ----------
+  function showStart(months) {
+    renderChooser(months)
+    const total = (opts.pricePerMonth || 0) * months
+    box.replaceChildren(h('div', { class: 'tile p-4 text-center' },
+      total ? h('div', { class: 'label mb-1' }, 'Total bayar') : '',
+      total ? h('div', { class: 'num mb-3 text-2xl font-extrabold text-gold' }, rp(total)) : '',
+      h('button', { class: 'btn-gold w-full py-3.5 text-base', onclick: () => load(months), html: icon('qr') + '<span>Tampilkan QRIS</span>' }),
+      h('div', { class: 'mt-2 text-xs text-muted' }, 'Nominal unik muncul bersama QRIS. Bayar persis sesuai nominal itu.')))
+  }
+
   // ---------- buat / ambil order ----------
   async function load(months) {
+    started = true
     const token = ++loadToken
     stop()
     renderChooser(months)
@@ -147,6 +161,6 @@ export function mountPayment(root, opts) {
     if (opts.onPaid) opts.onPaid(activeUntil)
   }
 
-  load(opts.months || 1)
+  showStart(opts.months || 1)
   return stop
 }

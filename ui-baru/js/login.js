@@ -154,14 +154,30 @@ async function startPayment(p, expired) {
   msg('')
   $('#payTitle').textContent = expired ? 'Masa aktif habis' : 'Nomor belum terdaftar'
   $('#payDesc').textContent = expired
-    ? 'Perpanjang lewat QRIS: ' + 'Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, masuk dengan PIN lama Anda.'
-    : 'Daftar lewat QRIS: Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, verifikasi nomor lewat WhatsApp lalu buat PIN Anda.'
+    ? 'Perpanjang lewat QRIS: Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, langsung masuk dengan PIN Anda.'
+    : 'Daftar lewat QRIS: Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, langsung buat PIN Anda.'
   show('pay')
   stopPay = mountPayment($('#payBox'), {
     phone: '62' + p,
     renew: expired,
     months: 1,
-    onPaid: () => setTimeout(() => { msg('Pembayaran diterima. Silakan masuk.', 'success'); show('phone'); $('#phone').value = p }, 2500)
+    pricePerMonth: cfg.price,
+    // pembayaran diterima (otomatis / di-ACC admin): lanjut sendiri tanpa mengetik nomor lagi
+    onPaid: () => setTimeout(() => {
+      phone = p
+      if (expired) {
+        // perpanjang: langsung ke PIN
+        $('#userName').textContent = 'Masa aktif diperpanjang'
+        $('#userPhone').textContent = '+62' + p
+        msg('Pembayaran diterima. Masukkan PIN Anda.', 'success')
+        show('pin')
+        setTimeout(() => $('#pin').focus(), 50)
+      } else {
+        // akun baru: langsung buat PIN
+        msg('Pembayaran diterima. Akun aktif.', 'success')
+        openNewPin(false)
+      }
+    }, 2000)
   })
 }
 
