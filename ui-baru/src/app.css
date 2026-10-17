@@ -351,9 +351,9 @@ body.price-compact .clock-pill { padding: 0.15rem 0.7rem; }
 .lbl-l { display: none; }
 @media (min-width: 768px) { .lbl-s { display: none; } .lbl-l { display: inline; } }
 
-/* Baris atas: jam, PROMO, USD/IDR. Tablet: jam di tengah (PROMO kiri, USD/IDR kanan).
+/* Baris atas: jam, PROMO, USD/IDR. HP & tablet: jam di tengah (PROMO kiri, USD/IDR kanan).
    HP: PROMO cukup "ON/OFF" dan USD/IDR lebih kecil supaya muat satu baris. */
-@media (min-width: 768px) and (max-width: 1279px) {
+@media (max-width: 1279px) {
   #promoStatus { order: -1; }
   #clockRow { justify-content: center; }
 }
