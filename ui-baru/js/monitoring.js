@@ -55,23 +55,29 @@ function renderSisaHari() {
   const u = state.user
   if (!u) return
   el.classList.remove('hidden'); el.classList.add('flex')
-  if (!u.expired) { el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
+  if (!u.expired) { el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; el.parentElement.classList.remove('has-renew'); return }
   const ms = Number(u.expired) - Date.now()
   const hari = Math.ceil(ms / 86400000)
   const color = ms <= 0 || hari <= 3 ? 'text-down' : hari <= 7 ? 'text-gold' : 'text-up'
-  const text = ms <= 0 ? 'Masa aktif habis' : hari <= 1 ? 'Sisa ' + Math.max(1, Math.ceil(ms / 3600000)) + ' jam lagi' : 'Sisa ' + hari + ' hari lagi'
+  // HP: singkat ("8 jam", "3 hari", "Habis"); tablet & desktop: lengkap ("Sisa 8 jam lagi")
+  const jam = Math.max(1, Math.ceil(ms / 3600000))
+  const pendek = ms <= 0 ? 'Habis' : hari <= 1 ? jam + ' jam' : hari + ' hari'
+  const panjang = ms <= 0 ? 'Masa aktif habis' : hari <= 1 ? 'Sisa ' + jam + ' jam lagi' : 'Sisa ' + hari + ' hari lagi'
   const wajib = ms <= 0 || hari <= 7
   let hidden = false
   try { hidden = !wajib && localStorage.getItem(CTA_HIDE) === String(u.expired) } catch (e) {}
-  el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold ' + color
+  el.className = 'mt-0.5 flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold lg:gap-1.5 lg:text-xs ' + color
   el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
-  el.replaceChildren(h('span', {}, text))
+  el.replaceChildren(h('span', { class: 'lbl-s' }, pendek), h('span', { class: 'lbl-l' }, panjang))
+  // tombol Perpanjang tampil: tanggal di bar atas disembunyikan di HP kecil supaya tidak terpotong "..."
+  el.parentElement.classList.toggle('has-renew', !hidden)
   if (!hidden) {
-    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full bg-gold px-2 py-0.5 text-[11px] font-extrabold text-bg' }, 'Perpanjang')
+    // sisa <= 7 hari / habis: merah & berkedip pelan (mendesak); selain itu emas biasa
+    const pill = h('span', { class: 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold lg:text-[11px] ' + (wajib ? 'renew-urgent bg-down text-white' : 'bg-gold text-bg') }, 'Perpanjang')
     if (!wajib) {
       pill.append(h('span', {
         class: 'ml-0.5 cursor-pointer opacity-70', role: 'button', 'aria-label': 'Tutup',
-        onclick: e => { e.stopPropagation(); try { localStorage.setItem(CTA_HIDE, String(u.expired)) } catch (x) {} pill.remove() }
+        onclick: e => { e.stopPropagation(); try { localStorage.setItem(CTA_HIDE, String(u.expired)) } catch (x) {} pill.remove(); el.parentElement.classList.remove('has-renew') }
       }, '×'))
     }
     el.append(pill)
@@ -534,7 +540,10 @@ function fitChartBox() {
   const nRows = histRowsSetting()
   if (hpSplit && nRows) {
     const gap = wide() ? 16 : 8
-    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(nRows) - gap)) + 'px'
+    // Ukuran grafik dihitung dari jumlah baris bawaan (HP 2, tablet 3, desktop 4). Pilih lebih banyak baris:
+    // grafik TIDAK mengecil, kotak riwayat memanjang ke bawah (halaman digulir untuk melihatnya).
+    const base = !matchMedia('(min-width: 768px)').matches ? 2 : !matchMedia('(min-width: 1280px)').matches ? 3 : 4
+    box.style.height = Math.max(180, Math.round(rest - histRowsHeight(Math.min(nRows, base)) - gap)) + 'px'
     return
   }
   const h0 = Math.max(hpSplit ? 180 : wide() ? 320 : 220, Math.round(hpSplit ? rest * (wide() ? 0.55 : 0.45) : rest))
@@ -801,4 +810,4 @@ async function start() {
 start()
 
 // Uji tampilan lokal saja (localhost): simulasi perubahan harga / kurs tanpa menunggu pasar
-if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators }
+if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators, renderSisaHari }

@@ -266,7 +266,7 @@ export async function openRenew() {
   if (!cfg || !cfg.enabled) {
     root.replaceChildren(
       h('p', { class: 'mb-3 text-sm text-muted' }, cfg ? 'Pembayaran QRIS sedang tidak aktif. Hubungi admin untuk perpanjang.' : 'Gagal memuat. Coba lagi sebentar lagi.'),
-      cfg ? h('button', { class: 'btn-green w-full', onclick: () => contactAdmin(state.phone, 'Hallo saya (+' + state.phone + ') mau perpanjang masa aktif'), html: icon('wa') + '<span>Chat admin</span>' }) : null)
+      cfg ? h('button', { class: 'btn-green w-full', onclick: () => contactAdmin(state.phone, 'Hallo saya (+' + state.phone + ') mau perpanjang masa aktif'), html: icon('wa') + '<span>Chat admin</span>' }) : '')
     return
   }
   stop = mountPayment(root, {
