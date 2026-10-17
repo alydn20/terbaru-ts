@@ -213,8 +213,8 @@ function renderTitikOn() {
   const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
   if (state.promo === 'OFF' && state.lastOnAt) {
     const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
-    // HP singkat (ON 16/10), tablet & desktop lengkap (Terakhir ON 16-10-2026)
-    lbl.innerHTML = '<span class="lbl-s">ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1) + '</span><span class="lbl-l">Terakhir ON ' + pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear() + '</span>'
+    // singkat di semua ukuran: "ON 16/10" (tanggal & jam lengkap di tooltip)
+    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1)
     val.textContent = state.lastOnPrice ? num(state.lastOnPrice) : '—'
     val.className = 'stat-v text-muted'
     box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
