@@ -430,6 +430,10 @@ let promoLastOnAt = null   // null = belum dimuat dari Redis, 0 = belum pernah t
 const PROMO_LAST_ON_PRICE_KEY = 'gold:promo_last_on_price'
 let promoLastOnPrice = null
 let _promoLastOnSavedAt = 0
+// Harga berubah -> status promo Treasury baru ikut berubah beberapa detik kemudian. Simpan harga ON
+// yang dipegang saat harga berubah, supaya OFF yang menyusul tidak mencatat harga baru sebagai "Terakhir ON".
+let _priceChangedAt = 0
+let _onPriceAtChange = null
 let lowestOnPriceCache = undefined // undefined = belum diload, null = belum ada nilai
 let lowestOnDateWIB = null        // Tanggal WIB (YYYY-MM-DD) saat lowestOnPriceCache dicatat
 let lowestOnPendingTimeout = null // Timeout 20 detik sebelum update titik ON terendah
@@ -2420,6 +2424,9 @@ async function doPromoBroadcast() {
         if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
       }
     } else if (lastPromoStatus === 'ON' && promoLastOnAt) {
+      // OFF datang <= 15 dtk setelah harga berubah: OFF itu milik harga baru, jadi "Terakhir ON" = harga sebelumnya
+      // (contoh 16/10 22:19 ON di 2.475.162, 22:20:02 harga 2.474.013, 22:20:07 OFF -> tetap 2.475.162)
+      if (_onPriceAtChange && now - _priceChangedAt <= 15000) promoLastOnPrice = _onPriceAtChange
       redis.set(PROMO_LAST_ON_KEY, String(promoLastOnAt)).catch(() => {})
       if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
     }
@@ -3521,6 +3528,8 @@ async function fastPoll(treasuryData, _fetchMs) {
     if (isPriceChanged) {
       const _bd = currentPrice.buy - lastKnownPrice.buy
       const _sd = currentPrice.sell - lastKnownPrice.sell
+      _priceChangedAt = Date.now()
+      _onPriceAtChange = lastPromoStatus === 'ON' ? promoLastOnPrice : null
       pushLog(`TREASURY | Harga berubah: Buy ${formatRupiah(lastKnownPrice.buy)}→${formatRupiah(currentPrice.buy)} (${_bd > 0 ? '+' : ''}${formatRupiah(_bd)}) | Sell ${formatRupiah(lastKnownPrice.sell)}→${formatRupiah(currentPrice.sell)} (${_sd > 0 ? '+' : ''}${formatRupiah(_sd)})`)
     }
 

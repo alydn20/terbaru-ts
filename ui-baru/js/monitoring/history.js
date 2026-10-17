@@ -6,7 +6,8 @@ import { state, markupOf, visibleNominals, profitOf } from './state.js'
 let PER_PAGE = 10
 // HP (< 768px): tanpa tombol halaman; riwayat digulir di dalam kotak dan data lama dimuat otomatis
 // (CHUNK baris sekali muat). Bawaan HP 2 baris terlihat supaya grafik besar.
-const narrow = () => !matchMedia('(min-width: 768px)').matches
+// HP & tablet (< 1280px): riwayat ringkas, digulir di dalam kotak tanpa tombol halaman
+const narrow = () => !matchMedia('(min-width: 1280px)').matches
 const CHUNK = 30
 let loadedPages = 0, loadingMore = false
 export function histRowsSetting() {
@@ -16,7 +17,8 @@ export function histRowsSetting() {
     if (v >= 1 && v <= 30) return v
     if (raw === 'auto') return 0
   } catch (e) {}
-  return narrow() ? 2 : 0
+  // default: HP 2 baris, tablet 3 baris, desktop otomatis
+  return !matchMedia('(min-width: 768px)').matches ? 2 : narrow() ? 3 : 0
 }
 export function setHistRows(n) {
   try { localStorage.setItem('histRows', n ? String(n) : 'auto') } catch (e) {}

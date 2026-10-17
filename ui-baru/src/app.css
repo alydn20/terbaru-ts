@@ -120,9 +120,9 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 }
 .st-short { display: none; }
 
-/* HP: tabel riwayat ringkas supaya muat selebar layar (tanpa geser ke samping bila 1 nominal) */
-@media (max-width: 767px) {
-  /* HP: tanpa tombol Lebih baru / Lebih lama; riwayat digulir di dalam kotak */
+/* HP & tablet: tabel riwayat ringkas (baris tipis) supaya muat selebar layar */
+@media (max-width: 1279px) {
+  /* HP & tablet: tanpa tombol Lebih baru / Lebih lama; riwayat digulir di dalam kotak */
   #histPager { display: none !important; }
   #histMode { padding: 2px; }
   #histMode > button { padding: 0.15rem 0.55rem; font-size: 11px; }
@@ -270,4 +270,23 @@ body.price-compact .usd-pill .stat-v { font-size: 0.9rem !important; }
 @media (min-width: 1280px) {
   .usd-pill .stat-v { font-size: 1.25rem; }
   body.price-compact .usd-pill .stat-v { font-size: 1.1rem !important; }
+}
+
+/* Baris info dirapatkan: label & angka sebaris, kotak menyesuaikan isi -> muat 2 baris */
+body:not(.price-compact) #chips { gap: 0.25rem; }
+body:not(.price-compact) #chips .stat { flex: none; flex-direction: row; align-items: baseline; gap: 0.3rem; padding: 0.15rem 0.45rem; border-radius: 0.4rem; }
+body:not(.price-compact) #chips .stat-k { font-size: 8.5px; letter-spacing: 0.02em; }
+body:not(.price-compact) #chips .stat-v { font-size: 11.5px; }
+body:not(.price-compact) #chips .stat.usd-pill { align-items: center; padding: 0.15rem 0.55rem; }
+body:not(.price-compact) #chips .usd-pill .stat-k { font-size: 9px; }
+body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 0.95rem; }
+@media (max-width: 380px) {
+  body:not(.price-compact) #chips .stat { padding: 0.1rem 0.35rem; gap: 0.2rem; }
+  body:not(.price-compact) #chips .stat-v { font-size: 10.5px; }
+}
+@media (min-width: 768px) {
+  body:not(.price-compact) #chips { align-content: center; }
+  body:not(.price-compact) #chips .stat-k { font-size: 9.5px; }
+  body:not(.price-compact) #chips .stat-v { font-size: 13px; }
+  body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 1.1rem; }
 }

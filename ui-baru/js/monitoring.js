@@ -141,14 +141,16 @@ function renderNominals() {
     // HP: 3 per baris; desktop: 2 per baris. Hanya 1 nominal: satu kotak lebar di tengah.
     const one = list.length === 1
     const size = one ? 'basis-1/2 lg:w-full lg:max-w-[300px] lg:justify-self-center' : 'basis-[calc((100%-0.5rem)/3)]'
-    const untung = p ? (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit)) : ''
+    // singkat: tanpa "Rp", gram 3 desimal + "g" (angka lengkap di tooltip)
+    const untung = p ? (p.profit >= 0 ? '+' : '−') + num(Math.abs(p.profit)) : ''
+    const gram = p ? p.gram.toFixed(3).replace('.', ',') + 'g' : '—'
     return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
-      h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
+      h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? (p.profit >= 0 ? 'Untung ' : 'Rugi ') + rp(Math.abs(p.profit)) + ' · ' + p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
         p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down') }, untung) : null,
         p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : '') }, untung) : null),
-      h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, p ? p.gram.toFixed(4) + ' gram' : '—'))
+      h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, gram))
   }))
   fitChart()
 }
@@ -210,13 +212,13 @@ function renderTitikOn() {
   const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
   if (state.promo === 'OFF' && state.lastOnAt) {
     const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
-    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear()
+    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1)
     val.textContent = state.lastOnPrice ? num(state.lastOnPrice) : '—'
     val.className = 'stat-v text-muted'
     box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
     box.classList.remove('hidden')
   } else if (state.titikOn != null) {
-    lbl.textContent = 'Titik ON'
+    lbl.textContent = 'ON'
     val.textContent = num(state.titikOn)
     val.className = 'stat-v text-up'
     box.title = 'Harga beli terendah selama promo ON hari ini'
@@ -272,7 +274,12 @@ try {
 } catch (e) {}
 const lay = () => (LAYOUTS.find(l => l[0] === layout) || LAYOUTS[0])[3]
 // Desktop & tablet: riwayat di samping grafik (bawaan) atau di bawahnya (pilihan di Tata letak)
-function histSide() { try { return localStorage.getItem('histSide') !== '0' } catch (e) { return true } }
+// posisi riwayat: default di samping hanya di desktop (>= 1280px); tablet default di bawah
+function histSide() {
+  let v = null
+  try { v = localStorage.getItem('histSide') } catch (e) {}
+  return v === null ? matchMedia('(min-width: 1280px)').matches : v !== '0'
+}
 function applyLayout() {
   const L = lay(), b = document.body.classList
   const both = !!(L.s && L.c && L.h)
@@ -353,7 +360,7 @@ function openHistSize() {
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
 // Info harga yang ditampilkan (pilihan user, diingat per perangkat). Semua dimatikan = baris info hilang.
-const CHIP_DEFS = [['chipUsd', 'USD/IDR'], ['chipHigh', 'Tertinggi'], ['chipLow', 'Terendah'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown'], ['chipSpread', 'Spread'], ['chipOn', 'Titik ON']]
+const CHIP_DEFS = [['chipUsd', 'Kurs USD/IDR (IDR)'], ['chipHigh', 'Tertinggi hari ini (Max)'], ['chipLow', 'Terendah hari ini (Min)'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown (MU/MD)'], ['chipSpread', 'Spread (Spr)'], ['chipOn', 'Titik ON (ON)']]
 function chipPrefs() { try { return JSON.parse(localStorage.getItem('chipPrefs') || '{}') || {} } catch (e) { return {} } }
 function applyChipPrefs() {
   const pr = chipPrefs()
@@ -411,7 +418,7 @@ export function openLayoutPicker() {
           h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga & gramasi nominal dalam kotak kecil')), t)
     })(),
     // pengaturan isi kotak harga
-    ...[['activity', 'Atur info harga', 'USD/IDR, Tinggi, Rendah, Limit, MD/MU, Spread, Titik ON', () => openChipSettings()],
+    ...[['activity', 'Atur info harga', 'IDR, Max, Min, Limit, MD/MU, Spr, ON', () => openChipSettings()],
         ['sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings()]].map(([ic, label, note, fn]) =>
       h('button', { class: 'tile mt-2 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn,
         html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })),
