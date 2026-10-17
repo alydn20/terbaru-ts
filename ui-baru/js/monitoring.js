@@ -361,20 +361,6 @@ function applyChipPrefs() {
   $('#chips').classList.toggle('chips-off', CHIP_DEFS.every(([id]) => pr[id] === false))
   fitChart()
 }
-// Ikon pengaturan di pojok kotak harga: ringkas on/off, info harga, nominal
-function openPriceSettings() {
-  const t = h('input', { type: 'checkbox', class: 'toggle' })
-  t.checked = priceCompact()
-  t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
-  const row = (ic, label, note, fn) => h('button', { class: 'tile flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn, html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })
-  openSheet('Atur kotak harga', h('div', { class: 'flex flex-col gap-1.5' },
-    h('label', { class: 'tile flex items-center justify-between gap-3 px-3 py-2.5' },
-      h('span', { class: 'min-w-0' },
-        h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
-        h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil, info & gramasi dalam kotak kecil')), t),
-    row('activity', 'Atur info harga', 'USD/IDR, Tertinggi, Terendah, Limit, Markdown, Spread, Titik ON', () => openChipSettings()),
-    row('sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings())))
-}
 export function openChipSettings() {
   const pr = chipPrefs()
   const save = () => { try { localStorage.setItem('chipPrefs', JSON.stringify(pr)) } catch (e) {} applyChipPrefs() }
@@ -424,6 +410,11 @@ export function openLayoutPicker() {
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
           h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga & gramasi nominal dalam kotak kecil')), t)
     })(),
+    // pengaturan isi kotak harga
+    ...[['activity', 'Atur info harga', 'USD/IDR, Tinggi, Rendah, Limit, MD/MU, Spread, Titik ON', () => openChipSettings()],
+        ['sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings()]].map(([ic, label, note, fn]) =>
+      h('button', { class: 'tile mt-2 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn,
+        html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
       const side = histSide()
@@ -675,13 +666,10 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
-  // USD/IDR naik ke baris jam, ukurannya setara pil PROMO (tanggal pindah ke bar atas)
+  // USD/IDR: kotak paling depan di baris info, sedikit lebih besar (baris jam hanya jam + PROMO)
   const usd = $('#chipUsd')
-  if (usd) { usd.classList.add('usd-pill'); $('#clockRow').insertBefore(usd, $('#promoStatus')) }
+  if (usd) usd.classList.add('usd-pill')
   applyChipPrefs()
-  // ikon pengaturan kotak harga, di baris jam setelah pil PROMO (tidak menimpa kotak Beli/Jual)
-  const gear = h('button', { id: 'btnPriceSet', class: 'icon-btn h-7 w-7 shrink-0 text-muted', title: 'Atur kotak harga', 'aria-label': 'Atur kotak harga', html: icon('sliders', 'h-3.5 w-3.5'), onclick: openPriceSettings })
-  $('#clockRow').append(gear)
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()

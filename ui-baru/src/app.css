@@ -151,7 +151,7 @@ body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-
 @media (min-width: 768px) { body.price-compact .price-tile { min-width: 10.5rem; } }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
-body.price-compact #clockRow > .num { font-size: 1rem; }
+body.price-compact #clockRow > .num { font-size: 1.3rem; }
 body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
 /* versi ringkas: semua info tetap tampil sebagai kotak kecil (USD/IDR, Tertinggi, Terendah, Limit,
    Markup/Markdown, Spread, Titik ON); hanya untung per nominal yang disembunyikan */
@@ -173,12 +173,12 @@ body.price-compact #chips .stat-v { font-size: 11px; }
 @media (max-width: 767px) {
   body.price-compact #chips .stat-k { font-size: 8px; }
   body.price-compact #chips .stat-v { font-size: 10.5px; }
-  body.price-compact #clockRow > .num { font-size: 0.95rem; }
+  body.price-compact #clockRow > .num { font-size: 1.2rem; }
 }
 @media (min-width: 1280px) {
   body.price-compact .price-tile .price-big { font-size: 1.3rem !important; }
   body.price-compact .price-tile { min-width: 12rem; padding: 0.25rem 0.9rem !important; }
-  body.price-compact #clockRow > .num { font-size: 1.25rem; }
+  body.price-compact #clockRow > .num { font-size: 1.55rem; }
   body.price-compact #promoStatus { font-size: 0.85rem; padding: 0.2rem 0.75rem; }
   body.price-compact #chips .stat { padding: 0.15rem 0.6rem; }
   body.price-compact #chips .stat-k { font-size: 10px; }
@@ -187,7 +187,7 @@ body.price-compact #chips .stat-v { font-size: 11px; }
 @media (min-width: 1600px) {
   body.price-compact .price-tile .price-big { font-size: 1.5rem !important; }
   body.price-compact .price-tile { min-width: 13.5rem; }
-  body.price-compact #clockRow > .num { font-size: 1.4rem; }
+  body.price-compact #clockRow > .num { font-size: 1.7rem; }
   body.price-compact #chips .stat-k { font-size: 11px; }
   body.price-compact #chips .stat-v { font-size: 14px; }
 }
@@ -255,7 +255,7 @@ body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
 /* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
 .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
 
-/* USD/IDR di baris jam: bentuk pil, ukuran setara pil PROMO */
+/* USD/IDR: kotak paling depan di baris info, sedikit lebih besar dari info lain */
 .stat.usd-pill { flex: none; flex-direction: row; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border-radius: 9999px; }
 .usd-pill .stat-k { font-size: 10px; }
 .usd-pill .stat-v { font-size: 0.875rem; }
