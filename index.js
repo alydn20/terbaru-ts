@@ -6458,7 +6458,8 @@ app.post('/api/pin/set', rateLimit(10, 60000), express.json(), async (req, res) 
 async function handlePinVerifyMessage(msg, code) {
   const tok = _pinVerifyByCode.get(code)
   const v = tok && _pinVerify.get(tok)
-  if (!v || v.verified || Date.now() - v.created > PIN_VERIFY_TTL) {
+  if (v && v.verified) return   // pesan yang sama terkirim ulang
+  if (!v || Date.now() - v.created > PIN_VERIFY_TTL) {
     pushLog('PIN | Pesan verifikasi dengan kode tidak dikenal / kedaluwarsa')
     return
   }
@@ -26569,6 +26570,23 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
     }
   })
 
+  // ==================== VERIFIKASI PIN (lupa PIN) ====================
+  // Terpisah dari penerima perintah: ikut menangkap pesan yang dikirim saat bot sedang putus
+  // (datang sebagai 'append' setelah tersambung lagi). Bot hanya membaca, tidak membalas.
+  sock.ev.on('messages.upsert', (ev) => {
+    for (const msg of ev.messages || []) {
+      try {
+        if (shouldIgnoreMessage(msg)) continue
+        const jid = String(msg.key.remoteJid || '')
+        if (jid.endsWith('@g.us')) continue
+        const ts = Number(msg.messageTimestamp || 0) * 1000
+        if (ts && Date.now() - ts > PIN_VERIFY_TTL) continue
+        const mv = /^verifikasi\s*([0-9]{6})$/.exec(normalizeText(extractText(msg)))
+        if (mv) handlePinVerifyMessage(msg, mv[1]).catch(e => pushLog('PIN | Verifikasi error - ' + (e && e.message ? e.message : e)))
+      } catch (e) {}
+    }
+  })
+
   // ==================== USER COMMANDS (cekoon, horeg) ====================
   // cekoon  : subscribe broadcast promo ON/OFF + harga (admin grup atau owner DM)
   // horeg   : cek harga real-time (semua anggota grup bisa, DM hanya owner)
@@ -26613,12 +26631,7 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
-        // Verifikasi nomor untuk membuat PIN (bot hanya membaca, tidak membalas)
-        const _pv = !isGroup && /^verifikasi\s*([0-9]{6})$/.exec(text)
-        if (_pv) {
-          handlePinVerifyMessage(msg, _pv[1]).catch(e => pushLog('PIN | Verifikasi error - ' + (e && e.message ? e.message : e)))
-          continue
-        }
+        if (!isGroup && /^verifikasi\s*[0-9]{6}$/.test(text)) continue   // ditangani penerima verifikasi PIN
         // Pesan dari tombol "Chat Admin" di website: cocokkan nomornya dan laporkan ke admin
         if (!isGroup && /mau gabung grup/.test(text)) {
           reportGroupJoinRequest(msg, text).catch(e => pushLog('AUTO | Grup: cek permintaan gabung error - ' + (e && e.message ? e.message : e)))
