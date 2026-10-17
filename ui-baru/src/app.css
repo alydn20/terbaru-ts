@@ -314,3 +314,20 @@ header > div, #sec-harga, #sec-riwayat > div:first-child, #histScroll, #histPage
 /* bar atas diskalakan: batas lebarnya dibagi skala supaya tetap sejajar dengan isi halaman */
 header > div { max-width: calc(1400px / var(--ui-zoom)) !important; }
 @media (min-width: 1600px) { header > div { max-width: calc(min(96vw, 1920px) / var(--ui-zoom)) !important; } }
+
+/* Desktop: IDR di baris atas (sesudah PROMO), lebih besar dari info lain tapi lebih kecil dari Beli/Jual */
+body #clockRow .stat.usd-pill { padding: 0.25rem 0.85rem; }
+body #clockRow .usd-pill .stat-k { font-size: 11px !important; }
+body #clockRow .usd-pill .stat-v { font-size: 1.15rem !important; }
+@media (min-width: 1600px) {
+  body #clockRow .usd-pill .stat-k { font-size: 12px !important; }
+  body #clockRow .usd-pill .stat-v { font-size: 1.3rem !important; }
+}
+
+/* "Rp" di depan harga: tampil di tablet & desktop, disembunyikan di HP supaya ringkas */
+.rp-pfx { margin-right: 1px; }
+#dayHigh::before, #dayLow::before, #lowestOnVal::before, #usdIdr::before { content: 'Rp'; margin-right: 1px; }
+@media (max-width: 767px) {
+  .rp-pfx { display: none; }
+  #dayHigh::before, #dayLow::before, #lowestOnVal::before, #usdIdr::before { content: none; }
+}

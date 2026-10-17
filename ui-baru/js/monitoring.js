@@ -142,14 +142,15 @@ function renderNominals() {
     const one = list.length === 1
     const size = one ? 'basis-1/2 lg:w-full lg:max-w-[300px] lg:justify-self-center' : 'basis-[calc((100%-0.5rem)/3)]'
     // singkat: tanpa "Rp", gram 3 desimal + "g" (angka lengkap di tooltip)
-    const untung = p ? (p.profit >= 0 ? '+' : '−') + num(Math.abs(p.profit)) : ''
+    // "Rp" hanya tampil di tablet & desktop (.rp-pfx disembunyikan di HP)
+    const untung = p ? (p.profit >= 0 ? '+' : '−') + '<span class="rp-pfx">Rp</span>' + num(Math.abs(p.profit)) : ''
     const gram = p ? p.gram.toFixed(3).replace('.', ',') + 'g' : '—'
     return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? (p.profit >= 0 ? 'Untung ' : 'Rugi ') + rp(Math.abs(p.profit)) + ' · ' + p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
-        p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down') }, untung) : null,
-        p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : '') }, untung) : null),
+        p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down'), html: untung }) : null,
+        p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : ''), html: untung }) : null),
       h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, gram))
   }))
   fitChart()
@@ -678,7 +679,18 @@ async function start() {
   applyIdrMode()
   // USD/IDR: kotak paling depan di baris info, sedikit lebih besar (baris jam hanya jam + PROMO)
   const usd = $('#chipUsd')
-  if (usd) usd.classList.add('usd-pill')
+  if (usd) {
+    usd.classList.add('usd-pill')
+    // Desktop (>= 1280px): IDR naik ke baris atas sesudah PROMO, lebih besar dari info lain (tetap lebih kecil dari Beli/Jual)
+    const mq = matchMedia('(min-width: 1280px)')
+    const placeUsd = () => {
+      if (mq.matches) { if (usd.parentElement !== $('#clockRow')) $('#clockRow').append(usd) }
+      else if (usd.parentElement !== $('#chips')) $('#chips').prepend(usd)
+      fitChart()
+    }
+    placeUsd()
+    mq.addEventListener('change', placeUsd)
+  }
   applyChipPrefs()
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
