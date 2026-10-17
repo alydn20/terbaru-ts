@@ -115,6 +115,10 @@ function appIcon(attrs) {
 const ASK_KEY = 'installAskAt'
 /** Ajakan install otomatis: tidak terpasang, belum ditanya 3 hari terakhir, tidak sedang panduan / dialog */
 export function scheduleInstallInvite(delay = 25000) {
+  // belum pernah ditawari (pertama kali buka): tampil cepat, tidak menunggu lama
+  let first = false
+  try { first = !localStorage.getItem(ASK_KEY) && localStorage.getItem('installNever') !== '1' } catch (e) {}
+  if (first) delay = Math.min(delay, 6000)
   setTimeout(() => {
     if (isInstalled()) { try { localStorage.setItem('appInstalled', '1') } catch (e) {} return }
     let last = 0, never = false

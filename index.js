@@ -5298,7 +5298,7 @@ app.get('/sw.js', (_req, res) => {
   res.setHeader('Content-Type', 'application/javascript')
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
   res.send(`
-    const CACHE_VERSION = 'gold-monitor-v16';
+    const CACHE_VERSION = 'gold-monitor-v17';
 
     self.addEventListener('install', (e) => {
       self.skipWaiting();
@@ -5348,16 +5348,18 @@ app.get('/sw.js', (_req, res) => {
       // error mentah ("Service unavailable") — pakai salinan terakhir, atau halaman yang mencoba lagi sendiri.
       if (e.request.method === 'GET' && e.request.mode === 'navigate') {
         const key = new URL(url).pathname;
-        e.respondWith(
-          fetch(e.request).then((res) => {
-            if (res && res.status >= 500) return caches.match(key).then((hit) => hit || offlinePage(true));
-            if (res && res.ok && res.type === 'basic') {
-              const copy = res.clone();
-              caches.open(CACHE_VERSION).then((c) => c.put(key, copy)).catch(() => {});
-            }
-            return res;
-          }).catch(() => caches.match(key).then((hit) => hit || offlinePage(false)))
-        );
+        // server lambat (mis. baru restart): jangan "muter" tanpa batas — setelah 8 dtk pakai salinan
+        // tersimpan / halaman "Server sedang sibuk" yang mencoba lagi sendiri
+        const net = fetch(e.request).then((res) => {
+          if (res && res.status >= 500) return caches.match(key).then((hit) => hit || offlinePage(true));
+          if (res && res.ok && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(CACHE_VERSION).then((c) => c.put(key, copy)).catch(() => {});
+          }
+          return res;
+        });
+        const slow = new Promise((resolve) => setTimeout(() => resolve(caches.match(key).then((hit) => hit || offlinePage(true))), 8000));
+        e.respondWith(Promise.race([net, slow]).catch(() => caches.match(key).then((hit) => hit || offlinePage(false))));
         return;
       }
       // Tampilan baru (CSS/JS/suara): internet dulu, tidak ada sinyal pakai salinan tersimpan
