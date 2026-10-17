@@ -651,3 +651,6 @@ body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 
   transition: background-color .45s ease, color .45s ease, border-color .45s ease, fill .45s ease, box-shadow .45s ease !important;
 }
 @media (prefers-reduced-motion: reduce) { .theme-switch, .theme-knob, .theme-knob svg { transition: none; } }
+/* sakelar mode tampil di semua ukuran layar (tablet & desktop di sebelah tombol Tata letak) */
+.theme-switch { display: inline-flex; }
+@media (min-width: 768px) { .theme-switch { width: 3.4rem; height: 1.95rem; } .theme-knob { width: 1.55rem; height: 1.55rem; } .theme-switch[aria-pressed="true"] .theme-knob { transform: translate(1.45rem, -50%); } }
