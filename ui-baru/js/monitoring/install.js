@@ -12,6 +12,8 @@ window.addEventListener('appinstalled', () => {
   toast('Aplikasi Harga PemulaOLD terpasang. Buka dari layar utama HP.', 'success', 5000)
 })
 
+/** true = browser siap memasang otomatis (event beforeinstallprompt sudah diterima) */
+export const canAutoInstall = () => !!deferredPrompt
 export const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
 
 /** Kenali HP & browser supaya panduan install tepat */
@@ -87,7 +89,7 @@ export async function openInstall() {
   const [title, list] = steps(env)
   openSheet('Pasang aplikasi', h('div', {},
     h('div', { class: 'mb-3 flex items-center gap-3' },
-      h('img', { src: '/icon-192.png?v=4', alt: '', class: 'h-12 w-12 shrink-0 rounded-xl' }),
+      appIcon({ class: 'h-12 w-12 shrink-0 rounded-xl' }),
       h('div', { class: 'min-w-0' },
         h('div', { class: 'text-sm font-extrabold' }, 'Harga PemulaOLD'),
         h('div', { class: 'text-xs text-muted' }, 'Buka lebih cepat dari layar utama & terima notifikasi harga'))),
@@ -98,6 +100,18 @@ export async function openInstall() {
     env.os === 'ios' && env.browser !== 'inapp' ? h('p', { class: 'mt-3 text-[11px] text-muted' }, 'Di iPhone, notifikasi harga hanya bisa aktif setelah aplikasi dipasang ke layar utama.') : null))
 }
 
+// Ikon aplikasi untuk panel/kartu install; kalau ikon baru belum tersedia, pakai ikon lama
+function appIcon(attrs) {
+  const img = document.createElement('img')
+  img.alt = ''
+  img.className = attrs.class || ''
+  const fallback = () => { if (!img.dataset.fb) { img.dataset.fb = '1'; img.src = '/icon.png?v=3' } }
+  img.addEventListener('error', fallback)
+  img.addEventListener('load', () => { if (!img.naturalWidth) fallback() })
+  img.src = '/icon-192.png?v=4'
+  setTimeout(() => { if (img.complete && !img.naturalWidth) fallback() }, 1500)
+  return img
+}
 const ASK_KEY = 'installAskAt'
 /** Ajakan install otomatis: tidak terpasang, belum ditanya 3 hari terakhir, tidak sedang panduan / dialog */
 export function scheduleInstallInvite(delay = 25000) {
@@ -111,13 +125,15 @@ export function scheduleInstallInvite(delay = 25000) {
     const never2 = h('input', { type: 'checkbox', class: 'h-3.5 w-3.5 accent-current' })
     never2.addEventListener('change', () => { try { localStorage.setItem('installNever', never2.checked ? '1' : '0') } catch (e) {} })
     const card = h('div', { id: 'installInvite', class: 'install-invite anim-pop', role: 'dialog', 'aria-label': 'Pasang aplikasi' },
-      h('img', { src: '/icon-192.png?v=4', alt: '', class: 'h-10 w-10 shrink-0 rounded-lg' }),
+      appIcon({ class: 'h-10 w-10 shrink-0 rounded-lg' }),
       h('div', { class: 'min-w-0 flex-1' },
         h('div', { class: 'text-sm font-extrabold' }, 'Pasang aplikasi PemulaOLD'),
         h('div', { class: 'text-[11px] leading-snug text-muted' }, 'Buka lebih cepat & dapat notifikasi harga'),
         // centang: ajakan tidak muncul lagi (install tetap bisa dari menu pengaturan)
         h('label', { class: 'mt-1 flex cursor-pointer items-center gap-1.5 text-[11px] text-muted' }, never2, 'Jangan tanya lagi')),
-      h('button', { class: 'btn-gold shrink-0 px-3 py-2 text-xs', onclick: () => { card.remove(); openInstall() } }, 'Pasang'),
+      // bisa dipasang otomatis (Android Chrome/Samsung/Edge, komputer Chrome/Edge): "Pasang" langsung memunculkan
+      // dialog install bawaan; tidak bisa (iPhone, browser di dalam aplikasi): "Cara pasang" membuka panduan
+      h('button', { class: 'btn-gold shrink-0 px-3 py-2 text-xs', onclick: () => { card.remove(); openInstall() } }, canAutoInstall() ? 'Pasang' : 'Cara pasang'),
       h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Nanti', html: icon('close', 'h-4 w-4'), onclick: () => {
         if (never2.checked) { try { localStorage.setItem('installNever', '1') } catch (e) {} toast('Ajakan install tidak akan muncul lagi. Install tetap bisa dari menu pengaturan.') }
         card.classList.add('anim-fade-out'); setTimeout(() => card.remove(), 200)
