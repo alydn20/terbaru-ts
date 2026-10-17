@@ -116,7 +116,7 @@ function renderMarkup() {
   $('#chipMarkup').classList.toggle('hidden', mk.normal)
   if (!mk.normal) {
     // disingkat: MU = markup, MD = markdown (nama lengkap di tooltip)
-    $('#markupLabel').textContent = mk.diff > 0 ? 'MU' : 'MD'
+    $('#markupLabel').innerHTML = mk.diff > 0 ? '<span class="lbl-s">MU</span><span class="lbl-l">Markup</span>' : '<span class="lbl-s">MD</span><span class="lbl-l">Markdown</span>'
     $('#chipMarkup').title = mk.diff > 0 ? 'Markup' : 'Markdown'
     $('#markupVal').textContent = signed(mk.diff)
   }
@@ -143,7 +143,7 @@ function renderNominals() {
     const size = one ? 'basis-1/2 lg:w-full lg:max-w-[300px] lg:justify-self-center' : 'basis-[calc((100%-0.5rem)/3)]'
     // singkat: tanpa "Rp", gram 3 desimal + "g" (angka lengkap di tooltip)
     // "Rp" hanya tampil di tablet & desktop (.rp-pfx disembunyikan di HP)
-    const untung = p ? (p.profit >= 0 ? '+' : '−') + '<span class="rp-pfx">Rp</span>' + num(Math.abs(p.profit)) : ''
+    const untung = p ? '<span>' + (p.profit >= 0 ? '+' : '−') + '<span class="rp-pfx">Rp</span>' + num(Math.abs(p.profit)) + '</span>' : ''
     const gram = p ? p.gram.toFixed(3).replace('.', ',') + 'g' : '—'
     return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
@@ -213,13 +213,14 @@ function renderTitikOn() {
   const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
   if (state.promo === 'OFF' && state.lastOnAt) {
     const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
-    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1)
+    // HP singkat (ON 16/10), tablet & desktop lengkap (Terakhir ON 16-10-2026)
+    lbl.innerHTML = '<span class="lbl-s">ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1) + '</span><span class="lbl-l">Terakhir ON ' + pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear() + '</span>'
     val.textContent = state.lastOnPrice ? num(state.lastOnPrice) : '—'
     val.className = 'stat-v text-muted'
     box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
     box.classList.remove('hidden')
   } else if (state.titikOn != null) {
-    lbl.textContent = 'ON'
+    lbl.innerHTML = '<span class="lbl-s">ON</span><span class="lbl-l">Titik ON</span>'
     val.textContent = num(state.titikOn)
     val.className = 'stat-v text-up'
     box.title = 'Harga beli terendah selama promo ON hari ini'
@@ -548,7 +549,7 @@ function tick() {
   // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
   if (sEl.textContent !== pad2(s)) {
     sEl.textContent = pad2(s)
-    sEl.className = (s >= 50 ? 'text-down ' : '') + 'clk-tick'
+    sEl.className = (s >= 50 ? 'text-down ' : 'text-gold ') + 'clk-tick'
     void sEl.offsetWidth
     sEl.classList.add('clk-tick-on')
     document.querySelectorAll('.clk-colon').forEach(c => c.classList.toggle('clk-dim', s % 2 === 1))
@@ -681,8 +682,8 @@ async function start() {
   const usd = $('#chipUsd')
   if (usd) {
     usd.classList.add('usd-pill')
-    // Desktop (>= 1280px): IDR naik ke baris atas sesudah PROMO, lebih besar dari info lain (tetap lebih kecil dari Beli/Jual)
-    const mq = matchMedia('(min-width: 1280px)')
+    // Tablet & desktop (>= 768px): IDR naik ke baris atas sesudah PROMO, lebih besar dari info lain (tetap lebih kecil dari Beli/Jual)
+    const mq = matchMedia('(min-width: 768px)')
     const placeUsd = () => {
       if (mq.matches) { if (usd.parentElement !== $('#clockRow')) $('#clockRow').append(usd) }
       else if (usd.parentElement !== $('#chips')) $('#chips').prepend(usd)
