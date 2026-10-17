@@ -14,6 +14,17 @@ import { openMore, openRenew, openIndicators, openNominalSettings, openPriceBox,
 applyTheme()
 if (!session.get()) location.replace('/login')
 
+// Pengaman: halaman tidak boleh memuat ulang sendiri berulang-ulang (mis. versi server berganti-ganti saat
+// restart, atau sesi admin tidak bisa disegarkan). Maks. 2 kali per menit; selebihnya diam.
+function safeReload() {
+  let list = []
+  try { list = JSON.parse(sessionStorage.getItem('autoReloads') || '[]').filter(t => Date.now() - t < 60000) } catch (e) {}
+  if (list.length >= 2) return false
+  list.push(Date.now())
+  try { sessionStorage.setItem('autoReloads', JSON.stringify(list)) } catch (e) {}
+  location.reload()
+  return true
+}
 // ===================================================================== SESI
 const GRACE_MS = 24 * 3600 * 1000 // server bermasalah: user tetap boleh memantau maks 24 jam
 const markOk = () => { try { localStorage.setItem('gold_sess_ok_at', String(Date.now())) } catch (e) {} }
@@ -38,7 +49,7 @@ function handleInvalid(d) {
   // sesi admin dari panel: segarkan otomatis
   if (session.get().startsWith('admin_') && !d.reason) {
     fetch('/api/admin-session-refresh').then(r => r.json()).then(x => {
-      if (x.success && x.sessionId) { session.set(x.sessionId); markOk(); location.reload() }
+      if (x.success && x.sessionId) { session.set(x.sessionId); markOk(); safeReload() }
     }).catch(() => {})
     return
   }
@@ -272,7 +283,7 @@ async function fetchPrices() {
     const res = await fetch('/monitoring/api?session=' + encodeURIComponent(session.get()), { cache: 'no-store' })
     if (res.status === 403) return
     const d = await res.json()
-    if (d.version) { if (appVersion && appVersion !== d.version) return location.reload(); appVersion = d.version }
+    if (d.version) { if (appVersion && appVersion !== d.version && safeReload()) return; appVersion = d.version }
     applyPrice(d, false)
   } catch (e) {}
 }
