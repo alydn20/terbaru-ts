@@ -1,7 +1,7 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
 import './monitoring/defaults.js'
-import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, toggleTheme, tanggalPanjang, openSheet } from './api.js'
+import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, toggleTheme, tanggalPanjang, openSheet, rollText } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
 import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHistRows } from './monitoring/history.js'
@@ -187,7 +187,8 @@ function applyPrice(d, fromSse) {
   if (d.buy) {
     const prev = fromSse ? d.prevBuy : state.buy
     const change = prev ? d.buy - prev : 0
-    $('#buyPrice').textContent = num(d.buy)
+    rollText($('#buyPrice'), num(d.buy), change)
+    document.body.classList.remove('loading-data')
     if (change) {
       state.arrow = change > 0 ? '▲ ' : '▼ '
       setChange('buyChange', change); flash('buyCard', change)
@@ -205,7 +206,7 @@ function applyPrice(d, fromSse) {
   if (d.sell) {
     const prev = fromSse ? d.prevSell : state.sell
     const change = prev ? d.sell - prev : 0
-    $('#sellPrice').textContent = num(d.sell)
+    rollText($('#sellPrice'), num(d.sell), change)
     if (change) { setChange('sellChange', change); flash('sellCard', change) }
     state.sell = d.sell
   }
@@ -225,8 +226,9 @@ function setUsdIdr(rate) {
     // kotak USD/IDR berkedip & berwarna sama seperti kotak Beli/Jual
     if ($('#chipUsd')) flash('chipUsd', c)
   }
+  const dir = state.usdIdr ? r - Math.round(state.usdIdr) : 0
   state.usdIdr = rate
-  $('#usdIdr').textContent = num(r)
+  rollText($('#usdIdr'), num(r), dir)
 }
 /** Promo ON: harga terendah selama ON (Titik ON). Promo OFF: tanggal terakhir ON (dd-mm-yyyy, WIB). */
 function renderTitikOn() {
@@ -249,7 +251,10 @@ function renderTitikOn() {
 }
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
+  const changed = state.promo && state.promo !== status
   el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
+  // OFF <-> ON: pita membalik (flip) halus
+  if (changed) { void el.offsetWidth; el.classList.add('promo-flip') }
   el.innerHTML = '<span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
@@ -417,13 +422,24 @@ export function chipSection() {
 }
 export function openChipSettings() { openPriceBox() }
 export function getLayout() { return layout }
+// Perubahan tata letak oleh user: berpindah halus (bagian lama memudar/bergeser ke posisi baru)
+function smoothLayout(fn) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (reduce || !document.startViewTransition) { fn(); return }
+  const root = document.documentElement
+  root.classList.add('vt-layout')
+  const t = document.startViewTransition(fn)
+  t.finished.finally(() => root.classList.remove('vt-layout'))
+}
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
   try { localStorage.setItem(LAYOUT_KEY, layout) } catch (e) {}
   chartFull = false
-  applyLayout()
-  fitChart()
-  window.scrollTo({ top: 0 })
+  smoothLayout(() => {
+    applyLayout()
+    fitChart()
+    window.scrollTo({ top: 0 })
+  })
 }
 // Lembar pilihan tata letak (dibuka dari Lainnya, dan tombol "Tata letak" di judul grafik)
 export function openLayoutPicker() {
@@ -440,7 +456,7 @@ export function openLayoutPicker() {
     (() => {
       const t = h('input', { type: 'checkbox', class: 'toggle' })
       t.checked = priceCompact()
-      t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
+      t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} smoothLayout(() => { applyLayout(); fitChart() }) })
       return h('label', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
@@ -453,7 +469,7 @@ export function openLayoutPicker() {
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
       const side = histSide()
-      const pick = v => { try { localStorage.setItem('histSide', v ? '1' : '0') } catch (e) {} applyLayout(); fitChart(); sheet.close() }
+      const pick = v => { try { localStorage.setItem('histSide', v ? '1' : '0') } catch (e) {} sheet.close(); smoothLayout(() => { applyLayout(); fitChart() }) }
       return h('div', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
         h('span', { class: 'min-w-0' },
           h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
@@ -620,8 +636,9 @@ async function syncTime() { try { const d = await (await fetch('/time')).json();
 function tick() {
   const now = new Date(Date.now() + offset)
   const s = now.getSeconds()
-  $('#clkH').textContent = pad2(now.getHours())
-  $('#clkM').textContent = pad2(now.getMinutes())
+  // jam & menit bergulir halus saat berganti
+  rollText($('#clkH'), pad2(now.getHours()), 1)
+  rollText($('#clkM'), pad2(now.getMinutes()), 1)
   const sEl = $('#clkS')
   // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
   if (sEl.textContent !== pad2(s)) {
@@ -639,7 +656,7 @@ function tick() {
 // ===================================================================== PEMBERITAHUAN ADMIN
 function showNotice(d) {
   const color = { promo: 'border-up/40 bg-up/10', warning: 'border-gold/40 bg-gold/10', urgent: 'border-down/40 bg-down/10' }[d.notifType] || 'border-sky/40 bg-sky/10'
-  const card = h('div', { class: 'flex items-start gap-3 rounded-2xl border p-3 ' + color },
+  const card = h('div', { class: 'anim-msg flex items-start gap-3 rounded-2xl border p-3 ' + color },
     h('div', { class: 'min-w-0 flex-1' }, h('div', { class: 'text-sm font-extrabold' }, d.title || 'Info'), h('div', { class: 'mt-0.5 whitespace-pre-line text-sm text-muted' }, d.message || '')),
     h('button', { class: 'icon-btn h-8 w-8 shrink-0', 'aria-label': 'Tutup', html: icon('close', 'h-4 w-4'), onclick: () => card.remove() }))
   $('#notifs').prepend(card)
@@ -882,4 +899,4 @@ async function start() {
 start()
 
 // Uji tampilan lokal saja (localhost): simulasi perubahan harga / kurs tanpa menunggu pasar
-if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators, renderSisaHari }
+if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators, renderSisaHari, setPromoStatus, setLayout }

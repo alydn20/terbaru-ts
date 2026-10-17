@@ -37,7 +37,7 @@ export function mountPayment(root, opts) {
     const token = ++loadToken
     stop()
     renderChooser(months)
-    box.replaceChildren(h('div', { class: 'py-10 text-center text-sm text-muted' }, 'Menyiapkan QRIS...'))
+    box.replaceChildren(h('div', { class: 'loader-box' }, h('span', { class: 'spinner' }), 'Menyiapkan QRIS...'))
     let data = null
     try {
       const res = await fetch('/api/payment/create', {

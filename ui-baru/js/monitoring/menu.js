@@ -71,7 +71,7 @@ function openMoreDropdown(groups, logoutItem, profile) {
   }
   const row = ([ic, label, fn, , cls = '']) =>
     h('button', { class: 'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-semibold transition hover:bg-card2 ' + cls, onclick: () => { close(); fn() }, html: icon(ic, 'h-4 w-4 shrink-0') + '<span>' + label + '</span>' })
-  const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
+  const menu = h('div', { id: 'moreMenu', role: 'menu', class: 'anim-drop card fixed z-[60] max-h-[80vh] w-72 overflow-y-auto p-2 shadow-2xl', style: 'top:' + Math.round(r.bottom + 8) + 'px;right:' + Math.max(8, Math.round(window.innerWidth - r.right)) + 'px' },
     profile(),
     groups.map(([title, items], i) => h('div', {},
       h('div', { class: 'label px-3 pb-1 text-[10px] ' + (i ? 'mt-2 border-t border-line/[0.08] pt-2.5' : 'pt-1') }, title),
@@ -257,7 +257,7 @@ async function install() {
 // ===================================================================== PERPANJANG
 export async function openRenew() {
   if (state.user && !state.user.expired) { toast('Akun Lifetime, tidak perlu diperpanjang.'); return }
-  const root = h('div', {}, h('div', { class: 'py-10 text-center text-sm text-muted' }, 'Memuat...'))
+  const root = h('div', {}, h('div', { class: 'loader-box' }, h('span', { class: 'spinner' }), 'Memuat...'))
   let stop = null
   openSheet('Perpanjang masa aktif', h('div', {},
     state.user && state.user.expired ? h('p', { class: 'mb-3 text-xs text-muted' }, 'Aktif sampai ' + tanggalPanjang(state.user.expired) + '. Sisa hari Anda tidak hilang.') : null,

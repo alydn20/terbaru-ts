@@ -30,16 +30,17 @@ function floatNote(title, lines, ms) {
   let box = document.getElementById('newsFloat')
   if (!box) {
     // melayang di pojok kiri bawah, kotak kecil (HP: di atas navigasi bawah)
-    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
+    box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[25] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
     document.body.append(box)
   }
-  const close = () => { card.style.opacity = '0'; setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 260) }
+  const close = () => { card.classList.add('anim-float-out'); setTimeout(() => { card.remove(); if (box && !box.children.length) box.remove() }, 300) }
   const card = h('div', { class: 'pointer-events-auto relative max-w-full cursor-pointer rounded-lg border border-down/50 border-l-[3px] border-l-down bg-card/95 py-1 pl-2 pr-6 text-[11px] leading-snug shadow-lg backdrop-blur transition-opacity', style: 'opacity:0', onclick: e => { if (!e.target.closest('button')) { close(); openNews() } } },
     h('div', { class: 'mb-0.5 font-extrabold text-down' }, title),
     lines.map(l => h('div', {}, l)),
     h('button', { class: 'absolute right-1 top-0.5 px-1 text-[15px] leading-none text-muted', 'aria-label': 'Tutup', onclick: close }, '×'))
+  card.style.opacity = '1'
+  card.classList.add('anim-float-in')
   box.append(card)
-  requestAnimationFrame(() => { card.style.opacity = '1' })
   setTimeout(close, ms || 12000)
 }
 export function checkNewsReminders() {
@@ -83,10 +84,10 @@ function urgentTick() {
       if (!c) {
         let box = document.getElementById('newsFloat')
         if (!box) {
-          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[35] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
+          box = h('div', { id: 'newsFloat', class: 'pointer-events-none fixed bottom-[calc(12px+env(safe-area-inset-bottom))] left-2.5 z-[25] flex w-[min(240px,calc(100%-20px))] flex-col items-start gap-1 lg:bottom-4 lg:left-4' })
           document.body.append(box)
         }
-        c = h('div', { class: 'pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
+        c = h('div', { class: 'anim-float-in pointer-events-auto max-w-full cursor-pointer rounded-lg border border-down border-l-[3px] bg-down/90 px-2 py-1 text-[11px] leading-snug text-white shadow-lg', onclick: openNews },
           h('div', { class: 'font-extrabold' }, ''), h('div', {}, jamWib(ev._wib) + '  ' + ev.title))
         box.append(c)
         urgent[key] = c
@@ -171,7 +172,7 @@ function renderNews(list) {
 }
 
 export function openNews() {
-  const list = h('div', { class: 'pb-2' }, h('div', { class: 'py-10 text-center text-sm text-muted' }, 'Memuat kalender...'))
+  const list = h('div', { class: 'pb-2' }, h('div', { class: 'loader-box' }, h('span', { class: 'spinner' }), 'Memuat kalender...'))
   const filterRow = h('div', { class: 'mb-3 flex gap-2' }, Object.entries(IMPACT).map(([k, [lbl]]) => {
     const b = h('button', { class: 'chip', 'aria-pressed': String(filters.has(k)) }, lbl)
     const paint = () => { b.className = 'chip ' + (filters.has(k) ? 'border-gold text-gold' : 'opacity-50') }
