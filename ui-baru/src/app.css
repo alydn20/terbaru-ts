@@ -120,9 +120,9 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
 }
 .st-short { display: none; }
 
-/* HP: tabel riwayat ringkas supaya muat selebar layar (tanpa geser ke samping bila 1 nominal) */
-@media (max-width: 767px) {
-  /* HP: tanpa tombol Lebih baru / Lebih lama; riwayat digulir di dalam kotak */
+/* HP & tablet: tabel riwayat ringkas (baris tipis) supaya muat selebar layar */
+@media (max-width: 1279px) {
+  /* HP & tablet: tanpa tombol Lebih baru / Lebih lama; riwayat digulir di dalam kotak */
   #histPager { display: none !important; }
   #histMode { padding: 2px; }
   #histMode > button { padding: 0.15rem 0.55rem; font-size: 11px; }
@@ -132,10 +132,11 @@ body.hide-harga #sec-harga, body.hide-grafik #sec-grafik, body.hide-riwayat #his
   #histScroll td .text-\[11px\] { font-size: 10px; }
   #histScroll .st-long { display: none; }
   #histScroll .st-short { display: inline; }
-  #histScroll .hist-st-col { display: none; }
-  #histScroll .hist-st-inline { display: block; }
 }
-.hist-st-inline { display: none; }
+/* Semua ukuran (HP, tablet, desktop): status MD/MU ditaruh di bawah jam, kolom Status tidak dipakai */
+#histScroll .hist-st-col { display: none; }
+#histScroll .hist-st-inline { display: block; }
+@media (min-width: 768px) { #histScroll .hist-st-inline { font-size: 11px; } }
 /* USD/IDR digabung ke tabel harga (body.idr-merge, pengaturan riwayat): kolom tampil, tombol
    Harga emas | USD/IDR disembunyikan. Bawaan (Otomatis): desktop & tablet gabung, HP terpisah. */
 .hist-idr-col { display: none; }
@@ -151,7 +152,7 @@ body.price-compact .price-tile { padding: 0.15rem 0.75rem !important; container-
 @media (min-width: 768px) { body.price-compact .price-tile { min-width: 10.5rem; } }
 body.price-compact .price-tile .price-big { font-size: 1.05rem !important; }
 body.price-compact #clockRow { margin-top: 0 !important; gap: 0.5rem; }
-body.price-compact #clockRow > .num { font-size: 1rem; }
+body.price-compact #clockNum { font-size: 1.3rem; }
 body.price-compact #promoStatus { padding: 0.15rem 0.6rem; font-size: 0.75rem; }
 /* versi ringkas: semua info tetap tampil sebagai kotak kecil (USD/IDR, Tertinggi, Terendah, Limit,
    Markup/Markdown, Spread, Titik ON); hanya untung per nominal yang disembunyikan */
@@ -171,14 +172,14 @@ body.price-compact #chips .stat-k { font-size: 9px; }
 body.price-compact #chips .stat-v { font-size: 11px; }
 /* Ukuran versi ringkas mengikuti layar: HP kecil, tablet sedang, desktop lebih besar, monitor lebar terbesar */
 @media (max-width: 767px) {
-  body.price-compact #chips .stat-k { font-size: 8px; }
-  body.price-compact #chips .stat-v { font-size: 10.5px; }
-  body.price-compact #clockRow > .num { font-size: 0.95rem; }
+  body.price-compact #chips .stat-k { font-size: 9px; }
+  body.price-compact #chips .stat-v { font-size: 11px; }
+  body.price-compact #clockNum { font-size: 1.2rem; }
 }
 @media (min-width: 1280px) {
   body.price-compact .price-tile .price-big { font-size: 1.3rem !important; }
   body.price-compact .price-tile { min-width: 12rem; padding: 0.25rem 0.9rem !important; }
-  body.price-compact #clockRow > .num { font-size: 1.25rem; }
+  body.price-compact #clockNum { font-size: 1.55rem; }
   body.price-compact #promoStatus { font-size: 0.85rem; padding: 0.2rem 0.75rem; }
   body.price-compact #chips .stat { padding: 0.15rem 0.6rem; }
   body.price-compact #chips .stat-k { font-size: 10px; }
@@ -187,7 +188,7 @@ body.price-compact #chips .stat-v { font-size: 11px; }
 @media (min-width: 1600px) {
   body.price-compact .price-tile .price-big { font-size: 1.5rem !important; }
   body.price-compact .price-tile { min-width: 13.5rem; }
-  body.price-compact #clockRow > .num { font-size: 1.4rem; }
+  body.price-compact #clockNum { font-size: 1.7rem; }
   body.price-compact #chips .stat-k { font-size: 11px; }
   body.price-compact #chips .stat-v { font-size: 14px; }
 }
@@ -207,7 +208,7 @@ body.price-compact #chips .stat-v { font-size: 11px; }
    tegak / mendatar dan desktop */
 body.price-only:not(.price-compact) #sec-harga { align-content: center; }
 body.price-only:not(.price-compact) .price-big { font-size: clamp(1.4rem, 15cqw, 4.5rem) !important; }
-body.price-only:not(.price-compact) #clockRow > .num { font-size: clamp(1.5rem, 5vmin, 3rem); }
+body.price-only:not(.price-compact) #clockNum { font-size: clamp(1.5rem, 5vmin, 3rem); }
 body.price-only:not(.price-compact) .stat-v { font-size: clamp(11px, 2.4vmin, 18px); }
 body.price-only:not(.price-compact) .stat-k { font-size: clamp(8px, 1.5vmin, 12px); }
 @media (max-width: 767px) {
@@ -253,4 +254,120 @@ body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
 .clk-tick.clk-tick-on { animation: clkTick 0.35s ease-out; }
 
 /* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
-#chips .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
+.chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
+
+/* USD/IDR (info penting): kotak paling depan di baris info, angka lebih besar, garis biru */
+.stat.usd-pill { flex: none; flex-direction: row; align-items: center; gap: 0.4rem; padding: 0.3rem 0.8rem; border-radius: 9999px; border-color: rgb(var(--sky) / 0.45); background-color: rgb(var(--sky) / 0.08); }
+.usd-pill .stat-k { font-size: 10.5px; }
+.usd-pill .stat-v { font-size: 1.05rem; }
+body.price-compact .stat.usd-pill { padding: 0.2rem 0.65rem; }
+body.price-compact .usd-pill .stat-k { font-size: 9.5px !important; }
+body.price-compact .usd-pill .stat-v { font-size: 0.9rem !important; }
+@media (min-width: 768px) {
+  .usd-pill .stat-v { font-size: 1.15rem; }
+  body.price-compact .usd-pill .stat-v { font-size: 1rem !important; }
+}
+@media (min-width: 1280px) {
+  .usd-pill .stat-v { font-size: 1.25rem; }
+  body.price-compact .usd-pill .stat-v { font-size: 1.1rem !important; }
+}
+
+/* Baris info dirapatkan: label & angka sebaris, kotak menyesuaikan isi -> muat 2 baris */
+body:not(.price-compact) #chips { gap: 0.25rem; }
+body:not(.price-compact) #chips .stat { flex: none; flex-direction: row; align-items: baseline; gap: 0.3rem; padding: 0.15rem 0.45rem; border-radius: 0.4rem; }
+body:not(.price-compact) #chips .stat-k { font-size: 8.5px; letter-spacing: 0.02em; }
+body:not(.price-compact) #chips .stat-v { font-size: 11.5px; }
+body:not(.price-compact) #chips .stat.usd-pill { align-items: center; padding: 0.15rem 0.55rem; }
+body:not(.price-compact) #chips .usd-pill .stat-k { font-size: 9px; }
+body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 0.95rem; }
+@media (max-width: 380px) {
+  body:not(.price-compact) #chips .stat { padding: 0.1rem 0.35rem; gap: 0.2rem; }
+  body:not(.price-compact) #chips .stat-v { font-size: 10.5px; }
+}
+@media (min-width: 768px) {
+  body:not(.price-compact) #chips { align-content: center; }
+  body:not(.price-compact) #chips .stat-k { font-size: 9.5px; }
+  body:not(.price-compact) #chips .stat-v { font-size: 13px; }
+  body:not(.price-compact) #chips .usd-pill .stat-v { font-size: 1.1rem; }
+}
+
+/* Desktop: riwayat tipis seperti HP/tablet (judul, tombol, dan baris tabel rapat) */
+@media (min-width: 1280px) {
+  #histMode { padding: 2px; }
+  #histMode > button { padding: 0.15rem 0.6rem; font-size: 12px; }
+  #histScroll th, #histScroll td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+  #histScroll td { line-height: 1.25; }
+}
+
+/* Skala tampilan mengikuti lebar layar: HP kecil sedikit diperkecil, HP besar/tablet/desktop/monitor lebar
+   diperbesar bertahap. Berlaku untuk bar atas, kotak harga, dan riwayat (ukuran teks riwayat pilihan user
+   tetap dikalikan di atasnya). Grafik tidak ikut diskalakan. */
+:root { --ui-zoom: 1; }
+@media (max-width: 359px) { :root { --ui-zoom: 0.92; } }
+@media (min-width: 400px) and (max-width: 767px) { :root { --ui-zoom: 1.05; } }
+@media (min-width: 768px) { :root { --ui-zoom: 1.12; } }
+@media (min-width: 1024px) { :root { --ui-zoom: 1.18; } }
+@media (min-width: 1280px) { :root { --ui-zoom: 1.12; } }
+@media (min-width: 1536px) { :root { --ui-zoom: 1.22; } }
+@media (min-width: 1920px) { :root { --ui-zoom: 1.35; } }
+header > div, #sec-harga, #sec-riwayat > div:first-child, #histScroll, #histPager { zoom: var(--ui-zoom); }
+/* bar atas diskalakan: batas lebarnya dibagi skala supaya tetap sejajar dengan isi halaman */
+header > div { max-width: calc(1400px / var(--ui-zoom)) !important; }
+@media (min-width: 1600px) { header > div { max-width: calc(min(96vw, 1920px) / var(--ui-zoom)) !important; } }
+
+/* Desktop: IDR di baris atas (sesudah PROMO), lebih besar dari info lain tapi lebih kecil dari Beli/Jual */
+body #clockRow .stat.usd-pill { padding: 0.25rem 0.85rem; }
+body #clockRow .usd-pill .stat-k { font-size: 11px !important; }
+body #clockRow .usd-pill .stat-v { font-size: 1.15rem !important; }
+@media (min-width: 1600px) {
+  body #clockRow .usd-pill .stat-k { font-size: 12px !important; }
+  body #clockRow .usd-pill .stat-v { font-size: 1.3rem !important; }
+}
+
+/* "Rp" di depan harga: tampil di tablet & desktop, disembunyikan di HP supaya ringkas */
+.rp-pfx { margin-right: 1px; }
+#dayHigh::before, #dayLow::before, #lowestOnVal::before, #usdIdr::before { content: 'Rp'; margin-right: 1px; }
+@media (max-width: 767px) {
+  .rp-pfx { display: none; }
+  #dayHigh::before, #dayLow::before, #lowestOnVal::before, #usdIdr::before { content: none; }
+}
+
+/* Jam: pil seperti PROMO OFF (bulat, latar lembut emas) tanpa label; detik sama besar, warna emas */
+.clock-pill { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.2rem 0.85rem; border-radius: 9999px; background-color: rgb(var(--gold) / 0.12); flex-shrink: 0; }
+.clock-pill #clockNum { color: rgb(var(--ink)); }
+body.price-compact .clock-pill { padding: 0.15rem 0.7rem; }
+
+/* Tablet: kotak info lebih rapat supaya tetap 2 baris walau ada "Rp" */
+@media (min-width: 768px) and (max-width: 1279px) {
+  #chips { gap: 0.2rem !important; }
+  #chips .stat { padding-left: 0.35rem !important; padding-right: 0.35rem !important; gap: 0.2rem !important; }
+  body.price-compact #chips .stat-k { font-size: 9px; }
+  body.price-compact #chips .stat-v { font-size: 11px; }
+}
+.rp-pfx { margin-right: 0; }
+
+/* Label info: HP singkat (IDR, Max, Min, MD, Spr, ON), tablet & desktop lengkap */
+.lbl-l { display: none; }
+@media (min-width: 768px) { .lbl-s { display: none; } .lbl-l { display: inline; } }
+
+/* Baris atas: jam, PROMO, USD/IDR. HP & tablet: jam di tengah (PROMO kiri, USD/IDR kanan).
+   HP: PROMO cukup "ON/OFF" dan USD/IDR lebih kecil supaya muat satu baris. */
+@media (max-width: 1279px) {
+  #promoStatus { order: -1; }
+  #clockRow { justify-content: center; }
+}
+@media (max-width: 767px) {
+  #clockRow { flex-wrap: nowrap; gap: 0.4rem; }
+  body #clockRow .stat.usd-pill { padding: 0.15rem 0.55rem; gap: 0.3rem; }
+  body #clockRow .usd-pill .stat-k { font-size: 9px !important; }
+  body #clockRow .usd-pill .stat-v { font-size: 0.95rem !important; }
+  #promoStatus { padding-left: 0.6rem !important; padding-right: 0.6rem !important; }
+}
+@media (max-width: 359px) {
+  body #clockRow .usd-pill .stat-k { display: none; }
+}
+
+/* PROMO ON/OFF berkedip pelan (2,4 dtk/siklus, tidak hilang penuh) supaya mudah terlihat tanpa mengganggu */
+@keyframes promoPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+#promoStatus { animation: promoPulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { #promoStatus { animation: none; } }

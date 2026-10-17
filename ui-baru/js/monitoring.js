@@ -1,5 +1,6 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
+import './monitoring/defaults.js'
 import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
@@ -54,7 +55,7 @@ function renderSisaHari() {
   const u = state.user
   if (!u) return
   el.classList.remove('hidden'); el.classList.add('flex')
-  if (!u.expired) { el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
+  if (!u.expired) { el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
   const ms = Number(u.expired) - Date.now()
   const hari = Math.ceil(ms / 86400000)
   const color = ms <= 0 || hari <= 3 ? 'text-down' : hari <= 7 ? 'text-gold' : 'text-up'
@@ -62,7 +63,7 @@ function renderSisaHari() {
   const wajib = ms <= 0 || hari <= 7
   let hidden = false
   try { hidden = !wajib && localStorage.getItem(CTA_HIDE) === String(u.expired) } catch (e) {}
-  el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold ' + color
+  el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold ' + color
   el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
   el.replaceChildren(h('span', {}, text))
   if (!hidden) {
@@ -115,7 +116,9 @@ function renderMarkup() {
   const mk = markupOf(state.sell, state.xauUsd, state.usdIdr)
   $('#chipMarkup').classList.toggle('hidden', mk.normal)
   if (!mk.normal) {
-    $('#markupLabel').textContent = mk.diff > 0 ? 'Markup' : 'Markdown'
+    // disingkat: MU = markup, MD = markdown (nama lengkap di tooltip)
+    $('#markupLabel').innerHTML = mk.diff > 0 ? '<span class="lbl-s">MU</span><span class="lbl-l">Markup</span>' : '<span class="lbl-s">MD</span><span class="lbl-l">Markdown</span>'
+    $('#chipMarkup').title = mk.diff > 0 ? 'Markup' : 'Markdown'
     $('#markupVal').textContent = signed(mk.diff)
   }
 }
@@ -139,14 +142,17 @@ function renderNominals() {
     // HP: 3 per baris; desktop: 2 per baris. Hanya 1 nominal: satu kotak lebar di tengah.
     const one = list.length === 1
     const size = one ? 'basis-1/2 lg:w-full lg:max-w-[300px] lg:justify-self-center' : 'basis-[calc((100%-0.5rem)/3)]'
-    const untung = p ? (p.profit >= 0 ? '+' : '−') + 'Rp' + num(Math.abs(p.profit)) : ''
+    // singkat: tanpa "Rp", gram 3 desimal + "g" (angka lengkap di tooltip)
+    // "Rp" hanya tampil di tablet & desktop (.rp-pfx disembunyikan di HP)
+    const untung = p ? '<span>' + (p.profit >= 0 ? '+' : '−') + '<span class="rp-pfx">Rp</span>' + num(Math.abs(p.profit)) + '</span>' : ''
+    const gram = p ? p.gram.toFixed(3).replace('.', ',') + 'g' : '—'
     return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
-      h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? p.gram.toFixed(4) + ' gram' : '' },
+      h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? (p.profit >= 0 ? 'Untung ' : 'Rugi ') + rp(Math.abs(p.profit)) + ' · ' + p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
-        p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down') }, untung) : null,
-        p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : '') }, untung) : null),
-      h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, p ? p.gram.toFixed(4) + ' gram' : '—'))
+        p ? h('span', { class: 'num font-extrabold lg:hidden ' + (one ? 'text-[12.5px] ' : 'text-[11.5px] ') + (p.profit >= 0 ? 'text-up' : 'text-down'), html: untung }) : null,
+        p ? h('span', { class: 'num hidden shrink-0 lg:inline-flex ' + (p.profit >= 0 ? 'pill-up' : 'pill-down') + (one ? ' lg:text-sm' : ''), html: untung }) : null),
+      h('div', { class: 'num mt-0.5 hidden whitespace-nowrap font-mono text-muted lg:block ' + (one ? 'text-xs' : 'text-[11px]') }, gram))
   }))
   fitChart()
 }
@@ -208,13 +214,14 @@ function renderTitikOn() {
   const box = $('#chipOn'), lbl = $('#onLabel'), val = $('#lowestOnVal')
   if (state.promo === 'OFF' && state.lastOnAt) {
     const d = new Date(Number(state.lastOnAt) + 7 * 3600000)
-    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '-' + pad2(d.getUTCMonth() + 1) + '-' + d.getUTCFullYear()
+    // singkat di semua ukuran: "ON 16/10" (tanggal & jam lengkap di tooltip)
+    lbl.textContent = 'ON ' + pad2(d.getUTCDate()) + '/' + pad2(d.getUTCMonth() + 1)
     val.textContent = state.lastOnPrice ? num(state.lastOnPrice) : '—'
     val.className = 'stat-v text-muted'
     box.title = 'Promo terakhir ON: ' + new Date(Number(state.lastOnAt)).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB'
     box.classList.remove('hidden')
   } else if (state.titikOn != null) {
-    lbl.textContent = 'Titik ON'
+    lbl.innerHTML = '<span class="lbl-s">ON</span><span class="lbl-l">Titik ON</span>'
     val.textContent = num(state.titikOn)
     val.className = 'stat-v text-up'
     box.title = 'Harga beli terendah selama promo ON hari ini'
@@ -224,7 +231,7 @@ function renderTitikOn() {
 function setPromoStatus(status, fromSse) {
   const el = $('#promoStatus')
   el.className = 'pill shrink-0 whitespace-nowrap px-3 py-1.5 text-sm ' + (status === 'ON' ? 'bg-up text-white' : 'bg-down/15 text-down')
-  el.innerHTML = '<span class="h-2 w-2 rounded-full ' + (status === 'ON' ? 'bg-white animate-pulse' : 'bg-down') + '"></span>PROMO ' + (status === 'ON' ? 'ON' : 'OFF')
+  el.innerHTML = '<span class="lbl-l">PROMO</span>' + (status === 'ON' ? 'ON' : 'OFF')
   if (fromSse && state.promo && state.promo !== status) promoSound(status)
   state.promo = status
 }
@@ -254,8 +261,8 @@ let chartFull = false, chartFullAt = 0
 // s = grafik & riwayat terlihat sekaligus (desktop berdampingan, HP grafik dipendekkan).
 const LAYOUT_KEY = 'monitorLayout'
 export const LAYOUTS = [
-  ['def', 'Bawaan', 'Harga + grafik, riwayat di bawah (digulir)', { p: 1, c: 1, h: 1, s: 0 }],
-  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
+  ['def', 'Harga + Grafik, riwayat digulir', 'Riwayat di bawah grafik (halaman digulir)', { p: 1, c: 1, h: 1, s: 0 }],
+  ['all', 'Harga + Grafik + Riwayat (bawaan)', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
   ['pc', 'Harga + Grafik', 'Tanpa riwayat', { p: 1, c: 1, h: 0, s: 0 }],
   ['ch', 'Grafik + Riwayat', 'Tanpa kotak harga', { p: 0, c: 1, h: 1, s: 1 }],
   ['ph', 'Harga + Riwayat', 'Tanpa grafik', { p: 1, c: 0, h: 1, s: 0 }],
@@ -263,14 +270,20 @@ export const LAYOUTS = [
   ['p', 'Harga saja', '', { p: 1, c: 0, h: 0, s: 0 }],
   ['h', 'Riwayat saja', '', { p: 0, c: 0, h: 1, s: 0 }]
 ]
-let layout = 'def'
+// bawaan: harga + grafik + riwayat terlihat sekaligus
+let layout = 'all'
 try {
   const v = localStorage.getItem(LAYOUT_KEY)
-  layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'def'
+  layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'all'
 } catch (e) {}
 const lay = () => (LAYOUTS.find(l => l[0] === layout) || LAYOUTS[0])[3]
 // Desktop & tablet: riwayat di samping grafik (bawaan) atau di bawahnya (pilihan di Tata letak)
-function histSide() { try { return localStorage.getItem('histSide') !== '0' } catch (e) { return true } }
+// posisi riwayat: default di samping hanya di desktop (>= 1280px); tablet default di bawah
+function histSide() {
+  let v = null
+  try { v = localStorage.getItem('histSide') } catch (e) {}
+  return v === null ? matchMedia('(min-width: 1280px)').matches : v !== '0'
+}
 function applyLayout() {
   const L = lay(), b = document.body.classList
   const both = !!(L.s && L.c && L.h)
@@ -291,7 +304,10 @@ function fitHistPanel() {
   if (!wrap || !t) return
   if (!wide() || !document.body.classList.contains('lay-split')) { wrap.style.gridTemplateColumns = ''; return }
   t.style.width = 'max-content'
-  const need = t.offsetWidth + 2
+  // lebar yang benar-benar tampil (tabel & kotaknya bisa diskalakan: ukuran teks + --ui-zoom)
+  // + lebar scrollbar tegak di kotak riwayat (supaya tidak muncul geser ke samping)
+  const sc = $('#histScroll'), sb = sc ? (sc.offsetWidth - sc.clientWidth) * (sc.offsetWidth ? sc.getBoundingClientRect().width / sc.offsetWidth : 1) : 0
+  const need = Math.ceil(t.getBoundingClientRect().width + sb) + 6
   t.style.width = ''
   const w = Math.max(360, Math.min(Math.round(wrap.clientWidth * 0.55), need))
   wrap.style.gridTemplateColumns = 'minmax(0, 1fr) ' + w + 'px'
@@ -302,8 +318,9 @@ if ('MutationObserver' in window) {
   if (hb) new MutationObserver(() => { fitHistPanel(); fitChart() }).observe(hb, { childList: true })
 }
 // Ukuran teks riwayat (tombol Aa di judul riwayat), diingat per perangkat
-const HIST_SIZES = [['0.85', 'Kecil'], ['1', 'Sedang (bawaan)'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
-function histSize() { try { const v = localStorage.getItem('histTextSize'); return HIST_SIZES.some(x => x[0] === v) ? v : '1' } catch (e) { return '1' } }
+const HIST_SIZES = [['0.85', 'Kecil (bawaan)'], ['1', 'Sedang'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
+// bawaan: teks riwayat Kecil
+function histSize() { try { const v = localStorage.getItem('histTextSize'); return HIST_SIZES.some(x => x[0] === v) ? v : '0.85' } catch (e) { return '0.85' } }
 function applyHistSize() {
   const sc = $('#histScroll')
   if (sc) sc.style.setProperty('--hist-zoom', histSize())
@@ -349,29 +366,16 @@ function openHistSize() {
     IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
-function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
+// bawaan: kotak harga ringkas (aktif kecuali user mematikannya)
+function priceCompact() { try { return localStorage.getItem('priceCompact') !== '0' } catch (e) { return true } }
 // Info harga yang ditampilkan (pilihan user, diingat per perangkat). Semua dimatikan = baris info hilang.
-const CHIP_DEFS = [['chipUsd', 'USD/IDR'], ['chipHigh', 'Tertinggi'], ['chipLow', 'Terendah'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown'], ['chipSpread', 'Spread'], ['chipOn', 'Titik ON']]
+const CHIP_DEFS = [['chipUsd', 'Kurs USD/IDR (IDR)'], ['chipHigh', 'Tertinggi hari ini (Max)'], ['chipLow', 'Terendah hari ini (Min)'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown (MU/MD)'], ['chipSpread', 'Spread (Spr)'], ['chipOn', 'Titik ON (ON)']]
 function chipPrefs() { try { return JSON.parse(localStorage.getItem('chipPrefs') || '{}') || {} } catch (e) { return {} } }
 function applyChipPrefs() {
   const pr = chipPrefs()
   CHIP_DEFS.forEach(([id]) => { const el = document.getElementById(id); if (el) el.classList.toggle('chip-off', pr[id] === false) })
   $('#chips').classList.toggle('chips-off', CHIP_DEFS.every(([id]) => pr[id] === false))
   fitChart()
-}
-// Ikon pengaturan di pojok kotak harga: ringkas on/off, info harga, nominal
-function openPriceSettings() {
-  const t = h('input', { type: 'checkbox', class: 'toggle' })
-  t.checked = priceCompact()
-  t.addEventListener('change', () => { try { localStorage.setItem('priceCompact', t.checked ? '1' : '0') } catch (e) {} applyLayout(); fitChart() })
-  const row = (ic, label, note, fn) => h('button', { class: 'tile flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn, html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })
-  openSheet('Atur kotak harga', h('div', { class: 'flex flex-col gap-1.5' },
-    h('label', { class: 'tile flex items-center justify-between gap-3 px-3 py-2.5' },
-      h('span', { class: 'min-w-0' },
-        h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
-        h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil, info & gramasi dalam kotak kecil')), t),
-    row('activity', 'Atur info harga', 'USD/IDR, Tertinggi, Terendah, Limit, Markdown, Spread, Titik ON', () => openChipSettings()),
-    row('sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings())))
 }
 export function openChipSettings() {
   const pr = chipPrefs()
@@ -422,6 +426,11 @@ export function openLayoutPicker() {
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
           h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga & gramasi nominal dalam kotak kecil')), t)
     })(),
+    // pengaturan isi kotak harga
+    ...[['activity', 'Atur info harga', 'IDR, Max, Min, Limit, MD/MU, Spr, ON', () => openChipSettings()],
+        ['sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings()]].map(([ic, label, note, fn]) =>
+      h('button', { class: 'tile mt-2 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn,
+        html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
     wide() ? (() => {
       const side = histSide()
@@ -451,7 +460,9 @@ function histRowsHeight(n) {
     for (let i = 0; i < Math.min(n, trs.length); i++) need += vh(trs[i])
     if (trs.length < n) need += vh(trs[0]) * (n - trs.length)
     const headH = $('#histHead') ? vh($('#histHead')) : 0
-    return Math.round(sec.offsetHeight + need - (scroll.clientHeight - headH))
+    // kotak gulir ikut diskalakan (--ui-zoom): clientHeight masih dalam ukuran sebelum skala
+    const z = scroll.offsetHeight ? vh(scroll) / scroll.offsetHeight : 1
+    return Math.round(sec.offsetHeight + need - (scroll.clientHeight * z - headH))
   }
   const title = sec && sec.firstElementChild ? sec.firstElementChild.offsetHeight : 36
   const head = $('#histHead') ? $('#histHead').offsetHeight : 28
@@ -544,12 +555,13 @@ function tick() {
   // jam terlihat bergerak: angka detik berdenyut saat berganti, titik dua berkedip tiap detik
   if (sEl.textContent !== pad2(s)) {
     sEl.textContent = pad2(s)
-    sEl.className = (s >= 50 ? 'text-down ' : '') + 'clk-tick'
+    sEl.className = (s >= 50 ? 'text-down ' : 'text-gold ') + 'clk-tick'
     void sEl.offsetWidth
     sEl.classList.add('clk-tick-on')
     document.querySelectorAll('.clk-colon').forEach(c => c.classList.toggle('clk-dim', s % 2 === 1))
   }
-  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
+  // bar atas: HP versi pendek ("17 Okt"), desktop lengkap ("Sabtu, 17 Okt · WIB")
+  $('#clkDate').textContent = wide() ? HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB' : now.getDate() + ' ' + BULAN[now.getMonth()]
   countdownTick(s, $('main'))
 }
 
@@ -672,10 +684,10 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
+  // USD/IDR: di baris atas bersama jam & PROMO (semua ukuran layar), sedikit lebih kecil dari Beli/Jual
+  const usd = $('#chipUsd')
+  if (usd) { usd.classList.add('usd-pill'); $('#clockRow').append(usd) }
   applyChipPrefs()
-  // ikon pengaturan kotak harga, di baris jam setelah pil PROMO (tidak menimpa kotak Beli/Jual)
-  const gear = h('button', { id: 'btnPriceSet', class: 'icon-btn h-7 w-7 shrink-0 text-muted', title: 'Atur kotak harga', 'aria-label': 'Atur kotak harga', html: icon('sliders', 'h-3.5 w-3.5'), onclick: openPriceSettings })
-  $('#clockRow').append(gear)
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()

@@ -430,6 +430,10 @@ let promoLastOnAt = null   // null = belum dimuat dari Redis, 0 = belum pernah t
 const PROMO_LAST_ON_PRICE_KEY = 'gold:promo_last_on_price'
 let promoLastOnPrice = null
 let _promoLastOnSavedAt = 0
+// Harga berubah -> status promo Treasury baru ikut berubah beberapa detik kemudian. Simpan harga ON
+// yang dipegang saat harga berubah, supaya OFF yang menyusul tidak mencatat harga baru sebagai "Terakhir ON".
+let _priceChangedAt = 0
+let _onPriceAtChange = null
 let lowestOnPriceCache = undefined // undefined = belum diload, null = belum ada nilai
 let lowestOnDateWIB = null        // Tanggal WIB (YYYY-MM-DD) saat lowestOnPriceCache dicatat
 let lowestOnPendingTimeout = null // Timeout 20 detik sebelum update titik ON terendah
@@ -2420,6 +2424,9 @@ async function doPromoBroadcast() {
         if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
       }
     } else if (lastPromoStatus === 'ON' && promoLastOnAt) {
+      // OFF datang <= 15 dtk setelah harga berubah: OFF itu milik harga baru, jadi "Terakhir ON" = harga sebelumnya
+      // (contoh 16/10 22:19 ON di 2.475.162, 22:20:02 harga 2.474.013, 22:20:07 OFF -> tetap 2.475.162)
+      if (_onPriceAtChange && now - _priceChangedAt <= 15000) promoLastOnPrice = _onPriceAtChange
       redis.set(PROMO_LAST_ON_KEY, String(promoLastOnAt)).catch(() => {})
       if (promoLastOnPrice) redis.set(PROMO_LAST_ON_PRICE_KEY, String(promoLastOnPrice)).catch(() => {})
     }
@@ -2548,6 +2555,9 @@ async function doPromoBroadcast() {
     // - OFF→ON: langsung kirim (detik berapa saja) + tag semua member grup (1x)
     // - ON biasa: kirim ✅ ON di detik 50+ tiap menit, tanpa tag & tanpa link
     // - OFF biasa: kirim ❌ OFF di detik 50+ (1x per menit), max 5x
+    // Server baru start / restart (deploy) saat promo sudah OFF: OFF itu bukan kejadian baru,
+    // jadi jangan kirim "❌ OFF" ke grup. Siklus OFF (maks 5x) hanya berjalan setelah ON -> OFF.
+    if (isFirstCheck && currentStatus === 'OFF') offWaCount = 5
     if (sock && isReady && (broadcastGroupId || subscriptions.size > 0)) {
       const seconds = new Date(now).getSeconds()
       const isNewWaMinute = currentMinute !== lastPromoWaMinute
@@ -3521,6 +3531,8 @@ async function fastPoll(treasuryData, _fetchMs) {
     if (isPriceChanged) {
       const _bd = currentPrice.buy - lastKnownPrice.buy
       const _sd = currentPrice.sell - lastKnownPrice.sell
+      _priceChangedAt = Date.now()
+      _onPriceAtChange = lastPromoStatus === 'ON' ? promoLastOnPrice : null
       pushLog(`TREASURY | Harga berubah: Buy ${formatRupiah(lastKnownPrice.buy)}→${formatRupiah(currentPrice.buy)} (${_bd > 0 ? '+' : ''}${formatRupiah(_bd)}) | Sell ${formatRupiah(lastKnownPrice.sell)}→${formatRupiah(currentPrice.sell)} (${_sd > 0 ? '+' : ''}${formatRupiah(_sd)})`)
     }
 
@@ -3760,7 +3772,7 @@ app.get(/^\/ui-baru\/js\/[A-Za-z0-9_\/-]+\.js$/, (req, res, next) => {
     let code = _ui2JsCache.get(rel)
     if (code === undefined) {
       code = readFileSync(join(UI2_DIR, 'js', rel), 'utf8')
-        .replace(/(\bfrom\s*|\bimport\s*\(\s*)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, (m, a, q, f) => a + q + f + '?v=' + UI2_VER + q)
+        .replace(/(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, (m, a, q, f) => a + q + f + '?v=' + UI2_VER + q)
       _ui2JsCache.set(rel, code)
     }
     res.setHeader('Cache-Control', req.query.v === UI2_VER ? 'public, max-age=31536000, immutable' : 'no-cache')
@@ -3866,7 +3878,7 @@ app.use((req, res, next) => {
 
 // Helper: validasi session user atau admin — kembalikan false jika tidak valid (sudah kirim 403)
 async function requireSession(req, res) {
-  if (req._adminAuthed) return true
+  if (req._adminAuthed || isAdminCookieValid(req)) return true
   const session = req.query.session || (req.body && req.body.session)
   if (!session) { res.status(403).json({ error: 'Unauthorized' }); return false }
   let phone = null
@@ -4098,7 +4110,7 @@ app.get('/admin-login', (req, res) => {
       </div>
       <button type="submit" class="btn">Login Admin</button>
     </form>
-    <a href="/login" class="back-link">← Kembali ke halaman user</a>
+    <a href="/login" class="back-link">${aIco('arrowleft')}Kembali ke halaman user</a>
   </div>
   <script>
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -4194,6 +4206,28 @@ function parseCookies(req) {
 }
 
 // Helper: cek cookie admin_auth dari request
+// Ikon SVG kecil untuk halaman admin / QR (pengganti emoji). Tanpa tanda kutip tunggal & backtick,
+// jadi aman disisipkan di HTML maupun di string JS di dalam template halaman.
+const ADM_ICO = {
+  refresh: '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  logs: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  qr: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
+  xcircle: '<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',
+  arrowleft: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/>'
+}
+function aIco(name) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:1em;height:1em;vertical-align:-0.15em;margin-right:0.35em;flex-shrink:0;">' + (ADM_ICO[name] || '') + '</svg>'
+}
+
 function isAdminCookieValid(req) {
   try {
     const cookies = parseCookies(req)
@@ -4421,7 +4455,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
     <div style="text-align:center;padding:20px;font-family:sans-serif;background:#0f1419;color:#e7e9ea;min-height:100vh;">
       <h2 style="color:#f7931a;">WhatsApp Bot Status</h2>
       <div style="margin:30px 0;padding:20px;background:#1a1f26;border-radius:12px;border:1px solid #2f3640;">
-        <p style="font-size:1.2em;"><span style="color:#00ff88;">✓ WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small></p>
+        <p style="font-size:1.2em;"><span style="color:#00ff88;">${aIco('check')}WhatsApp sudah terhubung!</span><br><small style="color:#71767b;">Bot aktif dan siap digunakan.</small></p>
       </div>
       <div style="margin:20px 0;padding:15px;background:rgba(0,255,136,0.1);border:1px solid #00ff88;border-radius:10px;">
         <p style="color:#00ff88;margin-bottom:10px;">Bot sudah aktif!</p>
@@ -4442,8 +4476,8 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
       <h2 style="color:#f7931a;" id="title">Hubungkan WhatsApp</h2>
 
       <div style="display:flex;justify-content:center;gap:8px;margin:16px 0 20px;">
-        <button id="tabQrBtn" onclick="switchTab('qr')" style="padding:10px 18px;border-radius:8px;border:1px solid #f7931a;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;">📷 Scan QR</button>
-        <button id="tabPhoneBtn" onclick="switchTab('phone')" style="padding:10px 18px;border-radius:8px;border:1px solid #2f3640;background:#1a1f26;color:#e7e9ea;cursor:pointer;">🔢 Nomor HP</button>
+        <button id="tabQrBtn" onclick="switchTab('qr')" style="padding:10px 18px;border-radius:8px;border:1px solid #f7931a;background:#f7931a;color:#0f1419;font-weight:bold;cursor:pointer;">${aIco('qr')}Scan QR</button>
+        <button id="tabPhoneBtn" onclick="switchTab('phone')" style="padding:10px 18px;border-radius:8px;border:1px solid #2f3640;background:#1a1f26;color:#e7e9ea;cursor:pointer;">${aIco('phone')}Nomor HP</button>
       </div>
 
       <div id="panelQr">
@@ -4516,7 +4550,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
 
       function onConnected() {
         clearInterval(qrCountdownTimer);
-        document.getElementById('title').textContent = '✅ WhatsApp Terhubung!';
+        document.getElementById('title').textContent = 'WhatsApp Terhubung!';
         document.getElementById('title').style.color = '#00ff88';
         document.getElementById('panelQr').style.display = 'none';
         document.getElementById('panelPhone').style.display = 'none';
@@ -4537,7 +4571,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
           } else {
             document.getElementById('qrBox').style.display = 'none';
             document.getElementById('qrStatusBox').style.display = 'block';
-            document.getElementById('qrStatusText').textContent = data.auth === false ? '🔒 Silakan login admin terlebih dahulu.' : '⏳ Menunggu QR dari WhatsApp server...';
+            document.getElementById('qrStatusText').textContent = data.auth === false ? 'Silakan login admin terlebih dahulu.' : 'Menunggu QR dari WhatsApp server...';
             document.getElementById('qrTimerText').textContent = 'Polling tiap 3 detik...';
           }
         } catch(e) {
@@ -4566,7 +4600,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
           }
           document.getElementById('phoneFormBox').style.display = 'none';
           document.getElementById('phoneStatusBox').style.display = 'block';
-          document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+          document.getElementById('phoneStatusText').textContent = 'Menyiapkan kode pairing...';
         } catch (e) {
           errEl.textContent = 'Gagal terhubung ke server, coba lagi';
           errEl.style.display = 'block';
@@ -4585,7 +4619,7 @@ app.get('/qr', rateLimit(30, 60000), async (_req, res) => {
             document.getElementById('codeText').textContent = data.code;
           } else if (data.status === 'waiting') {
             document.getElementById('phoneStatusBox').style.display = 'block';
-            document.getElementById('phoneStatusText').textContent = '⏳ Menyiapkan kode pairing...';
+            document.getElementById('phoneStatusText').textContent = 'Menyiapkan kode pairing...';
           }
         } catch (e) {}
       }
@@ -4697,7 +4731,9 @@ app.get('/api/admin/login-history', async (req, res) => {
   }
 })
 
-app.get('/stats', (_req, res) => {
+app.get('/stats', (req, res) => {
+  // KEAMANAN: berisi log server (nomor HP, ID grup, isi pesan) & harga realtime -> khusus admin
+  if (!isAdminCookieValid(req) && !req._adminAuthed) return res.json({ status: isReady ? 'ready' : 'not_ready' })
   const now = Date.now()
   const timeSinceLastUpdate = lastPriceUpdateTime > 0 ? now - lastPriceUpdateTime : null
   const isPriceStale = timeSinceLastUpdate ? timeSinceLastUpdate >= STALE_PRICE_THRESHOLD : false
@@ -4769,14 +4805,16 @@ app.get('/time', (_req, res) => {
 })
 
 // Daily Stats API - konsisten di semua device (async untuk Redis)
-app.get('/daily-stats', async (_req, res) => {
+app.get('/daily-stats', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   const stats = await getDailyStats()
   res.json(stats)
 })
 
 // Price History API - public (data harga bukan sensitif)
 // Sparkline init — last 30 entries untuk inisialisasi sparkline di client
-app.get('/api/sparkline-init', (req, res) => {
+app.get('/api/sparkline-init', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   const last30 = priceHistoryCache.slice(-30)
   const HARDCODED_RATES = [15900, 16600]
   res.json(last30.map(e => ({
@@ -4788,15 +4826,18 @@ app.get('/api/sparkline-init', (req, res) => {
 })
 
 app.get('/price-history', async (req, res) => {
-  const page = parseInt(req.query.page) || 1
-  const perPage = parseInt(req.query.perPage) || 10
+  // KEAMANAN: data harga hanya untuk user yang login (dulu terbuka untuk umum); maks 100 per halaman
+  if (!(await requireSession(req, res))) return
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage) || 10))
   const history = await getPriceHistory(page, perPage)
   // Include current USD/IDR for fallback on old entries
   history.currentUsdIdr = cachedMarketData.usdIdr?.rate || 0
   res.json(history)
 })
 
-app.get('/usd-idr-history', (req, res) => {
+app.get('/usd-idr-history', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   res.json({ items: [...usdIdrHistory].reverse(), total: usdIdrHistory.length })
 })
 
@@ -6210,9 +6251,9 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     } catch (e) {}
   }
 
-  // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi).
-  // Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
-  if (normalizedPhone !== ADMIN_PHONE) {
+  // Batasi jumlah perangkat (diatur admin di panel). SEMUA nomor admin (utama + yang ditambahkan
+  // di panel) tidak dibatasi. Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
+  if (normalizedPhone !== ADMIN_PHONE && !ADMIN_PHONES.includes(normalizedPhone)) {
     const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
     const userSessions = []
     for (const [sessId, sessPhone] of Object.entries(allSessions)) {
@@ -9335,8 +9376,8 @@ app.get('/auth/:token', async (req, res) => {
       return res.send(getLoginErrorPage('Akun tidak ditemukan atau tidak valid.'))
     }
 
-    // Batasi jumlah perangkat (diatur admin di panel; nomor admin tidak dibatasi)
-    if (phone !== ADMIN_PHONE) {
+    // Batasi jumlah perangkat (diatur admin di panel; semua nomor admin tidak dibatasi)
+    if (phone !== ADMIN_PHONE && !ADMIN_PHONES.includes(phone)) {
       const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
       const userSessions = []
       for (const [sessId, sessPhone] of Object.entries(allSessions)) {
@@ -9790,6 +9831,9 @@ ${authScript}
     .user-table tr:hover { background: rgba(247,147,26,0.04); }
     .user-table td { font-size: 0.85em; }
     .user-table td.phone { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; }
+    .user-table td.copy-phone { cursor: copy; user-select: none; }
+    .user-table td.copy-phone:hover { color: #f7931a; text-decoration: underline dotted; }
+    .user-table td.copy-phone.copied { color: #22c55e; }
     .pay-table-wrap { overflow: auto; max-height: 420px; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; scrollbar-width: thin; scrollbar-color: #374151 transparent; }
     .pay-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
     .pay-table-wrap::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
@@ -10120,7 +10164,24 @@ ${authScript}
       body.adm-v2 #userList td[colspan] { grid-column: 1 / -1; }
       body.adm-v2 #userList td[colspan]::before { content: none; }
       body.adm-v2 #userList .action-btn { flex: 1 1 calc(25% - 4px); text-align: center; padding: 7px 4px; }
+      /* HP: deretan menu geser disembunyikan, diganti tombol Menu di judul halaman */
+      body.adm-v2 .adm-side { display: none !important; }
+      body.adm-v2 .adm-menu-btn { display: inline-flex; }
     }
+    .adm-menu-btn { display: none; margin-left: auto; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; border: 1px solid #262626; background: #111; color: #e7e9ea; font-size: 0.85em; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+    .adm-menu-btn svg { width: 16px; height: 16px; color: #f7931a; }
+    .adm-sheet-back { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; justify-content: center; }
+    .adm-sheet { width: 100%; max-width: 560px; max-height: 82vh; overflow-y: auto; background: #0b0b0b; border-top: 1px solid #262626; border-radius: 18px 18px 0 0; padding: 8px 10px calc(14px + env(safe-area-inset-bottom)); }
+    .adm-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 8px; color: #fff; font-size: 0.95em; }
+    .adm-sheet-x { width: 32px; height: 32px; border-radius: 9px; border: 1px solid #262626; background: #111; color: #e7e9ea; font-size: 18px; line-height: 1; cursor: pointer; }
+    .adm-sheet-label { padding: 8px 8px 3px; color: #6b6b6b; font-size: 0.68em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .adm-sheet-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: none; border-radius: 10px; background: none; color: #d4d4d4; font-size: 0.9em; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; }
+    .adm-sheet-item:active, .adm-sheet-item:hover { background: #151515; }
+    .adm-sheet-item.active { background: rgba(247,147,26,0.12); color: #f7931a; }
+    .adm-sheet-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .adm-sheet-item span[class*="badge"], .adm-sheet-item span[style*="border-radius"] { margin-left: auto !important; }
+    .adm-sheet-item.logout { color: #f87171; }
+    .adm-sheet-sep { margin: 6px 4px; border-top: 1px solid #1c1c1c; }
   </style>
 </head>
 <body>
@@ -10180,7 +10241,7 @@ ${authScript}
       <!-- Section Tabs -->
       <div class="section-tabs">
         <div class="section-tab active" data-section="users">Daftar User</div>
-        <div class="section-tab" data-section="want-join">🙋 Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
+        <div class="section-tab" data-section="want-join">Ingin Gabung Grup WA <span id="wantJoinBadge" style="background:#6366f1;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="online">Online <span id="onlineBadge" style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
         <div class="section-tab" data-section="add">Tambah User</div>
         <div class="section-tab" data-section="pending">Pending <span id="pendingBadge" style="background:#f7931a;color:#000;padding:1px 6px;border-radius:8px;font-size:0.75em;margin-left:4px;">0</span></div>
@@ -10188,7 +10249,7 @@ ${authScript}
         <div class="section-tab" data-section="nominal">Nominal</div>
         <div class="section-tab" data-section="broadcast">Broadcast</div>
         <div class="section-tab" data-section="settings">Pengaturan</div>
-        <div class="section-tab" data-section="logs">📋 Logs</div>
+        <div class="section-tab" data-section="logs">Logs</div>
       </div>
 
       <!-- Section: Daftar User -->
@@ -10213,6 +10274,25 @@ ${authScript}
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
             <input id="userSearch" type="search" inputmode="search" autocomplete="off" placeholder="Cari nomor HP / nama..." oninput="applyUserGroupFilter()" style="flex:1;min-width:170px;background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:6px 10px;font-size:0.85em;outline:none;">
             <span id="userSearchCount" style="align-self:center;color:#6b7280;font-size:0.78em;"></span>
+            <select id="userStatusFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Status: semua</option>
+              <option value="active">Aktif</option>
+              <option value="lifetime">Lifetime</option>
+              <option value="expired">Expired</option>
+              <option value="blocked">Blocked</option>
+              <option value="soon3">Habis &le; 3 hari</option>
+              <option value="soon7">Habis &le; 7 hari</option>
+            </select>
+            <select id="userPushFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Push: semua</option>
+              <option value="1">Push aktif</option>
+              <option value="0">Push tidak aktif</option>
+            </select>
+            <select id="userPinFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">PIN: semua</option>
+              <option value="changed">PIN sudah diganti</option>
+              <option value="default">PIN default</option>
+            </select>
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
               <option value="masuk">Di grup</option>
@@ -10220,6 +10300,7 @@ ${authScript}
               <option value="tidak_mau">Tidak mau masuk grup</option>
               <option value="belum">Belum menjawab</option>
             </select>
+            <button type="button" onclick="resetUserFilters()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;cursor:pointer;">Reset filter</button>
           </div>
           <div class="user-table-wrapper">
             <table class="user-table">
@@ -10252,7 +10333,7 @@ ${authScript}
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
               <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>
-            🙋 Ingin Gabung Grup Notifikasi Harga
+            Ingin Gabung Grup Notifikasi Harga
           </h2>
           <p style="color:#9ca3af;margin-bottom:12px;font-size:0.9em;">User yang memilih "Ya, gabung" di website dan belum ditambahkan ke grup WA. Setelah ditambahkan ke grup, tekan tombol "Sudah Ditambahkan".</p>
           <div class="user-table-wrapper">
@@ -10406,10 +10487,10 @@ ${authScript}
               <div id="waStatusPhone" style="font-size:0.78em;color:#6b7280;margin-top:2px;"></div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">🔁 Refresh</button>
-              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">🔗 Hubungkan (QR / Nomor HP)</a>
-              <button class="btn btn-sm" style="background:#22c55e;color:#000;" onclick="repairWaSession()">🛠️ Perbaiki Sesi (tanpa logout)</button>
-              <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">⚠️ Reset / Ganti WA</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadWaStatus()">${aIco('refresh')}Refresh</button>
+              <a id="waQrLink" href="/qr" target="_blank" class="btn btn-sm" style="background:#f7931a;color:#000;text-decoration:none;">${aIco('link')}Hubungkan (QR / Nomor HP)</a>
+              <button class="btn btn-sm" style="background:#22c55e;color:#000;" onclick="repairWaSession()">${aIco('wrench')}Perbaiki Sesi (tanpa logout)</button>
+              <button class="btn btn-danger btn-sm" onclick="resetWaConnection()">${aIco('alert')}Reset / Ganti WA</button>
             </div>
           </div>
           <p style="color:#6b7280;font-size:0.78em;margin-bottom:4px;"><strong>Perbaiki Sesi</strong>: untuk bot yang tidak membalas command di grup (error "Bad MAC" di log). Tidak logout, tidak perlu scan ulang.</p>
@@ -10440,7 +10521,7 @@ ${authScript}
 
           <!-- Broadcast Group (Kirim Harga Otomatis) -->
           <div style="margin-top:20px;padding:16px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:12px;">
-            <label style="color:#00ff88;font-weight:600;display:block;margin-bottom:4px;font-size:0.9em;">📢 Grup Broadcast Harga (Grup Beli)</label>
+            <label style="color:#00ff88;font-weight:600;display:block;margin-bottom:4px;font-size:0.9em;">${aIco('megaphone')}Grup Broadcast Harga (Grup Beli)</label>
             <p style="color:#6b7280;font-size:0.8em;margin-bottom:12px;">Harga emas akan otomatis dikirim ke grup ini setiap kali ada perubahan harga. Pesan akan menyertakan Titik ON ▼ dan Limit beli/bln.</p>
             <div class="form-row" style="align-items:flex-end;">
               <div class="form-group" style="flex:2;">
@@ -10753,7 +10834,7 @@ ${authScript}
 
           <!-- Sound Naik Besar -->
           <div style="background:rgba(250,204,21,0.05);padding:16px;border-radius:12px;border:1px solid rgba(250,204,21,0.25);margin-bottom:14px;">
-            <label style="color:#facc15;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">⚡ Sound Naik Besar (&gt;3.000)</label>
+            <label style="color:#facc15;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">${aIco('zap')}Sound Naik Besar (&gt;3.000)</label>
             <p style="color:#6b7280;font-size:0.78em;margin-bottom:10px;">Berbunyi saat harga naik lebih dari Rp 3.000 sekaligus. Jika kosong, memakai sound naik biasa.</p>
             <div class="form-group" style="margin-bottom:10px;">
               <label>Upload File Audio</label>
@@ -10771,7 +10852,7 @@ ${authScript}
 
           <!-- Sound Turun Besar -->
           <div style="background:rgba(251,146,60,0.05);padding:16px;border-radius:12px;border:1px solid rgba(251,146,60,0.25);margin-bottom:16px;">
-            <label style="color:#fb923c;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">⚡ Sound Turun Besar (&gt;3.000)</label>
+            <label style="color:#fb923c;font-weight:600;display:block;margin-bottom:6px;font-size:0.9em;">${aIco('zap')}Sound Turun Besar (&gt;3.000)</label>
             <p style="color:#6b7280;font-size:0.78em;margin-bottom:10px;">Berbunyi saat harga turun lebih dari Rp 3.000 sekaligus. Jika kosong, memakai sound turun biasa.</p>
             <div class="form-group" style="margin-bottom:10px;">
               <label>Upload File Audio</label>
@@ -11026,7 +11107,7 @@ ${authScript}
       <div class="section-content" id="section-logs">
         <div class="card" style="margin-bottom:18px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-            <h2 style="margin:0;">🔐 Riwayat Login &amp; Logout User</h2>
+            <h2 style="margin:0;">${aIco('lock')}Riwayat Login &amp; Logout User</h2>
             <span id="loginHistoryCount" style="font-size:0.82em;color:#8b949e;"></span>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
@@ -11038,7 +11119,7 @@ ${authScript}
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:140px;outline:none;">
             <input id="filterLoginLocation" type="text" placeholder="Filter kota/provinsi..." oninput="renderLoginHistoryFiltered()"
               style="padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e7e9ea;font-size:0.82em;width:170px;outline:none;">
-            <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">✕ Reset</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearLoginFilters()">${aIco('x')}Reset</button>
           </div>
           <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;font-size:0.82em;">
@@ -11059,10 +11140,10 @@ ${authScript}
           </div>
         </div>
         <div class="card">
-          <h2>📋 System Logs</h2>
+          <h2>${aIco('logs')}System Logs</h2>
           <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-            <button class="btn btn-secondary btn-sm" onclick="loadAdminLogs()">🔁 Reload</button>
-            <span style="font-size:0.82em;color:#00ff88;">⚡ Realtime via SSE</span>
+            <button class="btn btn-secondary btn-sm" onclick="loadAdminLogs()">${aIco('refresh')}Reload</button>
+            <span style="font-size:0.82em;color:#00ff88;">${aIco('zap')}Realtime via SSE</span>
           </div>
           <div id="logsContainer" style="background:#0a0e13;border-radius:10px;padding:12px;max-height:520px;overflow-y:auto;font-family:monospace;font-size:0.78em;line-height:1.6;"></div>
         </div>
@@ -11315,6 +11396,56 @@ ${authScript}
         });
         var act = tabs.querySelector('.section-tab.active');
         if (act) setTitle(act);
+
+        // HP: tombol "Menu" di judul halaman membuka daftar menu (seperti Lainnya di /monitoring)
+        var hdr = document.querySelector('.header');
+        if (hdr && !document.querySelector('.adm-menu-btn')) {
+          var mb = document.createElement('button');
+          mb.type = 'button';
+          mb.className = 'adm-menu-btn';
+          mb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Menu</span>';
+          mb.addEventListener('click', openAdmMenu);
+          hdr.appendChild(mb);
+        }
+        function openAdmMenu() {
+          var old = document.getElementById('admMenuSheet');
+          if (old) { old.remove(); return; }
+          var back = document.createElement('div');
+          back.id = 'admMenuSheet';
+          back.className = 'adm-sheet-back';
+          var sh = document.createElement('div');
+          sh.className = 'adm-sheet';
+          var close = function() { back.remove(); };
+          var head = document.createElement('div');
+          head.className = 'adm-sheet-head';
+          head.innerHTML = '<b>Menu panel admin</b>';
+          var x = document.createElement('button');
+          x.type = 'button'; x.className = 'adm-sheet-x'; x.textContent = '×'; x.setAttribute('aria-label', 'Tutup');
+          x.addEventListener('click', close);
+          head.appendChild(x);
+          sh.appendChild(head);
+          var lab = document.createElement('div');
+          lab.className = 'adm-sheet-label'; lab.textContent = 'Bagian';
+          sh.appendChild(lab);
+          tabs.querySelectorAll('.section-tab').forEach(function(t) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'adm-sheet-item' + (t.classList.contains('active') ? ' active' : '');
+            b.innerHTML = t.innerHTML;
+            b.querySelectorAll('[id]').forEach(function(e) { e.removeAttribute('id'); });
+            b.addEventListener('click', function() { t.click(); close(); });
+            sh.appendChild(b);
+          });
+          var sep = document.createElement('div'); sep.className = 'adm-sheet-sep'; sh.appendChild(sep);
+          foot.querySelectorAll('a').forEach(function(a) {
+            var c = a.cloneNode(true);
+            c.className = 'adm-sheet-item' + (a.classList.contains('logout') ? ' logout' : '');
+            sh.appendChild(c);
+          });
+          back.appendChild(sh);
+          back.addEventListener('click', function(e) { if (e.target === back) close(); });
+          document.body.appendChild(back);
+        }
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
     })();
@@ -12789,19 +12920,19 @@ ${authScript}
           if (data.connected) {
             dot.style.background = '#00ff88';
             dot.style.boxShadow = '0 0 8px #00ff88';
-            text.textContent = '✅ Terhubung';
+            text.innerHTML = '${aIco('check')}Terhubung';
             text.style.color = '#00ff88';
             phone.textContent = data.phone ? 'Nomor: ' + data.phone : '';
           } else if (data.hasQr) {
             dot.style.background = '#f7931a';
             dot.style.boxShadow = '0 0 8px #f7931a';
-            text.textContent = '📷 Menunggu scan QR';
+            text.innerHTML = '${aIco('qr')}Menunggu scan QR';
             text.style.color = '#f7931a';
             phone.textContent = 'Buka halaman QR untuk scan';
           } else {
             dot.style.background = '#ef4444';
             dot.style.boxShadow = 'none';
-            text.textContent = '❌ Tidak terhubung';
+            text.innerHTML = '${aIco('xcircle')}Tidak terhubung';
             text.style.color = '#ef4444';
             phone.textContent = 'Klik "Hubungkan" untuk scan QR atau pakai nomor HP';
           }
@@ -12812,7 +12943,7 @@ ${authScript}
     async function repairWaSession() {
       const confirmed = await showConfirm(
         'Hapus sesi enkripsi yang rusak lalu reconnect WA. Tidak logout dan tidak perlu scan ulang.\\n\\nLanjutkan?',
-        { title: '🛠️ Perbaiki Sesi WhatsApp', type: 'warning' }
+        { title: 'Perbaiki Sesi WhatsApp', type: 'warning' }
       );
       if (!confirmed) return;
 
@@ -12829,7 +12960,7 @@ ${authScript}
       .then(data => {
         if (data.success) {
           result.className = 'result-msg success';
-          result.textContent = '✅ ' + data.message;
+          result.textContent = data.message;
           setTimeout(() => loadWaStatus(), 5000);
         } else {
           result.className = 'result-msg error';
@@ -12842,7 +12973,7 @@ ${authScript}
     async function resetWaConnection() {
       const confirmed = await showConfirm(
         'Ini akan logout dari WhatsApp saat ini dan memerlukan login ulang (scan QR atau kode pairing nomor HP) untuk menghubungkan nomor baru.\\n\\nLanjutkan?',
-        { title: '⚠️ Reset Koneksi WhatsApp', type: 'warning' }
+        { title: 'Reset Koneksi WhatsApp', type: 'warning' }
       );
       if (!confirmed) return;
 
@@ -12859,7 +12990,7 @@ ${authScript}
       .then(data => {
         if (data.success) {
           result.className = 'result-msg success';
-          result.textContent = '✅ ' + data.message;
+          result.textContent = data.message;
           setTimeout(() => loadWaStatus(), 3000);
         } else {
           result.className = 'result-msg error';
@@ -12921,9 +13052,9 @@ ${authScript}
           if (data.broadcastGroupId) {
             const bcast = data.groups.find(g => g.id === data.broadcastGroupId);
             if (bcast) {
-              document.getElementById('currentBroadcastGroup').innerHTML = '📢 Broadcast aktif ke: <strong style="color:#00ff88;">' + bcast.name + '</strong>';
+              document.getElementById('currentBroadcastGroup').innerHTML = '${aIco('megaphone')}Broadcast aktif ke: <strong style="color:#00ff88;">' + bcast.name + '</strong>';
             } else {
-              document.getElementById('currentBroadcastGroup').innerHTML = '📢 Broadcast aktif: <strong style="color:#f7931a;">' + data.broadcastGroupId.substring(0, 20) + '...</strong>';
+              document.getElementById('currentBroadcastGroup').innerHTML = '${aIco('megaphone')}Broadcast aktif: <strong style="color:#f7931a;">' + data.broadcastGroupId.substring(0, 20) + '...</strong>';
             }
           } else {
             document.getElementById('currentBroadcastGroup').textContent = 'Broadcast grup belum di-set (tidak ada broadcast ke grup WA)';
@@ -12977,8 +13108,8 @@ ${authScript}
         if (data.success) {
           result.className = 'result-msg success';
           result.textContent = groupId
-            ? '📢 Grup broadcast berhasil di-set! Harga akan otomatis dikirim ke grup ini.'
-            : '📢 Broadcast grup dinonaktifkan.';
+            ? 'Grup broadcast berhasil di-set! Harga akan otomatis dikirim ke grup ini.'
+            : 'Broadcast grup dinonaktifkan.';
           loadWaGroups();
         } else {
           result.className = 'result-msg error';
@@ -13174,9 +13305,35 @@ ${authScript}
 
     // ----- Cocokkan Daftar User dengan anggota grup WA -----
     // Filter Daftar User: status grup + kotak cari (nomor HP format bebas: 0812..., +62 812-..., 812...; atau nama)
+    function resetUserFilters() {
+      ['userGroupFilter', 'userStatusFilter', 'userPushFilter', 'userPinFilter', 'userSearch'].forEach(function(id) { const el = document.getElementById(id); if (el) el.value = ''; });
+      applyUserGroupFilter();
+    }
+    // Nomor HP di Daftar User: sekali klik langsung tersalin (format +62...)
+    function copyUserPhone(td, phone) {
+      const text = '+' + phone;
+      const done = function() {
+        if (td.dataset.copied) return;
+        td.dataset.copied = '1';
+        const old = td.textContent;
+        td.innerHTML = '${aIco('check')}Disalin';
+        td.classList.add('copied');
+        setTimeout(function() { td.textContent = old; td.classList.remove('copied'); delete td.dataset.copied; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+      else { fallbackCopy(text); done(); }
+    }
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+    }
     function applyUserGroupFilter() {
-      const sel = document.getElementById('userGroupFilter');
-      const v = sel ? sel.value : '';
+      const val = function(id) { const el = document.getElementById(id); return el ? el.value : ''; };
+      const v = val('userGroupFilter'), fStatus = val('userStatusFilter'), fPush = val('userPushFilter'), fPin = val('userPinFilter');
+      const nowF = Date.now();
       const raw = ((document.getElementById('userSearch') || {}).value || '').trim().toLowerCase();
       const digits = raw.replace(/[^0-9]/g, '');
       // "0812..." juga dicari sebagai "62812..."; potongan seperti "0393" tetap dicari apa adanya
@@ -13188,6 +13345,15 @@ ${authScript}
         if (!ph) return;
         total++;
         let ok = !v || tr.getAttribute('data-group') === v;
+        if (ok && fStatus) {
+          const st = tr.getAttribute('data-status'), exp = Number(tr.getAttribute('data-exp') || 0);
+          if (fStatus === 'soon3' || fStatus === 'soon7') {
+            const days = fStatus === 'soon3' ? 3 : 7;
+            ok = st === 'active' && exp > nowF && exp - nowF <= days * 86400000;
+          } else ok = st === fStatus;
+        }
+        if (ok && fPush) ok = tr.getAttribute('data-push') === fPush;
+        if (ok && fPin) ok = tr.getAttribute('data-pin') === fPin;
         if (ok && raw) {
           const phone = ph.textContent.replace(/[^0-9]/g, '');
           const name = ((tr.children[1] || {}).textContent || '').toLowerCase();
@@ -13197,7 +13363,7 @@ ${authScript}
         if (ok) shown++;
       });
       const cnt = document.getElementById('userSearchCount');
-      if (cnt) cnt.textContent = (raw || v) ? shown + ' dari ' + total + ' user' : '';
+      if (cnt) cnt.textContent = (raw || v || fStatus || fPush || fPin) ? shown + ' dari ' + total + ' user' : '';
     }
 
     function renderGroupCompare(d) {
@@ -13396,8 +13562,9 @@ ${authScript}
               ? '<button class="action-btn unblock" onclick="unblockUser(&apos;' + u.phone + '&apos;)">Unblock</button>'
               : '<button class="action-btn block" onclick="blockUser(&apos;' + u.phone + '&apos;)">Block</button>';
 
-            return '<tr data-group="' + (u.groupStatus || '') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
-              '<td class="phone">+' + u.phone + '</td>' +
+            const stKey = u.isBlocked ? 'blocked' : !u.expired ? 'lifetime' : u.expired > now ? 'active' : 'expired';
+            return '<tr data-group="' + (u.groupStatus || '') + '" data-status="' + stKey + '" data-exp="' + (u.expired || '') + '" data-push="' + (u.hasPushSubscription ? '1' : '0') + '" data-pin="' + (u.pinChanged ? 'changed' : 'default') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
+              '<td class="phone copy-phone" title="Klik untuk menyalin nomor" onclick="copyUserPhone(this, &apos;' + u.phone + '&apos;)">+' + u.phone + '</td>' +
               '<td>' + _escHtml(u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
                 groupBadge(u) +

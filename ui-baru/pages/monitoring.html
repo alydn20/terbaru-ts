@@ -27,12 +27,15 @@
       </div>
       <div class="min-w-0 flex-1 leading-tight">
         <div class="truncate text-sm font-extrabold lg:text-[15px]">Harga PemulaOLD</div>
-        <button id="sisaHari" class="hidden items-center gap-1.5 text-[11px] font-semibold"></button>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <button id="sisaHari" class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold"></button>
+          <span id="clkDate" class="truncate whitespace-nowrap text-[11px] text-muted">&nbsp;</span>
+        </div>
       </div>
       <!-- desktop: Promo / News / Lainnya pindah ke sini (menu bawah disembunyikan) -->
       <div id="topNav" class="flex items-center gap-0.5 lg:gap-1"></div>
       <button id="btnLayout" class="icon-btn h-9 w-9 text-muted lg:h-10 lg:w-auto lg:gap-1.5 lg:px-3 lg:text-xs lg:font-semibold" title="Tata letak: pilih harga / grafik / riwayat" aria-label="Tata letak"></button>
-      <button id="btnAdminWa" class="icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
+      <button id="btnAdminWa" class="hidden icon-btn h-9 w-9 border-up/30 bg-up/10 text-up lg:h-10 lg:w-10" aria-label="Hubungi admin lewat WhatsApp"></button>
     </div>
   </header>
 
@@ -49,30 +52,29 @@
         <section id="sec-harga" class="card min-w-0 p-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)_minmax(0,1.25fr)] lg:items-center lg:gap-x-5 lg:px-4 lg:py-3" aria-label="Harga emas">
           <div class="grid grid-cols-2 gap-1.5 lg:col-start-1 lg:row-start-1 lg:gap-2">
             <div id="buyCard" class="price-tile tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
-              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-up"></span>Beli</span><span id="buyChange" class="hidden"></span></div>
+              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]">Beli</span><span id="buyChange" class="hidden"></span></div>
               <div class="price-big num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="buyPrice">—</span></div>
             </div>
             <div id="sellCard" class="price-tile tile min-w-0 overflow-hidden px-2 py-1.5 text-center lg:px-3 lg:py-2">
-              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]"><span class="h-1.5 w-1.5 rounded-full bg-sky"></span>Jual</span><span id="sellChange" class="hidden"></span></div>
+              <div class="flex items-center justify-center gap-1.5"><span class="label flex items-center gap-1 text-[10px]">Jual</span><span id="sellChange" class="hidden"></span></div>
               <div class="price-big num whitespace-nowrap font-mono text-[clamp(1rem,4.9vw,1.6rem)] font-extrabold leading-tight tracking-tight"><span class="mr-0.5 text-[0.55em] font-semibold text-muted">Rp</span><span id="sellPrice">—</span></div>
             </div>
           </div>
 
           <!-- jam + status promo -->
           <div id="clockRow" class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
-            <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span><span class="clk-colon">:</span><span id="clkM">--</span><span class="clk-colon">:</span><span id="clkS">--</span></span>
-            <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
+            <div id="clockBox" class="clock-pill" title="Jam WIB"><span id="clockNum" class="num font-mono text-[1.6rem] font-extrabold leading-none lg:text-[2rem]"><span id="clkH">--</span><span class="clk-colon">:</span><span id="clkM">--</span><span class="clk-sec"><span class="clk-colon">:</span><span id="clkS" class="text-gold">--</span></span></span></div>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
           </div>
 
           <!-- info harga: kotak seragam 3 per baris; sisa di baris terakhir di tengah -->
           <div id="chips" class="mt-2 flex flex-wrap justify-center gap-1 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
-            <div id="chipUsd" class="stat"><span class="stat-k">USD/IDR <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
-            <div id="chipHigh" class="stat"><span class="stat-k">Tertinggi</span><span id="dayHigh" class="stat-v text-up">—</span></div>
-            <div id="chipLow" class="stat"><span class="stat-k">Terendah</span><span id="dayLow" class="stat-v text-down">—</span></div>
+            <div id="chipUsd" class="stat"><span class="stat-k" title="Kurs USD/IDR"><span class="lbl-s">IDR</span><span class="lbl-l">USD/IDR</span> <span id="usdIdrChange" class="hidden"></span></span><span id="usdIdr" class="stat-v text-sky">—</span></div>
+            <div id="chipHigh" class="stat" title="Harga beli tertinggi hari ini"><span class="stat-k"><span class="lbl-s">Max</span><span class="lbl-l">Tertinggi</span></span><span id="dayHigh" class="stat-v text-up">—</span></div>
+            <div id="chipLow" class="stat" title="Harga beli terendah hari ini"><span class="stat-k"><span class="lbl-s">Min</span><span class="lbl-l">Terendah</span></span><span id="dayLow" class="stat-v text-down">—</span></div>
             <div id="chipLimit" class="stat hidden"><span class="stat-k">Limit</span><span id="limitVal" class="stat-v text-gold"></span></div>
             <div id="chipMarkup" class="stat hidden"><span id="markupLabel" class="stat-k">Markup</span><span id="markupVal" class="stat-v text-gold"></span></div>
-            <div id="chipSpread" class="stat"><span class="stat-k">Spread</span><span id="spreadVal" class="stat-v">—</span></div>
+            <div id="chipSpread" class="stat" title="Spread"><span class="stat-k"><span class="lbl-s">Spr</span><span class="lbl-l">Spread</span></span><span id="spreadVal" class="stat-v">—</span></div>
             <div id="chipOn" class="stat hidden"><span id="onLabel" class="stat-k">Titik ON</span><span id="lowestOnVal" class="stat-v text-up"></span></div>
           </div>
 
@@ -105,9 +107,9 @@
         <!-- RIWAYAT -->
         <div id="histWrap" class="min-w-0">
         <section id="sec-riwayat" class="card overflow-hidden" aria-label="Riwayat perubahan harga">
-          <div class="flex items-center gap-2 px-3 py-1 lg:gap-3 lg:px-4 lg:py-3">
+          <div class="flex items-center gap-2 px-3 py-1 lg:gap-3 lg:px-4">
             <h2 class="label mr-auto min-w-0 truncate"><span class="lg:hidden">Riwayat</span><span class="hidden lg:inline">Riwayat perubahan</span></h2>
-            <button id="btnHistSize" class="icon-btn h-7 w-7 shrink-0 text-muted lg:h-8 lg:w-8" title="Pengaturan riwayat (ukuran teks, USD/IDR)" aria-label="Pengaturan riwayat"></button>
+            <button id="btnHistSize" class="icon-btn h-7 w-7 shrink-0 text-muted" title="Pengaturan riwayat (ukuran teks, USD/IDR)" aria-label="Pengaturan riwayat"></button>
             <div class="seg shrink-0" id="histMode">
               <button data-mode="price" aria-pressed="true"><span class="lg:hidden">Emas</span><span class="hidden lg:inline">Harga emas</span></button>
               <button data-mode="usdidr" aria-pressed="false">USD/IDR</button>
@@ -119,10 +121,10 @@
               <tbody id="histBody" class="divide-y divide-line/[0.06]"></tbody>
             </table>
           </div>
-          <div id="histPager" class="flex items-center justify-between gap-2 border-t border-line/[0.07] px-3 py-1 text-[11px] lg:px-4 lg:py-3 lg:text-xs">
-            <button id="histNewer" class="btn-ghost px-2.5 py-1 text-[11px] lg:px-3 lg:py-2 lg:text-xs">Lebih baru</button>
+          <div id="histPager" class="flex items-center justify-between gap-2 border-t border-line/[0.07] px-3 py-1 text-[11px] lg:px-4 lg:text-xs">
+            <button id="histNewer" class="btn-ghost px-2.5 py-1 text-[11px] lg:px-3 lg:text-xs">Lebih baru</button>
             <span id="histInfo" class="text-center text-muted"></span>
-            <button id="histOlder" class="btn-ghost px-2.5 py-1 text-[11px] lg:px-3 lg:py-2 lg:text-xs">Lebih lama</button>
+            <button id="histOlder" class="btn-ghost px-2.5 py-1 text-[11px] lg:px-3 lg:text-xs">Lebih lama</button>
           </div>
         </section>
         </div>
