@@ -1,7 +1,7 @@
 // Grafik TradingView (TVC:GOLD) + pilihan indikator (disimpan di perangkat, sama dengan tampilan lama).
 import { isMobile } from '../api.js'
 
-// Indikator susunan user (disimpan di perangkat). Bawaan: TANPA indikator.
+// Indikator susunan user (disimpan di perangkat). Bawaan: EMA 20 + EMA 50 + BB 20.
 // Simpanan: [{ t: 'ma', len: 50 }, ...]; len = periode (hanya untuk indikator yang punya periode).
 // Kunci baru (v2) supaya semua user mulai tanpa indikator, lalu memakai pilihan sendiri.
 const KEY = 'gold_monitor_indicators_v2'
@@ -24,7 +24,9 @@ export function activeIndicators() {
     const v = JSON.parse(localStorage.getItem(KEY) || 'null')
     if (Array.isArray(v)) return v.filter(x => x && indicatorDef(x.t)).slice(0, 12)
   } catch (e) {}
-  return []
+  // Bawaan (belum pernah mengatur): EMA 20 + EMA 50 (arah tren) + Bollinger Bands 20 (rentang gerak),
+  // semuanya di atas grafik harga, tidak menambah panel di bawah (cocok juga di HP). Bisa diubah di Indikator grafik.
+  return [{ t: 'ema', len: 20 }, { t: 'ema', len: 50 }, { t: 'bb', len: 20 }]
 }
 export function saveIndicators(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)) } catch (e) {}
@@ -52,7 +54,8 @@ export function loadChart() {
     backgroundColor: light ? '#eef2ff' : '#000000',
     gridColor: light ? 'rgba(30,41,99,0.07)' : 'rgba(255,255,255,0.05)',
     hide_top_toolbar: false,
-    hide_legend: false,
+    // label indikator di pojok kiri atas grafik (mis. "MA 20 close 4,166") disembunyikan supaya grafik bersih
+    hide_legend: true,
     allow_symbol_change: true,
     save_image: true,
     calendar: false,

@@ -8,7 +8,7 @@ import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHis
 import { initChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
 import { startTour, tourDone } from './monitoring/tour.js'
-import { openMore, openRenew, openIndicators, openNominalSettings, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
+import { openMore, openRenew, openIndicators, openNominalSettings, openPriceBox, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
 
 applyTheme()
 if (!session.get()) location.replace('/login')
@@ -126,11 +126,19 @@ function renderSpread() {
   if (!state.buy || !state.sell) return
   $('#spreadVal').textContent = parseFloat(((state.sell - state.buy) / state.buy * 100).toFixed(2)) + '%'
 }
+// Nilai kecil (untung nominal, Limit/MD/Spread/ON, Max/Min) berubah -> kotaknya berkedip sebentar
+// (latar menyala lalu pudar + angka berkedip). Tidak mengubah ukuran, jadi tampilan tidak bergeser.
+function pulse(el) {
+  if (!el) return
+  el.classList.remove('val-flash'); void el.offsetWidth
+  el.classList.add('val-flash')
+}
+let lastProfit = {}
 function renderNominals() {
   const box = $('#nominals')
   const list = visibleNominals()
   if (!state.nominals.length) return
-  // 0 nominal dipilih: bagian untung per nominal disembunyikan (atur lagi dari Lainnya > Atur nominal)
+  // 0 nominal dipilih: bagian untung per nominal disembunyikan (atur lagi dari Lainnya > Atur kotak harga)
   $('#nomWrap').classList.toggle('nom-off', !list.length)
   if (!list.length) { box.replaceChildren(); fitChart(); return }
   // Desktop: grid, jumlah kolom menyesuaikan jumlah nominal supaya kotak harga tidak memanjang:
@@ -146,7 +154,9 @@ function renderNominals() {
     // "Rp" hanya tampil di tablet & desktop (.rp-pfx disembunyikan di HP)
     const untung = p ? '<span>' + (p.profit >= 0 ? '+' : '−') + '<span class="rp-pfx">Rp</span>' + num(Math.abs(p.profit)) + '</span>' : ''
     const gram = p ? p.gram.toFixed(3).replace('.', ',') + 'g' : '—'
-    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size },
+    const changed = p && lastProfit[n.id] !== undefined && lastProfit[n.id] !== p.profit
+    if (p) lastProfit[n.id] = p.profit
+    return h('div', { class: 'tile min-w-0 grow-0 overflow-hidden px-1.5 py-1 text-center lg:px-2.5 lg:py-1.5 lg:text-left ' + size + (changed ? ' val-flash' : '') },
       // HP: satu baris "10jt +Rp1.426" (gram di tooltip). Desktop: baris 1 = nominal + untung, baris 2 = gram
       h('div', { class: 'flex items-center justify-center gap-1.5 whitespace-nowrap lg:justify-between lg:gap-2', title: p ? (p.profit >= 0 ? 'Untung ' : 'Rugi ') + rp(Math.abs(p.profit)) + ' · ' + p.gram.toFixed(4) + ' gram' : '' },
         h('span', { class: 'font-extrabold text-gold ' + (one ? 'text-[12px] lg:text-base' : 'text-[11px] lg:text-[13px]') }, n.label),
@@ -200,11 +210,8 @@ function setUsdIdr(rate) {
     const el = $('#usdIdrChange')
     el.className = 'num text-[9px] ' + (c > 0 ? 'text-up' : 'text-down')
     el.textContent = (c > 0 ? '▲' : '▼') + signed(c)
-    const chip = $('#chipUsd')
-    if (chip) {
-      chip.classList.remove('chip-up', 'chip-down', 'tile-blink'); void chip.offsetWidth
-      chip.classList.add(c > 0 ? 'chip-up' : 'chip-down', 'tile-blink')
-    }
+    // kotak USD/IDR berkedip & berwarna sama seperti kotak Beli/Jual
+    if ($('#chipUsd')) flash('chipUsd', c)
   }
   state.usdIdr = rate
   $('#usdIdr').textContent = num(r)
@@ -363,7 +370,7 @@ function openHistSize() {
         h('span', { class: 'text-xs text-muted' }, 'baris'), h('span', { class: 'flex-1' }), auto)
     })(),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'USD/IDR'),
-    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
+    IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))), { peek: true })
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
 // bawaan: kotak harga ringkas (aktif kecuali user mematikannya)
@@ -377,7 +384,8 @@ function applyChipPrefs() {
   $('#chips').classList.toggle('chips-off', CHIP_DEFS.every(([id]) => pr[id] === false))
   fitChart()
 }
-export function openChipSettings() {
+// Bagian "Info harga" (toggle per info) — dipakai di lembar gabungan "Atur kotak harga"
+export function chipSection() {
   const pr = chipPrefs()
   const save = () => { try { localStorage.setItem('chipPrefs', JSON.stringify(pr)) } catch (e) {} applyChipPrefs() }
   const toggles = []
@@ -386,16 +394,16 @@ export function openChipSettings() {
     t.checked = pr[id] !== false
     t.addEventListener('change', () => { pr[id] = t.checked; save() })
     toggles.push([id, t])
-    return h('label', { class: 'flex items-center justify-between py-2.5 text-sm font-semibold' }, label, t)
+    return h('label', { class: 'flex items-center justify-between py-1.5 text-[13px] font-semibold' }, label, t)
   })
   const all = on => { toggles.forEach(([id, t]) => { t.checked = on; pr[id] = on }); save() }
-  openSheet('Atur info harga', h('div', {},
-    h('p', { class: 'mb-1 text-xs text-muted' }, 'Pilih info yang tampil di kotak harga. Diingat di perangkat ini.'),
+  return h('div', {},
     h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
-    h('div', { class: 'mt-3 flex gap-2' },
-      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(false) }, 'Sembunyikan semua'),
-      h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => all(true) }, 'Tampilkan semua'))))
+    h('div', { class: 'mt-1.5 flex justify-end gap-1.5' },
+      h('button', { class: 'rounded-md border border-line/[0.12] px-2.5 py-1 text-[11px] font-semibold text-muted', onclick: () => all(false) }, 'Sembunyikan semua'),
+      h('button', { class: 'rounded-md border border-line/[0.12] px-2.5 py-1 text-[11px] font-semibold text-muted', onclick: () => all(true) }, 'Tampilkan semua')))
 }
+export function openChipSettings() { openPriceBox() }
 export function getLayout() { return layout }
 export function setLayout(v) {
   layout = LAYOUTS.some(l => l[0] === v) ? v : 'def'
@@ -426,9 +434,8 @@ export function openLayoutPicker() {
           h('span', { class: 'block text-sm font-bold' }, 'Kotak harga ringkas'),
           h('span', { class: 'block text-[11px] text-muted' }, 'Satu baris kecil: Beli, Jual, jam, promo + info harga & gramasi nominal dalam kotak kecil')), t)
     })(),
-    // pengaturan isi kotak harga
-    ...[['activity', 'Atur info harga', 'IDR, Max, Min, Limit, MD/MU, Spr, ON', () => openChipSettings()],
-        ['sliders', 'Atur nominal', 'Nominal untuk untung & gramasi (boleh tidak ada)', () => openNominalSettings()]].map(([ic, label, note, fn]) =>
+    // pengaturan isi kotak harga (info harga + nominal dalam satu lembar)
+    ...[['sliders', 'Atur kotak harga', 'Info harga (IDR, Max, Min, Limit, MD, Spr, ON) & nominal untung', () => openPriceBox()]].map(([ic, label, note, fn]) =>
       h('button', { class: 'tile mt-2 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn,
         html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
@@ -442,7 +449,7 @@ export function openLayoutPicker() {
         h('div', { class: 'seg shrink-0' },
           h('button', { 'aria-pressed': String(side), onclick: () => pick(true) }, 'Di samping'),
           h('button', { 'aria-pressed': String(!side), onclick: () => pick(false) }, 'Di bawah')))
-    })() : null))
+    })() : null), { peek: true })
 }
 function fitChart() { fitPriceOnly(); fitChartBox(); fitHist() }
 // Tinggi menu bawah (0 di desktop, dan saat disembunyikan karena layar lama tidak disentuh)
@@ -629,7 +636,7 @@ const NAV = {
   grafik: ['chart', () => { chartFull = true; chartFullAt = Date.now(); setActive('grafik'); fitChart(); requestAnimationFrame(() => scrollTo('#sec-grafik')) }],
   promo: ['tag', openPromos],
   news: ['bell', openNews],
-  lainnya: ['grid', openMore]
+  lainnya: ['settings', openMore]
 }
 function scrollTo(sel) {
   const el = $(sel)
@@ -684,14 +691,47 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
-  // USD/IDR: di baris atas bersama jam & PROMO (semua ukuran layar), sedikit lebih kecil dari Beli/Jual
+  // USD/IDR: kotak ke-3 sejajar Beli/Jual di semua ukuran layar
   const usd = $('#chipUsd')
-  if (usd) { usd.classList.add('usd-pill'); $('#clockRow').append(usd) }
+  if (usd) { usd.classList.add('usd-pill', 'usd-tile', 'tile'); $('#buyCard').parentElement.append(usd) }
+  // ikon atur (slider, beda dari ikon Lainnya) di pojok kanan baris nominal -> Atur kotak harga
+  $('#nomWrap').append(h('button', { id: 'btnPriceBox', class: 'price-box-gear', title: 'Atur kotak harga', 'aria-label': 'Atur kotak harga', html: icon('sliders', 'h-3.5 w-3.5'), onclick: () => openPriceBox() }))
+  // Tertinggi / Terendah: satu kotak kecil di kanan jam (Max di atas, Min di bawah)
+  const hilo = h('div', { id: 'hiloBox', class: 'hilo-box', title: 'Harga beli tertinggi / terendah hari ini' })
+  hilo.append($('#chipHigh'), $('#chipLow'))
+  $('#clockRow').append(hilo)
+  // Limit / MD / Spread / ON: kotak kecil 4 baris di kiri baris jam
+  const info = h('div', { id: 'infoBox', class: 'hilo-box info-box' })
+  // tengah: PROMO ON/OFF di atas, jam di bawah, lebar kotaknya sama
+  const mid = h('div', { id: 'clockMid', class: 'clock-mid' })
+  mid.append($('#promoStatus'), $('#clockBox'))
+  $('#clockRow').prepend(info, mid)
+  const infoIds = ['chipLimit', 'chipMarkup', 'chipSpread', 'chipOn']
+  const mqInfo = matchMedia('(min-width: 0px)')
+  const placeInfo = () => {
+    infoIds.forEach(id => { const el = document.getElementById(id); if (el) (mqInfo.matches ? info : $('#chips')).append(el) })
+    fitChart()
+  }
+  placeInfo()
+  mqInfo.addEventListener('change', placeInfo)
+  // Max/Min, Limit, MD, Spread, ON berubah -> kotaknya berkedip (nilai awal '—' tidak dihitung)
+  if ('MutationObserver' in window) {
+    ['dayHigh', 'dayLow', 'limitVal', 'markupVal', 'spreadVal', 'lowestOnVal'].forEach(id => {
+      const el = document.getElementById(id)
+      if (!el) return
+      let prev = el.textContent.trim()
+      new MutationObserver(() => {
+        const t = el.textContent.trim()
+        if (t !== prev && prev && prev !== '—' && t && t !== '—') pulse(el.closest('.stat'))
+        prev = t
+      }).observe(el, { childList: true, characterData: true, subtree: true })
+    })
+  }
   applyChipPrefs()
   $('#btnHistSize').innerHTML = icon('sliders', 'h-4 w-4')   // ikon pengaturan riwayat
   $('#btnHistSize').addEventListener('click', openHistSize)
   fitChart()
-  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, openChipSettings, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
+  setMenuHooks({ refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
   // sesi
   const v = await verify()
@@ -759,3 +799,6 @@ async function start() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchPrices(); if (Date.now() - lastData > 30000) connect() } })
 }
 start()
+
+// Uji tampilan lokal saja (localhost): simulasi perubahan harga / kurs tanpa menunggu pasar
+if (location.hostname === 'localhost') window.__mon = { applyPrice, setUsdIdr, state, openPriceBox, openIndicators }

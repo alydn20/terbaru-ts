@@ -1,7 +1,7 @@
 // Panduan penggunaan (tur langkah demi langkah dengan sorotan pada bagian halaman).
 // Wajib muncul sekali untuk pengguna yang baru pertama membuka tampilan ini (per perangkat),
 // dan bisa dibuka lagi dari Lainnya -> Panduan penggunaan.
-import { h } from '../api.js'
+import { h, icon } from '../api.js'
 
 const DONE_KEY = 'tourDone_v1'
 const STEP_KEY = 'tourStep_v1'   // langkah terakhir (reload di tengah panduan -> dilanjutkan)
@@ -84,7 +84,10 @@ export function startTour(resume) {
       card.replaceChildren(
         h('div', { class: 'mb-1 flex items-center justify-between gap-2' },
           h('div', { class: 'text-base font-extrabold' }, s.title),
-          h('div', { class: 'shrink-0 text-[11px] font-semibold text-muted' }, (i + 1) + ' / ' + list.length)),
+          h('div', { class: 'flex shrink-0 items-center gap-1.5' },
+            h('div', { class: 'text-[11px] font-semibold text-muted' }, (i + 1) + ' / ' + list.length),
+            // dibuka ulang dari menu (bukan panduan pertama kali): boleh ditutup kapan saja
+            !resume ? h('button', { class: 'icon-btn h-7 w-7', 'aria-label': 'Tutup panduan', title: 'Tutup panduan', html: icon('close', 'h-3.5 w-3.5'), onclick: () => finish() }) : null)),
         h('p', { class: 'text-sm leading-relaxed text-muted' }, s.text),
         h('div', { class: 'mt-3 flex gap-2' },
           i > 0 ? h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: () => go(i - 1) }, 'Kembali') : null,
