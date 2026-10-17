@@ -6694,6 +6694,23 @@ app.get('/api/admin/users', async (req, res) => {
   }
 })
 
+// Admin: tanda warna per user (untuk penanda & filter di Daftar User). '' = hapus tanda.
+const USER_MARKS = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple']
+app.post('/api/admin/users/mark', express.json(), async (req, res) => {
+  const { password, phone, mark } = req.body || {}
+  if (password !== ADMIN_PASSWORD) return res.json({ success: false, error: 'Unauthorized' })
+  const m = String(mark || '')
+  if (!phone || !USER_MARKS.includes(m)) return res.json({ success: false, error: 'Data tidak valid' })
+  const normalizedPhone = normalizePhone(phone)
+  const existing = await redis.hget(REDIS_KEYS.USERS, normalizedPhone)
+  if (!existing) return res.json({ success: false, error: 'User tidak ditemukan' })
+  const user = typeof existing === 'string' ? JSON.parse(existing) : existing
+  if (m) user.mark = m
+  else delete user.mark
+  await redis.hset(REDIS_KEYS.USERS, { [normalizedPhone]: JSON.stringify(user) })
+  res.json({ success: true, mark: m })
+})
+
 // Admin: Block user
 app.post('/api/admin/users/block', express.json(), async (req, res) => {
   const { password, phone, reason } = req.body
@@ -9900,6 +9917,24 @@ ${authScript}
     .user-table td.copy-phone { cursor: copy; user-select: none; }
     .user-table td.copy-phone:hover { color: #f7931a; text-decoration: underline dotted; }
     .user-table td.copy-phone.copied { color: #22c55e; }
+    /* tanda warna per user: baris diwarnai tipis + garis kiri */
+    .user-table tr.row-mark td { background-color: var(--mk-bg) !important; }
+    .user-table tr.row-mark td:first-child { box-shadow: inset 4px 0 0 var(--mk); }
+    .row-mark-red { --mk: #ef4444; --mk-bg: rgba(239,68,68,0.13); }
+    .row-mark-orange { --mk: #f97316; --mk-bg: rgba(249,115,22,0.13); }
+    .row-mark-yellow { --mk: #eab308; --mk-bg: rgba(234,179,8,0.13); }
+    .row-mark-green { --mk: #22c55e; --mk-bg: rgba(34,197,94,0.13); }
+    .row-mark-blue { --mk: #3b82f6; --mk-bg: rgba(59,130,246,0.13); }
+    .row-mark-purple { --mk: #a855f7; --mk-bg: rgba(168,85,247,0.13); }
+    .mark-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(255,255,255,0.35); }
+    .mark-none { background: transparent; border-style: dashed; }
+    .mark-red { background: #ef4444; } .mark-orange { background: #f97316; } .mark-yellow { background: #eab308; }
+    .mark-green { background: #22c55e; } .mark-blue { background: #3b82f6; } .mark-purple { background: #a855f7; }
+    .action-btn.mark-btn { background: #1f2937; color: #e5e7eb; }
+    .mark-picker { position: fixed; z-index: 10000; display: flex; flex-wrap: wrap; gap: 4px; max-width: 250px; padding: 8px; border-radius: 12px; background: #0f1419; border: 1px solid #2f3640; box-shadow: 0 12px 30px rgba(0,0,0,0.5); animation: mkIn .18s ease; }
+    .mark-picker button { display: inline-flex; align-items: center; padding: 6px 9px; border-radius: 8px; border: 1px solid #2f3640; background: #151b22; color: #e5e7eb; font-size: 0.8em; cursor: pointer; }
+    .mark-picker button:hover { border-color: #f7931a; }
+    @keyframes mkIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
     .pay-table-wrap { overflow: auto; max-height: 420px; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; scrollbar-width: thin; scrollbar-color: #374151 transparent; }
     .pay-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
     .pay-table-wrap::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
@@ -10358,6 +10393,17 @@ ${authScript}
               <option value="">PIN: semua</option>
               <option value="changed">PIN sudah diganti</option>
               <option value="default">PIN default</option>
+            </select>
+            <select id="userMarkFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Tanda: semua</option>
+              <option value="any">Ada tanda (semua warna)</option>
+              <option value="red">Merah</option>
+              <option value="orange">Oranye</option>
+              <option value="yellow">Kuning</option>
+              <option value="green">Hijau</option>
+              <option value="blue">Biru</option>
+              <option value="purple">Ungu</option>
+              <option value="none">Tanpa tanda</option>
             </select>
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
@@ -13374,8 +13420,42 @@ ${authScript}
 
     // ----- Cocokkan Daftar User dengan anggota grup WA -----
     // Filter Daftar User: status grup + kotak cari (nomor HP format bebas: 0812..., +62 812-..., 812...; atau nama)
+    // Tanda warna per user: pilih warna -> baris diwarnai & bisa difilter (Tanda: ...)
+    var MARK_LIST = [['', 'Tanpa'], ['red', 'Merah'], ['orange', 'Oranye'], ['yellow', 'Kuning'], ['green', 'Hijau'], ['blue', 'Biru'], ['purple', 'Ungu']];
+    function markUser(phone, btn) {
+      var old = document.getElementById('markPicker');
+      if (old) { old.remove(); if (old.dataset.phone === phone) return; }
+      var pick = document.createElement('div');
+      pick.id = 'markPicker'; pick.dataset.phone = phone; pick.className = 'mark-picker';
+      MARK_LIST.forEach(function(m) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.title = m[1];
+        b.innerHTML = '<span class="mark-dot mark-' + (m[0] || 'none') + '"></span>' + m[1];
+        b.addEventListener('click', function() {
+          adminFetch('/api/admin/users/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, mark: m[0] }) })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d.success) { showAlert(d.error || 'Gagal menyimpan tanda', 'danger'); return; }
+              var tr = btn.closest('tr');
+              tr.setAttribute('data-mark', m[0]);
+              tr.className = m[0] ? 'row-mark row-mark-' + m[0] : '';
+              var dot = btn.querySelector('.mark-dot'); if (dot) dot.className = 'mark-dot mark-' + (m[0] || 'none');
+              pick.remove();
+              applyUserGroupFilter();
+            });
+        });
+        pick.appendChild(b);
+      });
+      document.body.appendChild(pick);
+      var r = btn.getBoundingClientRect();
+      pick.style.top = Math.min(window.innerHeight - pick.offsetHeight - 8, r.bottom + 6) + 'px';
+      pick.style.left = Math.max(8, Math.min(window.innerWidth - pick.offsetWidth - 8, r.left)) + 'px';
+      setTimeout(function() {
+        document.addEventListener('mousedown', function close(e) { if (!pick.contains(e.target) && e.target !== btn) { pick.remove(); document.removeEventListener('mousedown', close); } });
+      }, 0);
+    }
     function resetUserFilters() {
-      ['userGroupFilter', 'userStatusFilter', 'userPushFilter', 'userPinFilter', 'userSearch'].forEach(function(id) { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['userGroupFilter', 'userStatusFilter', 'userPushFilter', 'userPinFilter', 'userMarkFilter', 'userSearch'].forEach(function(id) { const el = document.getElementById(id); if (el) el.value = ''; });
       applyUserGroupFilter();
     }
     // Nomor HP di Daftar User: sekali klik langsung tersalin (format +62...)
@@ -13401,7 +13481,7 @@ ${authScript}
     }
     function applyUserGroupFilter() {
       const val = function(id) { const el = document.getElementById(id); return el ? el.value : ''; };
-      const v = val('userGroupFilter'), fStatus = val('userStatusFilter'), fPush = val('userPushFilter'), fPin = val('userPinFilter');
+      const v = val('userGroupFilter'), fStatus = val('userStatusFilter'), fPush = val('userPushFilter'), fPin = val('userPinFilter'), fMark = val('userMarkFilter');
       const nowF = Date.now();
       const raw = ((document.getElementById('userSearch') || {}).value || '').trim().toLowerCase();
       const digits = raw.replace(/[^0-9]/g, '');
@@ -13423,6 +13503,7 @@ ${authScript}
         }
         if (ok && fPush) ok = tr.getAttribute('data-push') === fPush;
         if (ok && fPin) ok = tr.getAttribute('data-pin') === fPin;
+        if (ok && fMark) { const mk = tr.getAttribute('data-mark') || ''; ok = fMark === 'any' ? !!mk : fMark === 'none' ? !mk : mk === fMark; }
         if (ok && raw) {
           const phone = ph.textContent.replace(/[^0-9]/g, '');
           const name = ((tr.children[1] || {}).textContent || '').toLowerCase();
@@ -13432,7 +13513,7 @@ ${authScript}
         if (ok) shown++;
       });
       const cnt = document.getElementById('userSearchCount');
-      if (cnt) cnt.textContent = (raw || v || fStatus || fPush || fPin) ? shown + ' dari ' + total + ' user' : '';
+      if (cnt) cnt.textContent = (raw || v || fStatus || fPush || fPin || fMark) ? shown + ' dari ' + total + ' user' : '';
     }
 
     function renderGroupCompare(d) {
@@ -13632,7 +13713,7 @@ ${authScript}
               : '<button class="action-btn block" onclick="blockUser(&apos;' + u.phone + '&apos;)">Block</button>';
 
             const stKey = u.isBlocked ? 'blocked' : !u.expired ? 'lifetime' : u.expired > now ? 'active' : 'expired';
-            return '<tr data-group="' + (u.groupStatus || '') + '" data-status="' + stKey + '" data-exp="' + (u.expired || '') + '" data-push="' + (u.hasPushSubscription ? '1' : '0') + '" data-pin="' + (u.pinChanged ? 'changed' : 'default') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
+            return '<tr data-group="' + (u.groupStatus || '') + '" data-status="' + stKey + '" data-exp="' + (u.expired || '') + '" data-push="' + (u.hasPushSubscription ? '1' : '0') + '" data-pin="' + (u.pinChanged ? 'changed' : 'default') + '" data-mark="' + (u.mark || '') + '"' + (u.mark ? ' class="row-mark row-mark-' + u.mark + '"' : '') + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
               '<td class="phone copy-phone" title="Klik untuk menyalin nomor" onclick="copyUserPhone(this, &apos;' + u.phone + '&apos;)">+' + u.phone + '</td>' +
               '<td>' + _escHtml(u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
@@ -13650,6 +13731,7 @@ ${authScript}
                   '<button class="action-btn" style="background:#0e7490;" title="Ubah status grup WA user ini" onclick="editGroupStatus(&apos;' + u.phone + '&apos;, &apos;' + (u.groupStatus || '') + '&apos;)">Grup</button>' +
                   '<button class="action-btn" style="background:#475569;" title="Riwayat login dan logout nomor ini" onclick="showUserAuthLog(&apos;' + u.phone + '&apos;)">Log</button>' +
                   blockBtn +
+                  '<button class="action-btn mark-btn" title="Beri tanda warna (untuk filter)" onclick="markUser(&apos;' + u.phone + '&apos;, this)"><span class="mark-dot mark-' + (u.mark || 'none') + '"></span>Tanda</button>' +
                   '<button class="action-btn delete" onclick="deleteUser(&apos;' + u.phone + '&apos;)">Hapus</button>' +
                 '</div>' +
               '</td>' +
