@@ -9790,6 +9790,9 @@ ${authScript}
     .user-table tr:hover { background: rgba(247,147,26,0.04); }
     .user-table td { font-size: 0.85em; }
     .user-table td.phone { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; }
+    .user-table td.copy-phone { cursor: copy; user-select: none; }
+    .user-table td.copy-phone:hover { color: #f7931a; text-decoration: underline dotted; }
+    .user-table td.copy-phone.copied { color: #22c55e; }
     .pay-table-wrap { overflow: auto; max-height: 420px; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; scrollbar-width: thin; scrollbar-color: #374151 transparent; }
     .pay-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
     .pay-table-wrap::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
@@ -10120,7 +10123,24 @@ ${authScript}
       body.adm-v2 #userList td[colspan] { grid-column: 1 / -1; }
       body.adm-v2 #userList td[colspan]::before { content: none; }
       body.adm-v2 #userList .action-btn { flex: 1 1 calc(25% - 4px); text-align: center; padding: 7px 4px; }
+      /* HP: deretan menu geser disembunyikan, diganti tombol Menu di judul halaman */
+      body.adm-v2 .adm-side { display: none !important; }
+      body.adm-v2 .adm-menu-btn { display: inline-flex; }
     }
+    .adm-menu-btn { display: none; margin-left: auto; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; border: 1px solid #262626; background: #111; color: #e7e9ea; font-size: 0.85em; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+    .adm-menu-btn svg { width: 16px; height: 16px; color: #f7931a; }
+    .adm-sheet-back { position: fixed; inset: 0; z-index: 9990; background: rgba(0,0,0,0.6); display: flex; align-items: flex-end; justify-content: center; }
+    .adm-sheet { width: 100%; max-width: 560px; max-height: 82vh; overflow-y: auto; background: #0b0b0b; border-top: 1px solid #262626; border-radius: 18px 18px 0 0; padding: 8px 10px calc(14px + env(safe-area-inset-bottom)); }
+    .adm-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 8px; color: #fff; font-size: 0.95em; }
+    .adm-sheet-x { width: 32px; height: 32px; border-radius: 9px; border: 1px solid #262626; background: #111; color: #e7e9ea; font-size: 18px; line-height: 1; cursor: pointer; }
+    .adm-sheet-label { padding: 8px 8px 3px; color: #6b6b6b; font-size: 0.68em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .adm-sheet-item { display: flex; width: 100%; align-items: center; gap: 10px; padding: 9px 10px; border: none; border-radius: 10px; background: none; color: #d4d4d4; font-size: 0.9em; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer; }
+    .adm-sheet-item:active, .adm-sheet-item:hover { background: #151515; }
+    .adm-sheet-item.active { background: rgba(247,147,26,0.12); color: #f7931a; }
+    .adm-sheet-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .adm-sheet-item span[class*="badge"], .adm-sheet-item span[style*="border-radius"] { margin-left: auto !important; }
+    .adm-sheet-item.logout { color: #f87171; }
+    .adm-sheet-sep { margin: 6px 4px; border-top: 1px solid #1c1c1c; }
   </style>
 </head>
 <body>
@@ -10213,6 +10233,25 @@ ${authScript}
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
             <input id="userSearch" type="search" inputmode="search" autocomplete="off" placeholder="Cari nomor HP / nama..." oninput="applyUserGroupFilter()" style="flex:1;min-width:170px;background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:6px 10px;font-size:0.85em;outline:none;">
             <span id="userSearchCount" style="align-self:center;color:#6b7280;font-size:0.78em;"></span>
+            <select id="userStatusFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Status: semua</option>
+              <option value="active">Aktif</option>
+              <option value="lifetime">Lifetime</option>
+              <option value="expired">Expired</option>
+              <option value="blocked">Blocked</option>
+              <option value="soon3">Habis &le; 3 hari</option>
+              <option value="soon7">Habis &le; 7 hari</option>
+            </select>
+            <select id="userPushFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">Push: semua</option>
+              <option value="1">Push aktif</option>
+              <option value="0">Push tidak aktif</option>
+            </select>
+            <select id="userPinFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
+              <option value="">PIN: semua</option>
+              <option value="changed">PIN sudah diganti</option>
+              <option value="default">PIN default</option>
+            </select>
             <select id="userGroupFilter" onchange="applyUserGroupFilter()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;">
               <option value="">Grup WA: semua</option>
               <option value="masuk">Di grup</option>
@@ -10220,6 +10259,7 @@ ${authScript}
               <option value="tidak_mau">Tidak mau masuk grup</option>
               <option value="belum">Belum menjawab</option>
             </select>
+            <button type="button" onclick="resetUserFilters()" style="background:#131a22;color:#e5e7eb;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:5px 8px;font-size:0.8em;cursor:pointer;">Reset filter</button>
           </div>
           <div class="user-table-wrapper">
             <table class="user-table">
@@ -11315,6 +11355,56 @@ ${authScript}
         });
         var act = tabs.querySelector('.section-tab.active');
         if (act) setTitle(act);
+
+        // HP: tombol "Menu" di judul halaman membuka daftar menu (seperti Lainnya di /monitoring)
+        var hdr = document.querySelector('.header');
+        if (hdr && !document.querySelector('.adm-menu-btn')) {
+          var mb = document.createElement('button');
+          mb.type = 'button';
+          mb.className = 'adm-menu-btn';
+          mb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Menu</span>';
+          mb.addEventListener('click', openAdmMenu);
+          hdr.appendChild(mb);
+        }
+        function openAdmMenu() {
+          var old = document.getElementById('admMenuSheet');
+          if (old) { old.remove(); return; }
+          var back = document.createElement('div');
+          back.id = 'admMenuSheet';
+          back.className = 'adm-sheet-back';
+          var sh = document.createElement('div');
+          sh.className = 'adm-sheet';
+          var close = function() { back.remove(); };
+          var head = document.createElement('div');
+          head.className = 'adm-sheet-head';
+          head.innerHTML = '<b>Menu panel admin</b>';
+          var x = document.createElement('button');
+          x.type = 'button'; x.className = 'adm-sheet-x'; x.textContent = '×'; x.setAttribute('aria-label', 'Tutup');
+          x.addEventListener('click', close);
+          head.appendChild(x);
+          sh.appendChild(head);
+          var lab = document.createElement('div');
+          lab.className = 'adm-sheet-label'; lab.textContent = 'Bagian';
+          sh.appendChild(lab);
+          tabs.querySelectorAll('.section-tab').forEach(function(t) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'adm-sheet-item' + (t.classList.contains('active') ? ' active' : '');
+            b.innerHTML = t.innerHTML;
+            b.querySelectorAll('[id]').forEach(function(e) { e.removeAttribute('id'); });
+            b.addEventListener('click', function() { t.click(); close(); });
+            sh.appendChild(b);
+          });
+          var sep = document.createElement('div'); sep.className = 'adm-sheet-sep'; sh.appendChild(sep);
+          foot.querySelectorAll('a').forEach(function(a) {
+            var c = a.cloneNode(true);
+            c.className = 'adm-sheet-item' + (a.classList.contains('logout') ? ' logout' : '');
+            sh.appendChild(c);
+          });
+          back.appendChild(sh);
+          back.addEventListener('click', function(e) { if (e.target === back) close(); });
+          document.body.appendChild(back);
+        }
       }
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
     })();
@@ -13174,9 +13264,35 @@ ${authScript}
 
     // ----- Cocokkan Daftar User dengan anggota grup WA -----
     // Filter Daftar User: status grup + kotak cari (nomor HP format bebas: 0812..., +62 812-..., 812...; atau nama)
+    function resetUserFilters() {
+      ['userGroupFilter', 'userStatusFilter', 'userPushFilter', 'userPinFilter', 'userSearch'].forEach(function(id) { const el = document.getElementById(id); if (el) el.value = ''; });
+      applyUserGroupFilter();
+    }
+    // Nomor HP di Daftar User: sekali klik langsung tersalin (format +62...)
+    function copyUserPhone(td, phone) {
+      const text = '+' + phone;
+      const done = function() {
+        if (td.dataset.copied) return;
+        td.dataset.copied = '1';
+        const old = td.textContent;
+        td.textContent = '✓ Disalin';
+        td.classList.add('copied');
+        setTimeout(function() { td.textContent = old; td.classList.remove('copied'); delete td.dataset.copied; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(function() { fallbackCopy(text); done(); });
+      else { fallbackCopy(text); done(); }
+    }
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+    }
     function applyUserGroupFilter() {
-      const sel = document.getElementById('userGroupFilter');
-      const v = sel ? sel.value : '';
+      const val = function(id) { const el = document.getElementById(id); return el ? el.value : ''; };
+      const v = val('userGroupFilter'), fStatus = val('userStatusFilter'), fPush = val('userPushFilter'), fPin = val('userPinFilter');
+      const nowF = Date.now();
       const raw = ((document.getElementById('userSearch') || {}).value || '').trim().toLowerCase();
       const digits = raw.replace(/[^0-9]/g, '');
       // "0812..." juga dicari sebagai "62812..."; potongan seperti "0393" tetap dicari apa adanya
@@ -13188,6 +13304,15 @@ ${authScript}
         if (!ph) return;
         total++;
         let ok = !v || tr.getAttribute('data-group') === v;
+        if (ok && fStatus) {
+          const st = tr.getAttribute('data-status'), exp = Number(tr.getAttribute('data-exp') || 0);
+          if (fStatus === 'soon3' || fStatus === 'soon7') {
+            const days = fStatus === 'soon3' ? 3 : 7;
+            ok = st === 'active' && exp > nowF && exp - nowF <= days * 86400000;
+          } else ok = st === fStatus;
+        }
+        if (ok && fPush) ok = tr.getAttribute('data-push') === fPush;
+        if (ok && fPin) ok = tr.getAttribute('data-pin') === fPin;
         if (ok && raw) {
           const phone = ph.textContent.replace(/[^0-9]/g, '');
           const name = ((tr.children[1] || {}).textContent || '').toLowerCase();
@@ -13197,7 +13322,7 @@ ${authScript}
         if (ok) shown++;
       });
       const cnt = document.getElementById('userSearchCount');
-      if (cnt) cnt.textContent = (raw || v) ? shown + ' dari ' + total + ' user' : '';
+      if (cnt) cnt.textContent = (raw || v || fStatus || fPush || fPin) ? shown + ' dari ' + total + ' user' : '';
     }
 
     function renderGroupCompare(d) {
@@ -13396,8 +13521,9 @@ ${authScript}
               ? '<button class="action-btn unblock" onclick="unblockUser(&apos;' + u.phone + '&apos;)">Unblock</button>'
               : '<button class="action-btn block" onclick="blockUser(&apos;' + u.phone + '&apos;)">Block</button>';
 
-            return '<tr data-group="' + (u.groupStatus || '') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
-              '<td class="phone">+' + u.phone + '</td>' +
+            const stKey = u.isBlocked ? 'blocked' : !u.expired ? 'lifetime' : u.expired > now ? 'active' : 'expired';
+            return '<tr data-group="' + (u.groupStatus || '') + '" data-status="' + stKey + '" data-exp="' + (u.expired || '') + '" data-push="' + (u.hasPushSubscription ? '1' : '0') + '" data-pin="' + (u.pinChanged ? 'changed' : 'default') + '"' + (u.isBlocked ? ' style="opacity:0.6;background:rgba(255,82,82,0.05);"' : '') + '>' +
+              '<td class="phone copy-phone" title="Klik untuk menyalin nomor" onclick="copyUserPhone(this, &apos;' + u.phone + '&apos;)">+' + u.phone + '</td>' +
               '<td>' + _escHtml(u.name || '-') + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + status + '</span>' +
                 groupBadge(u) +
