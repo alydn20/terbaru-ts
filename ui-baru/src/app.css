@@ -646,7 +646,10 @@ body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 
 }
 
 /* perpindahan mode yang halus */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: .45s; animation-timing-function: ease; }
+/* animasi lingkaran (JS) menggantikan animasi bawaan */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
 .theme-fade, .theme-fade *, .theme-fade *::before, .theme-fade *::after {
   transition: background-color .45s ease, color .45s ease, border-color .45s ease, fill .45s ease, box-shadow .45s ease !important;
 }
@@ -654,3 +657,27 @@ body.price-compact #nominals { padding-left: 1.75rem !important; padding-right: 
 /* sakelar mode tampil di semua ukuran layar (tablet & desktop di sebelah tombol Tata letak) */
 .theme-switch { display: inline-flex; }
 @media (min-width: 768px) { .theme-switch { width: 3.4rem; height: 1.95rem; } .theme-knob { width: 1.55rem; height: 1.55rem; } .theme-switch[aria-pressed="true"] .theme-knob { transform: translate(1.45rem, -50%); } }
+
+/* grafik per tema bertumpuk; yang tidak aktif tersembunyi tapi tetap berukuran (siap ditampilkan instan) */
+#tvChart { position: relative; overflow: hidden; }
+.tv-layer { position: absolute; inset: 0; }
+.tv-layer > div { height: 100%; }
+.tv-hidden { visibility: hidden; pointer-events: none; }
+
+/* HP: ikon bar atas sedikit lebih kecil supaya Tata letak muat lagi di samping sakelar mode */
+@media (max-width: 767px) {
+  #btnLayout { display: inline-flex !important; width: 1.95rem; height: 1.95rem; }
+  #btnLayout svg { width: 0.95rem; height: 0.95rem; }
+  #topNav .nav-item { width: 1.85rem !important; height: 2rem !important; }
+  #topNav .nav-item svg { width: 1.05rem; height: 1.05rem; }
+  .theme-switch { width: 2.75rem; height: 1.6rem; }
+  .theme-knob { width: 1.2rem; height: 1.2rem; }
+  .theme-switch[aria-pressed="true"] .theme-knob { transform: translate(1.2rem, -50%); }
+  header > div { gap: 0.35rem !important; }
+}
+@media (max-width: 379px) {
+  header h1, header .font-extrabold { font-size: 0.8rem !important; letter-spacing: -0.01em; }
+  header svg.h-7 { width: 1.5rem; height: 1.5rem; }
+  #topNav .nav-item { width: 1.7rem !important; }
+}
+@media (max-width: 339px) { header h1, header .font-extrabold { font-size: 0.74rem !important; } }

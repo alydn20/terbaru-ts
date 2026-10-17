@@ -38,17 +38,19 @@ function studyOf(x) {
   return d[3] && len > 0 ? { id: d[2], inputs: { length: len } } : d[2]
 }
 
-export function loadChart() {
-  const box = document.getElementById('tvChart')
-  if (!box) return
-  const light = document.documentElement.dataset.theme === 'light'
-  const list = activeIndicators()
-  const config = {
+// Grafik per tema disimpan berdampingan (yang tidak aktif tersembunyi di belakang): ganti mode gelap/terang
+// cukup menukar tampilan -> grafik langsung berubah, tidak menunggu TradingView memuat ulang.
+// Grafik tema lain disiapkan diam-diam beberapa detik setelah grafik utama tampil.
+const charts = {} // tema -> { el, sig }
+let preloadTimer = null
+function chartConfig(theme, list) {
+  const light = theme === 'light'
+  return {
     autosize: true,
     symbol: 'TVC:GOLD',
     interval: '1',
     timezone: 'Asia/Jakarta',
-    theme: light ? 'light' : 'dark',
+    theme,
     style: '1',
     locale: 'en',
     backgroundColor: light ? '#eef2ff' : '#000000',
@@ -67,12 +69,39 @@ export function loadChart() {
     studies: list.filter(x => x.t !== 'vol').map(studyOf),
     support_host: 'https://www.tradingview.com'
   }
-  box.innerHTML = '<div class="tradingview-widget-container h-full"><div class="tradingview-widget-container__widget h-full"></div></div>'
+}
+function buildChart(box, theme, list) {
+  const el = document.createElement('div')
+  el.className = 'tv-layer tradingview-widget-container'
+  el.dataset.theme = theme
+  el.innerHTML = '<div class="tradingview-widget-container__widget h-full"></div>'
   const s = document.createElement('script')
   s.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
   s.async = true
-  s.textContent = JSON.stringify(config)
-  box.firstChild.append(s)
+  s.textContent = JSON.stringify(chartConfig(theme, list))
+  el.append(s)
+  box.append(el)
+  return el
+}
+export function loadChart() {
+  const box = document.getElementById('tvChart')
+  if (!box) return
+  const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
+  const list = activeIndicators()
+  const sig = JSON.stringify(list) + '|' + isMobile()
+  // indikator berubah: semua grafik lama dibuang (dibuat ulang dengan indikator baru)
+  for (const t of Object.keys(charts)) if (charts[t].sig !== sig) { charts[t].el.remove(); delete charts[t] }
+  if (!charts[theme]) charts[theme] = { el: buildChart(box, theme, list), sig }
+  for (const t of Object.keys(charts)) charts[t].el.classList.toggle('tv-hidden', t !== theme)
+  // siapkan grafik tema lain di belakang (sekali), supaya ganti mode berikutnya instan
+  clearTimeout(preloadTimer)
+  const other = theme === 'light' ? 'dark' : 'light'
+  if (!charts[other]) preloadTimer = setTimeout(() => {
+    if (!charts[other] && (charts[theme] || {}).sig === sig) {
+      charts[other] = { el: buildChart(box, other, list), sig }
+      charts[other].el.classList.add('tv-hidden')
+    }
+  }, 6000)
 }
 
 // Grafik dimuat saat bagiannya hampir terlihat (hemat kuota di HP)

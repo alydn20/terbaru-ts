@@ -17,7 +17,7 @@ export function openMore() {
   const groups = [
     ['Tampilan', [
       hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
-      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
+      [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { closeAllSheets(); toggleTheme({ after: loadChart }) }],
       ['activity', 'Indikator grafik', openIndicators],
       ['sliders', 'Atur kotak harga', openPriceBox]
     ]],

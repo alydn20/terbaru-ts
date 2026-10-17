@@ -102,18 +102,34 @@ export function applyTheme(t) {
 }
 // Ganti mode gelap/terang dengan transisi halus: View Transitions (memudar menyeluruh) bila didukung,
 // selain itu warna latar/teks/garis berpindah perlahan lewat kelas .theme-fade.
-export function toggleTheme() {
+// opts.origin = { x, y } titik awal lingkaran (mis. tengah sakelar); opts.after = dijalankan tepat setelah
+// mode berganti (mis. menukar grafik) supaya ikut dalam animasi yang sama.
+export function toggleTheme(opts = {}) {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'
   try { localStorage.setItem(THEME_KEY, next) } catch (e) {}
   const root = document.documentElement
+  const apply = () => { applyTheme(next); if (opts.after) opts.after() }
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-  if (!reduce && document.startViewTransition) {
-    document.startViewTransition(() => applyTheme(next))
-  } else if (!reduce) {
-    root.classList.add('theme-fade')
-    applyTheme(next)
-    setTimeout(() => root.classList.remove('theme-fade'), 600)
-  } else applyTheme(next)
+  if (reduce) { apply(); return next }
+  const o = opts.origin || { x: innerWidth - 40, y: 30 }
+  if (document.startViewTransition) {
+    // lingkaran mode baru melebar dari sakelar sampai menutup seluruh layar
+    const t = document.startViewTransition(apply)
+    const r = Math.hypot(Math.max(o.x, innerWidth - o.x), Math.max(o.y, innerHeight - o.y))
+    t.ready.then(() => {
+      root.animate({ clipPath: ['circle(0px at ' + o.x + 'px ' + o.y + 'px)', 'circle(' + r + 'px at ' + o.x + 'px ' + o.y + 'px)'] },
+        { duration: 650, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' })
+    }).catch(() => {})
+    return next
+  }
+  // browser lama: lapisan warna mode lama memudar perlahan di atas mode baru
+  const veil = document.createElement('div')
+  veil.style.cssText = 'position:fixed;inset:0;z-index:9999;pointer-events:none;background:' + getComputedStyle(document.body).backgroundColor + ';opacity:1;transition:opacity .55s ease'
+  document.body.append(veil)
+  root.classList.add('theme-fade')
+  apply()
+  requestAnimationFrame(() => requestAnimationFrame(() => { veil.style.opacity = '0' }))
+  setTimeout(() => { veil.remove(); root.classList.remove('theme-fade') }, 650)
   return next
 }
 

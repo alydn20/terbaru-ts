@@ -736,9 +736,10 @@ async function start() {
     // mode diganti dari mana pun (menu pengaturan / sakelar) -> posisi sakelar ikut
     new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     sw.addEventListener('click', () => {
-      toggleTheme(); sync()
-      // grafik TradingView ikut berganti tema setelah animasi selesai (supaya perpindahan tetap mulus)
-      setTimeout(loadChart, 450)
+      const r = sw.getBoundingClientRect()
+      // grafik ditukar di dalam animasi yang sama (grafik tema lain sudah disiapkan di belakang)
+      toggleTheme({ origin: { x: r.left + r.width / 2, y: r.top + r.height / 2 }, after: loadChart })
+      sync()
     })
     $('#btnLayout').after(sw)
   }
