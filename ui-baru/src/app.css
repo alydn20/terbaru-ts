@@ -825,3 +825,30 @@ button.is-busy { display: inline-flex; align-items: center; justify-content: cen
   .news-card-title { font-size: 10.5px; }
   .news-card-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 10.5px; line-height: 1.25; }
 }
+
+/* kartu hitung mundur (mendesak) selalu diutamakan: kartu pengingat lain disembunyikan selama ada */
+.news-float:has(.news-card-urgent) > .news-card:not(.news-card-urgent) { display: none; }
+
+/* ===== Kartu News final: semua merah tipis (tidak pekat), tanpa kedip; boleh menutup logo P juga ===== */
+.news-card-urgent { background-color: rgb(var(--down) / .12) !important; border-color: rgb(var(--down) / .55) !important; border-left-width: 3px; animation: floatIn .38s cubic-bezier(.2, .9, .3, 1.1) !important; }
+.news-card-urgent .news-card-title { color: rgb(var(--down)) !important; }
+.news-card-urgent .news-card-line { color: rgb(var(--ink)) !important; }
+@media (max-width: 767px) { .news-card-urgent { background-color: rgb(var(--card)) !important; box-shadow: inset 0 0 0 999px rgb(var(--down) / .12), 0 6px 16px rgb(0 0 0 / .35); } }
+/* menutup logo: kartu dimulai dari tepi kiri bar atas (logo + jarak) */
+#brandBox { --logo-w: 2.4rem; }
+@media (max-width: 379px) { #brandBox { --logo-w: 1.85rem; } }
+@media (min-width: 768px) { #brandBox { --logo-w: 2.75rem; } }
+.news-float { left: calc(-1 * var(--logo-w)); min-width: calc(100% + var(--logo-w)); max-width: calc(100% + var(--logo-w)); }
+
+/* kotak News selebar isinya (tidak melebar mengikuti layar); minimal cukup menutup logo + judul + status */
+.news-float { width: max-content !important; min-width: min(calc(var(--logo-w) + 12.5rem), calc(100% + var(--logo-w))) !important; max-width: calc(100% + var(--logo-w)) !important; }
+@media (min-width: 768px) { .news-float { min-width: min(calc(var(--logo-w) + 17rem), calc(100% + var(--logo-w))) !important; } }
+.news-card { width: 100%; max-width: 24rem; }
+
+/* kotak News = selebar teks news-nya saja; logo, judul & status disembunyikan selama ada kartu */
+.news-float { width: max-content !important; min-width: 0 !important; max-width: calc(100% + var(--logo-w)) !important; }
+@media (min-width: 768px) { .news-float { min-width: 0 !important; } }
+.news-float::before { display: none; }
+.news-card { width: auto; max-width: min(24rem, 100%); }
+#brandBox:has(#newsFloat) > :not(#newsFloat) { visibility: hidden; }
+header > div:has(#newsFloat) > div:first-child { visibility: hidden; }

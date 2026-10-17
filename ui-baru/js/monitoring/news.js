@@ -43,7 +43,10 @@ function floatNote(title, lines, ms) {
     h('div', { class: 'news-card-title' }, title),
     h('div', { class: 'news-card-line' }, lines[0] || ''),
     h('button', { class: 'news-card-x', 'aria-label': 'Tutup', onclick: e => { e.stopPropagation(); close() } }, '×'))
-  box.append(card)
+  // kartu hitung mundur yang sedang tampil tetap paling depan (pengingat baru diselipkan di belakangnya)
+  const urgentCard = box.querySelector('.news-card-urgent')
+  if (urgentCard) box.insertBefore(card, urgentCard)
+  else box.append(card)
   // banyak news: baris kedua bergantian tiap 2,5 dtk (1/6, 2/6, ...) supaya semua terbaca di tempat kecil
   let timer = null
   if (lines.length > 1) {
@@ -75,7 +78,8 @@ export function checkNewsReminders() {
   high.forEach(ev => {
     const left = new Date(ev.date).getTime() - now
     const key = ev.title + '|' + ev.date
-    if (left > 0 && left <= 30 * 60000 && !store.soon[key]) {
+    // <= 3 menit sudah ditangani kartu hitung mundur merah -> pengingat biasa tidak dimunculkan (tidak bentrok)
+    if (left > 3 * 60000 && left <= 30 * 60000 && !store.soon[key]) {
       store.soon[key] = 1
       ;(soonGroups[ev.date] = soonGroups[ev.date] || []).push(ev)
     }
@@ -83,7 +87,8 @@ export function checkNewsReminders() {
   Object.values(soonGroups).forEach(list => {
     const left = new Date(list[0].date).getTime() - now
     const n = list.length
-    floatNote(Math.max(1, Math.round(left / 60000)) + ' mnt lagi · ' + (n > 1 ? n + ' news ' + jamWib(list[0]._wib).replace(' WIB', '') : 'News penting'),
+    // judul singkat supaya muat di HP: "25 mnt · 4 news 19:30" / "25 mnt lagi · News penting"
+    floatNote(Math.max(1, Math.round(left / 60000)) + (n > 1 ? ' mnt · ' + n + ' news ' + jamWib(list[0]._wib).replace(' WIB', '') : ' mnt lagi · News penting'),
       list.map(ev => (n > 1 ? '' : jamWib(ev._wib) + '  ') + ev.title), 20000)
   })
   try { localStorage.setItem('newsRemind', JSON.stringify(store)) } catch (e) {}
