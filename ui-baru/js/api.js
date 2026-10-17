@@ -62,6 +62,7 @@ const ICON_PATHS = {
   chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
   tag: '<path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4z"/><circle cx="7" cy="7" r="1.5"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+  settings: '<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   wa: '<path d="M3 21l1.65-4.9A8.5 8.5 0 1 1 8 19.3L3 21z"/><path d="M9 9.6c0 2.9 2.5 5.4 5.4 5.4l1.1-1.6-1.8-1.1-.8.7c-.9-.4-1.6-1.1-2-2l.7-.8-1.1-1.8L9 9.6z"/>',
   calc: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h4"/>',
@@ -132,7 +133,9 @@ export function openSheet(title, content, opts = {}) {
   ensureBackdrop()
   closeAllSheets(true)
   const body = typeof content === 'function' ? content() : content
-  const sheet = h('section', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title || '' },
+  // peek: lembar kecil tanpa latar gelap (HP: setengah layar bawah, desktop: panel kanan bawah) supaya
+  // perubahan di halaman tetap terlihat sambil mengatur
+  const sheet = h('section', { class: 'sheet' + (opts.peek ? ' sheet-peek' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title || '' },
     h('div', { class: 'grip' }),
     title ? h('div', { class: 'mb-3 flex items-center justify-between gap-3' },
       h('h2', { class: 'text-base font-extrabold' }, title),
@@ -140,7 +143,8 @@ export function openSheet(title, content, opts = {}) {
     ) : null,
     body)
   document.body.append(sheet)
-  document.body.style.overflow = 'hidden'
+  document.body.classList.toggle('peek-open', !!opts.peek)
+  if (!opts.peek) document.body.style.overflow = 'hidden'
   requestAnimationFrame(() => { sheet.classList.add('open'); backdrop.classList.add('open') })
   const api = {
     el: sheet,
@@ -149,6 +153,7 @@ export function openSheet(title, content, opts = {}) {
       sheet.classList.remove('open')
       backdrop.classList.remove('open')
       document.body.style.overflow = ''
+      document.body.classList.remove('peek-open')
       setTimeout(() => sheet.remove(), 220)
       if (opts.onClose) opts.onClose()
     }

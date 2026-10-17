@@ -19,12 +19,10 @@ export function openMore() {
       hooks.openLayoutPicker ? ['panels', 'Tata letak', () => hooks.openLayoutPicker()] : null,
       [light ? 'moon' : 'sun', light ? 'Mode gelap' : 'Mode terang', () => { toggleTheme(); loadChart(); closeAllSheets() }],
       ['activity', 'Indikator grafik', openIndicators],
-      ['sliders', 'Atur nominal', openNominalSettings],
-      hooks.openChipSettings ? ['activity', 'Atur info harga', () => hooks.openChipSettings()] : null
+      ['sliders', 'Atur kotak harga', openPriceBox]
     ]],
     ['Notifikasi & alat', [
-      ['sound', 'Suara & getar', openSound],
-      ['push', 'Notifikasi HP', enablePush],
+      ['sound', 'Suara & notifikasi', openSound],
       ['calc', 'Kalkulator emas', openCalc],
       isInstalled() ? null : ['download', 'Install aplikasi', install]
     ]],
@@ -123,36 +121,51 @@ export function openCalc() {
 // Indikator susunan user: tambah apa saja (boleh lebih dari satu, mis. MA 9 + MA 50 + MA 200),
 // atur periodenya, hapus. Tersimpan di perangkat. Bawaan: tanpa indikator.
 export function openIndicators() {
-  let list = activeIndicators().map(x => ({ ...x }))
-  const body = h('div', {})
-  const render = () => {
-    const rows = list.length ? list.map((x, i) => {
-      const d = indicatorDef(x.t)
-      const len = d[3] ? h('input', { type: 'number', min: 1, max: 500, value: x.len || d[3], class: 'input w-20 px-2 py-1.5 text-center font-mono text-sm', 'aria-label': 'Periode',
-        oninput: e => { x.len = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || d[3])) } }) : null
-      return h('div', { class: 'flex items-center gap-2 py-2' },
-        h('span', { class: 'min-w-0 flex-1 text-sm font-semibold' }, d[1]),
-        len ? h('span', { class: 'text-[11px] text-muted' }, 'Periode') : null, len,
-        h('button', { class: 'icon-btn h-8 w-8 text-down', 'aria-label': 'Hapus', html: icon('close', 'h-4 w-4'), onclick: () => { list.splice(i, 1); render() } }))
-    }) : [h('p', { class: 'py-3 text-sm text-muted' }, 'Belum ada indikator. Grafik tampil bersih.')]
-    const pick = h('select', { class: 'input min-w-0 flex-1 py-2 text-sm' },
-      INDICATORS.map(([id, label, , def]) => h('option', { value: id }, label + (def ? ' (periode ' + def + ')' : ''))))
-    body.replaceChildren(
-      h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
-      h('div', { class: 'mt-3 flex gap-2' }, pick,
-        h('button', { class: 'btn-ghost shrink-0 px-3 py-2 text-sm', onclick: () => {
-          if (list.length >= 12) return toast('Maksimal 12 indikator', 'warning')
-          const d = indicatorDef(pick.value)
-          list.push(d[3] ? { t: d[0], len: d[3] } : { t: d[0] })
-          render()
-        } }, '+ Tambah')),
-      h('div', { class: 'mt-3 flex gap-2' },
-        list.length ? h('button', { class: 'btn-ghost flex-1', onclick: () => { list = []; render() } }, 'Hapus semua') : null,
-        h('button', { class: 'btn-gold flex-1', onclick: () => { saveIndicators(list); closeAllSheets(); toast(list.length ? 'Indikator disimpan' : 'Grafik tanpa indikator', 'success') } }, 'Simpan')),
-      h('p', { class: 'mt-2 text-[11px] text-muted' }, 'Tersimpan di perangkat ini. Indikator yang ditambah lewat tombol "Indicators" di dalam grafik tidak tersimpan; pakai menu ini.'))
+  // Seperti "Atur kotak harga": daftar semua indikator dengan tombol on/off, langsung diterapkan ke grafik
+  // (tanpa tombol Simpan). Periode bisa lebih dari satu, dipisah koma (mis. MA "20, 50").
+  const cur = {}
+  activeIndicators().forEach(x => {
+    const c = cur[x.t] || (cur[x.t] = { on: true, lens: [] })
+    if (x.len) c.lens.push(x.len)
+  })
+  let timer = null
+  const apply = () => {
+    clearTimeout(timer)
+    // grafik TradingView dimuat ulang sekali setelah perubahan terakhir (bukan tiap ketikan)
+    timer = setTimeout(() => {
+      const list = []
+      INDICATORS.forEach(([id, , , def]) => {
+        const c = cur[id]
+        if (!c || !c.on) return
+        if (def) (c.lens.length ? c.lens : [def]).forEach(len => list.push({ t: id, len }))
+        else list.push({ t: id })
+      })
+      saveIndicators(list.slice(0, 12))
+    }, 600)
   }
-  render()
-  openSheet('Indikator grafik', body)
+  const toggles = []
+  const rows = INDICATORS.map(([id, label, , def]) => {
+    const c = cur[id] || (cur[id] = { on: false, lens: [] })
+    const t = h('input', { type: 'checkbox', class: 'toggle' })
+    t.checked = c.on
+    t.addEventListener('change', () => { c.on = t.checked; apply() })
+    toggles.push([c, t])
+    const len = def ? h('input', { type: 'text', inputmode: 'numeric', value: (c.lens.length ? c.lens : [def]).join(', '), title: 'Periode (pisahkan dengan koma untuk lebih dari satu)',
+      class: 'input w-[4.5rem] px-1.5 py-0.5 text-center font-mono text-xs', 'aria-label': 'Periode ' + label,
+      oninput: e => {
+        c.lens = String(e.target.value).split(/[^0-9]+/).map(v => parseInt(v, 10)).filter(v => v > 0).map(v => Math.min(500, v)).slice(0, 4)
+        if (c.on) apply()
+      } }) : null
+    return h('div', { class: 'flex items-center gap-2 py-1.5' },
+      h('span', { class: 'min-w-0 flex-1 text-[13px] font-semibold' }, label), len, t)
+  })
+  const small = 'rounded-md border border-line/[0.12] px-2.5 py-1 text-[11px] font-semibold text-muted'
+  openSheet('Indikator grafik', h('div', {},
+    h('p', { class: 'mb-1 text-xs text-muted' }, 'Nyalakan indikator yang ingin tampil; grafik langsung berubah. Kotak angka = periode (boleh lebih dari satu, pisahkan koma).'),
+    h('div', { class: 'divide-y divide-line/[0.06]' }, rows),
+    h('div', { class: 'mt-1.5 flex justify-end gap-1.5' },
+      h('button', { class: small, onclick: () => { toggles.forEach(([c, t]) => { c.on = false; t.checked = false }); apply() } }, 'Matikan semua')),
+    h('p', { class: 'mt-2 text-[11px] text-muted' }, 'Tersimpan di perangkat ini. Indikator yang ditambah lewat tombol "Indicators" di dalam grafik tidak tersimpan.')), { peek: true })
 }
 
 // ===================================================================== SUARA & GETAR
@@ -164,7 +177,10 @@ export function openSound() {
     return h('label', { class: 'flex items-center justify-between gap-3 py-3 text-sm font-semibold' }, label, t)
   }
   const getar = SHAKE_TYPES.filter(([id]) => id !== 'vibrate' || 'vibrate' in navigator)
-  openSheet('Suara & getar', h('div', {},
+  openSheet('Suara & notifikasi', h('div', {},
+    // notifikasi HP (dulu menu terpisah)
+    h('button', { class: 'tile mb-3 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: enablePush,
+      html: icon('push', 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">Notifikasi HP</span><span class="block text-[11px] text-muted">Kabar harga & promo walau aplikasi ditutup</span></span>' }),
     h('div', { class: 'label mb-1' }, 'Suara'),
     h('div', { class: 'divide-y divide-line/[0.06]' }, SOUND_TYPES.map(row)),
     h('div', { class: 'label mb-1 mt-4' }, 'Getar'),
@@ -172,22 +188,31 @@ export function openSound() {
     !('vibrate' in navigator) ? h('p', { class: 'mt-2 text-xs text-muted' }, 'Getar HP tidak didukung di perangkat ini (umumnya iPhone).') : null))
 }
 
-// ===================================================================== NOMINAL
-export function openNominalSettings() {
-  openSheet('Nominal yang dipantau', h('div', {},
-    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih nominal yang tampil di kartu untung dan tabel riwayat. Boleh tidak memilih sama sekali.'),
+// ===================================================================== KOTAK HARGA (info harga + nominal)
+export function openPriceBox() {
+  openSheet('Atur kotak harga', h('div', {},
+    h('p', { class: 'mb-2 text-xs text-muted' }, 'Pilih apa saja yang tampil di kotak harga. Diingat di perangkat ini.'),
+    hooks.chipSection ? h('div', { class: 'label mb-1' }, 'Info harga') : null,
+    hooks.chipSection ? hooks.chipSection() : null,
+    h('div', { class: 'label mb-1 mt-4' }, 'Nominal untung & gramasi'),
+    nominalSection()), { peek: true })
+}
+export function openNominalSettings() { openPriceBox() }
+function nominalSection() {
+  const box = h('div', {},
     h('div', { class: 'divide-y divide-line/[0.06]' }, state.nominals.map(n => {
       const t = h('input', { type: 'checkbox', class: 'toggle nom-t', 'data-id': n.id })
       t.checked = isNominalVisible(n.id)
       t.addEventListener('change', () => { setNominalVisible(n.id, t.checked); if (hooks.refreshNominals) hooks.refreshNominals() })
-      return h('label', { class: 'flex items-center justify-between py-3 text-sm font-semibold' },
+      return h('label', { class: 'flex items-center justify-between py-1.5 text-[13px] font-semibold' },
         h('span', {}, n.label, h('span', { class: 'ml-2 text-xs font-normal text-muted' }, rp(n.amount))), t)
     })),
-    h('div', { class: 'mt-3 flex gap-2' },
-      ...[[false, 'Hapus semua'], [true, 'Pilih semua']].map(([on, label]) => h('button', { class: 'btn-ghost flex-1 py-2.5', onclick: e => {
-        e.currentTarget.closest('.sheet').querySelectorAll('.nom-t').forEach(t => { t.checked = on; setNominalVisible(t.dataset.id, on) })
+    h('div', { class: 'mt-1.5 flex justify-end gap-1.5' },
+      ...[[false, 'Hapus semua'], [true, 'Pilih semua']].map(([on, label]) => h('button', { class: 'rounded-md border border-line/[0.12] px-2.5 py-1 text-[11px] font-semibold text-muted', onclick: () => {
+        box.querySelectorAll('.nom-t').forEach(t => { t.checked = on; setNominalVisible(t.dataset.id, on) })
         if (hooks.refreshNominals) hooks.refreshNominals()
-      } }, label)))))
+      } }, label))))
+  return box
 }
 
 // ===================================================================== NOTIFIKASI HP

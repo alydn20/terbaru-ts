@@ -13389,7 +13389,7 @@ ${authScript}
         '<div style="font-weight:600;color:#ef4444;margin:8px 0 4px;">Di grup WA tapi TIDAK terdaftar di web (' + d.groupOnly.length + ') - keluarkan dari grup atau daftarkan</div>' +
         list(d.groupOnly, r => '+' + _escHtml(r.phone) + (r.hasOrder ? ' <span style="color:#9ca3af;">(pernah membuat order)</span>' : '')) +
         '<div style="font-weight:600;color:#f59e0b;margin:12px 0 4px;">Terdaftar di web tapi BELUM di grup WA (' + d.webOnly.length + ')</div>' +
-        '<div style="font-weight:600;color:#9ca3af;margin:8px 0 4px;">Menjawab TIDAK mau masuk grup (' + jwbTidak.length + ')</div>' +
+        '<div style="font-weight:600;color:#f87171;margin:8px 0 4px;">Menjawab TIDAK mau masuk grup (' + jwbTidak.length + ')</div>' +
         list(jwbTidak, r => rowTxt(r) + ' <span style="color:#f87171;">' + (r.askAgainAt ? 'ditanya lagi ' + tgl(r.askAgainAt) : 'jangan ditanya lagi') + '</span>') +
         '<div style="font-weight:600;color:#60a5fa;margin:10px 0 4px;">Belum menjawab Ya/Tidak (' + jwbBelum.length + ') - ditanya saat membuka monitoring</div>' +
         list(jwbBelum, rowTxt) +
@@ -13463,7 +13463,7 @@ ${authScript}
       const opts = [
         ['masuk', 'Di grup', '#16a34a'],
         ['mau', 'Mau masuk grup, belum masuk', '#d97706'],
-        ['tidak_mau', 'Tidak mau masuk grup', '#4b5563'],
+        ['tidak_mau', 'Tidak mau masuk grup', '#dc2626'],
         ['belum', 'Belum menjawab (tanya lagi)', '#2563eb']
       ];
       opts.forEach(o => {
@@ -13498,7 +13498,7 @@ ${authScript}
       const map = {
         masuk: ['Di grup', '34,197,94', '#22c55e', 'Ada di daftar anggota grup WA'],
         mau: ['Mau masuk grup, belum masuk', '245,158,11', '#f59e0b', 'Menjawab YA, ingin masuk grup, tetapi belum ada di daftar anggota'],
-        tidak_mau: ['Tidak mau', '107,114,128', '#9ca3af', 'Menjawab TIDAK mau masuk grup'],
+        tidak_mau: ['Tidak mau', '239,68,68', '#f87171', 'Menjawab TIDAK mau masuk grup'],
         belum: ['Belum menjawab', '59,130,246', '#60a5fa', 'Belum di grup dan belum menjawab pertanyaan']
       };
       const b = map[u.groupStatus];
