@@ -1,5 +1,6 @@
 // Halaman monitoring (tampilan baru). Alur:
 // 1. cek sesi  2. muat harga + data pendukung  3. sambung SSE realtime  4. pasang navigasi & menu.
+import './monitoring/defaults.js'
 import { $, $$, h, icon, num, signed, rp, pad2, HARI, BULAN, getJSON, session, confirmDialog, toast, contactAdmin, applyTheme, tanggalPanjang, openSheet } from './api.js'
 import { state, visibleNominals, profitOf, markupOf } from './monitoring/state.js'
 import { priceSound, promoSound, notifSound, countdownTick, loadCustomSounds, setCustomSounds } from './monitoring/sound.js'
@@ -260,8 +261,8 @@ let chartFull = false, chartFullAt = 0
 // s = grafik & riwayat terlihat sekaligus (desktop berdampingan, HP grafik dipendekkan).
 const LAYOUT_KEY = 'monitorLayout'
 export const LAYOUTS = [
-  ['def', 'Bawaan', 'Harga + grafik, riwayat di bawah (digulir)', { p: 1, c: 1, h: 1, s: 0 }],
-  ['all', 'Harga + Grafik + Riwayat', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
+  ['def', 'Harga + Grafik, riwayat digulir', 'Riwayat di bawah grafik (halaman digulir)', { p: 1, c: 1, h: 1, s: 0 }],
+  ['all', 'Harga + Grafik + Riwayat (bawaan)', 'Semua terlihat sekaligus', { p: 1, c: 1, h: 1, s: 1 }],
   ['pc', 'Harga + Grafik', 'Tanpa riwayat', { p: 1, c: 1, h: 0, s: 0 }],
   ['ch', 'Grafik + Riwayat', 'Tanpa kotak harga', { p: 0, c: 1, h: 1, s: 1 }],
   ['ph', 'Harga + Riwayat', 'Tanpa grafik', { p: 1, c: 0, h: 1, s: 0 }],
@@ -269,10 +270,11 @@ export const LAYOUTS = [
   ['p', 'Harga saja', '', { p: 1, c: 0, h: 0, s: 0 }],
   ['h', 'Riwayat saja', '', { p: 0, c: 0, h: 1, s: 0 }]
 ]
-let layout = 'def'
+// bawaan: harga + grafik + riwayat terlihat sekaligus
+let layout = 'all'
 try {
   const v = localStorage.getItem(LAYOUT_KEY)
-  layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'def'
+  layout = v === 'split' ? 'all' : v === 'chart' ? 'def' : LAYOUTS.some(l => l[0] === v) ? v : 'all'
 } catch (e) {}
 const lay = () => (LAYOUTS.find(l => l[0] === layout) || LAYOUTS[0])[3]
 // Desktop & tablet: riwayat di samping grafik (bawaan) atau di bawahnya (pilihan di Tata letak)
@@ -303,7 +305,9 @@ function fitHistPanel() {
   if (!wide() || !document.body.classList.contains('lay-split')) { wrap.style.gridTemplateColumns = ''; return }
   t.style.width = 'max-content'
   // lebar yang benar-benar tampil (tabel & kotaknya bisa diskalakan: ukuran teks + --ui-zoom)
-  const need = Math.ceil(t.getBoundingClientRect().width) + 4
+  // + lebar scrollbar tegak di kotak riwayat (supaya tidak muncul geser ke samping)
+  const sc = $('#histScroll'), sb = sc ? (sc.offsetWidth - sc.clientWidth) * (sc.offsetWidth ? sc.getBoundingClientRect().width / sc.offsetWidth : 1) : 0
+  const need = Math.ceil(t.getBoundingClientRect().width + sb) + 6
   t.style.width = ''
   const w = Math.max(360, Math.min(Math.round(wrap.clientWidth * 0.55), need))
   wrap.style.gridTemplateColumns = 'minmax(0, 1fr) ' + w + 'px'
@@ -314,8 +318,9 @@ if ('MutationObserver' in window) {
   if (hb) new MutationObserver(() => { fitHistPanel(); fitChart() }).observe(hb, { childList: true })
 }
 // Ukuran teks riwayat (tombol Aa di judul riwayat), diingat per perangkat
-const HIST_SIZES = [['0.85', 'Kecil'], ['1', 'Sedang (bawaan)'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
-function histSize() { try { const v = localStorage.getItem('histTextSize'); return HIST_SIZES.some(x => x[0] === v) ? v : '1' } catch (e) { return '1' } }
+const HIST_SIZES = [['0.85', 'Kecil (bawaan)'], ['1', 'Sedang'], ['1.15', 'Besar'], ['1.3', 'Sangat besar']]
+// bawaan: teks riwayat Kecil
+function histSize() { try { const v = localStorage.getItem('histTextSize'); return HIST_SIZES.some(x => x[0] === v) ? v : '0.85' } catch (e) { return '0.85' } }
 function applyHistSize() {
   const sc = $('#histScroll')
   if (sc) sc.style.setProperty('--hist-zoom', histSize())
@@ -361,7 +366,8 @@ function openHistSize() {
     IDR_MODES.map(([v, label, note]) => opt(v === im, label, note, () => { try { localStorage.setItem('histIdrMode', v) } catch (e) {} applyIdrMode(); sheet.close() }))))
 }
 // Kotak harga ringkas (hanya Beli, Jual, jam, promo): ceklis di lembar Tata letak, berlaku di semua tata letak
-function priceCompact() { try { return localStorage.getItem('priceCompact') === '1' } catch (e) { return false } }
+// bawaan: kotak harga ringkas (aktif kecuali user mematikannya)
+function priceCompact() { try { return localStorage.getItem('priceCompact') !== '0' } catch (e) { return true } }
 // Info harga yang ditampilkan (pilihan user, diingat per perangkat). Semua dimatikan = baris info hilang.
 const CHIP_DEFS = [['chipUsd', 'Kurs USD/IDR (IDR)'], ['chipHigh', 'Tertinggi hari ini (Max)'], ['chipLow', 'Terendah hari ini (Min)'], ['chipLimit', 'Limit'], ['chipMarkup', 'Markup / Markdown (MU/MD)'], ['chipSpread', 'Spread (Spr)'], ['chipOn', 'Titik ON (ON)']]
 function chipPrefs() { try { return JSON.parse(localStorage.getItem('chipPrefs') || '{}') || {} } catch (e) { return {} } }

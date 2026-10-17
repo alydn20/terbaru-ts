@@ -3769,7 +3769,7 @@ app.get(/^\/ui-baru\/js\/[A-Za-z0-9_\/-]+\.js$/, (req, res, next) => {
     let code = _ui2JsCache.get(rel)
     if (code === undefined) {
       code = readFileSync(join(UI2_DIR, 'js', rel), 'utf8')
-        .replace(/(\bfrom\s*|\bimport\s*\(\s*)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, (m, a, q, f) => a + q + f + '?v=' + UI2_VER + q)
+        .replace(/(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, (m, a, q, f) => a + q + f + '?v=' + UI2_VER + q)
       _ui2JsCache.set(rel, code)
     }
     res.setHeader('Cache-Control', req.query.v === UI2_VER ? 'public, max-age=31536000, immutable' : 'no-cache')
@@ -3875,7 +3875,7 @@ app.use((req, res, next) => {
 
 // Helper: validasi session user atau admin — kembalikan false jika tidak valid (sudah kirim 403)
 async function requireSession(req, res) {
-  if (req._adminAuthed) return true
+  if (req._adminAuthed || isAdminCookieValid(req)) return true
   const session = req.query.session || (req.body && req.body.session)
   if (!session) { res.status(403).json({ error: 'Unauthorized' }); return false }
   let phone = null
@@ -4728,7 +4728,9 @@ app.get('/api/admin/login-history', async (req, res) => {
   }
 })
 
-app.get('/stats', (_req, res) => {
+app.get('/stats', (req, res) => {
+  // KEAMANAN: berisi log server (nomor HP, ID grup, isi pesan) & harga realtime -> khusus admin
+  if (!isAdminCookieValid(req) && !req._adminAuthed) return res.json({ status: isReady ? 'ready' : 'not_ready' })
   const now = Date.now()
   const timeSinceLastUpdate = lastPriceUpdateTime > 0 ? now - lastPriceUpdateTime : null
   const isPriceStale = timeSinceLastUpdate ? timeSinceLastUpdate >= STALE_PRICE_THRESHOLD : false
@@ -4800,14 +4802,16 @@ app.get('/time', (_req, res) => {
 })
 
 // Daily Stats API - konsisten di semua device (async untuk Redis)
-app.get('/daily-stats', async (_req, res) => {
+app.get('/daily-stats', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   const stats = await getDailyStats()
   res.json(stats)
 })
 
 // Price History API - public (data harga bukan sensitif)
 // Sparkline init — last 30 entries untuk inisialisasi sparkline di client
-app.get('/api/sparkline-init', (req, res) => {
+app.get('/api/sparkline-init', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   const last30 = priceHistoryCache.slice(-30)
   const HARDCODED_RATES = [15900, 16600]
   res.json(last30.map(e => ({
@@ -4819,15 +4823,18 @@ app.get('/api/sparkline-init', (req, res) => {
 })
 
 app.get('/price-history', async (req, res) => {
-  const page = parseInt(req.query.page) || 1
-  const perPage = parseInt(req.query.perPage) || 10
+  // KEAMANAN: data harga hanya untuk user yang login (dulu terbuka untuk umum); maks 100 per halaman
+  if (!(await requireSession(req, res))) return
+  const page = Math.max(1, parseInt(req.query.page) || 1)
+  const perPage = Math.min(100, Math.max(1, parseInt(req.query.perPage) || 10))
   const history = await getPriceHistory(page, perPage)
   // Include current USD/IDR for fallback on old entries
   history.currentUsdIdr = cachedMarketData.usdIdr?.rate || 0
   res.json(history)
 })
 
-app.get('/usd-idr-history', (req, res) => {
+app.get('/usd-idr-history', async (req, res) => {
+  if (!(await requireSession(req, res))) return
   res.json({ items: [...usdIdrHistory].reverse(), total: usdIdrHistory.length })
 })
 
