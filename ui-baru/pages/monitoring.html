@@ -27,7 +27,10 @@
       </div>
       <div class="min-w-0 flex-1 leading-tight">
         <div class="truncate text-sm font-extrabold lg:text-[15px]">Harga PemulaOLD</div>
-        <button id="sisaHari" class="hidden items-center gap-1.5 text-[11px] font-semibold"></button>
+        <div class="flex min-w-0 items-center gap-1.5">
+          <button id="sisaHari" class="hidden shrink-0 items-center gap-1.5 whitespace-nowrap text-[11px] font-semibold"></button>
+          <span id="clkDate" class="truncate whitespace-nowrap text-[11px] text-muted">&nbsp;</span>
+        </div>
       </div>
       <!-- desktop: Promo / News / Lainnya pindah ke sini (menu bawah disembunyikan) -->
       <div id="topNav" class="flex items-center gap-0.5 lg:gap-1"></div>
@@ -61,7 +64,6 @@
           <!-- jam + status promo -->
           <div id="clockRow" class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 lg:col-start-1 lg:row-start-2">
             <span class="num font-mono text-xl font-extrabold leading-none lg:text-2xl"><span id="clkH">--</span><span class="clk-colon">:</span><span id="clkM">--</span><span class="clk-colon">:</span><span id="clkS">--</span></span>
-            <span id="clkDate" class="whitespace-nowrap text-[10px] leading-tight text-muted">&nbsp;</span>
             <span id="promoStatus" class="pill shrink-0 bg-line/10 px-2 py-0.5 text-[11px] text-muted" title="Status promo">PROMO —</span>
           </div>
 

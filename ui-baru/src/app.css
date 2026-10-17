@@ -253,4 +253,15 @@ body.nav-idle { padding-bottom: env(safe-area-inset-bottom) !important; }
 .clk-tick.clk-tick-on { animation: clkTick 0.35s ease-out; }
 
 /* Pilihan user: info harga tertentu / semua disembunyikan, dan 0 nominal dipilih */
-#chips .chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
+.chip-off, #chips.chips-off, #nomWrap.nom-off { display: none !important; }
+
+/* USD/IDR di baris jam: bentuk pil, ukuran setara pil PROMO */
+.stat.usd-pill { flex: none; flex-direction: row; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border-radius: 9999px; }
+.usd-pill .stat-k { font-size: 10px; }
+.usd-pill .stat-v { font-size: 0.875rem; }
+body.price-compact .stat.usd-pill { padding: 0.2rem 0.6rem; }
+body.price-compact .usd-pill .stat-k { font-size: 9px !important; }
+body.price-compact .usd-pill .stat-v { font-size: 0.75rem !important; }
+@media (min-width: 1280px) {
+  body.price-compact .usd-pill .stat-v { font-size: 0.85rem !important; }
+}

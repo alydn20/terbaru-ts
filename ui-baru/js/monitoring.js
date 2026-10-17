@@ -54,7 +54,7 @@ function renderSisaHari() {
   const u = state.user
   if (!u) return
   el.classList.remove('hidden'); el.classList.add('flex')
-  if (!u.expired) { el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
+  if (!u.expired) { el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-muted'; el.textContent = 'Akun Lifetime'; el.onclick = null; return }
   const ms = Number(u.expired) - Date.now()
   const hari = Math.ceil(ms / 86400000)
   const color = ms <= 0 || hari <= 3 ? 'text-down' : hari <= 7 ? 'text-gold' : 'text-up'
@@ -62,7 +62,7 @@ function renderSisaHari() {
   const wajib = ms <= 0 || hari <= 7
   let hidden = false
   try { hidden = !wajib && localStorage.getItem(CTA_HIDE) === String(u.expired) } catch (e) {}
-  el.className = 'mt-0.5 flex items-center gap-1.5 text-xs font-semibold ' + color
+  el.className = 'mt-0.5 flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-semibold ' + color
   el.title = 'Aktif sampai ' + tanggalPanjang(u.expired)
   el.replaceChildren(h('span', {}, text))
   if (!hidden) {
@@ -115,7 +115,9 @@ function renderMarkup() {
   const mk = markupOf(state.sell, state.xauUsd, state.usdIdr)
   $('#chipMarkup').classList.toggle('hidden', mk.normal)
   if (!mk.normal) {
-    $('#markupLabel').textContent = mk.diff > 0 ? 'Markup' : 'Markdown'
+    // disingkat: MU = markup, MD = markdown (nama lengkap di tooltip)
+    $('#markupLabel').textContent = mk.diff > 0 ? 'MU' : 'MD'
+    $('#chipMarkup').title = mk.diff > 0 ? 'Markup' : 'Markdown'
     $('#markupVal').textContent = signed(mk.diff)
   }
 }
@@ -549,7 +551,8 @@ function tick() {
     sEl.classList.add('clk-tick-on')
     document.querySelectorAll('.clk-colon').forEach(c => c.classList.toggle('clk-dim', s % 2 === 1))
   }
-  $('#clkDate').textContent = HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB'
+  // bar atas: HP versi pendek ("17 Okt"), desktop lengkap ("Sabtu, 17 Okt · WIB")
+  $('#clkDate').textContent = wide() ? HARI[now.getDay()] + ', ' + now.getDate() + ' ' + BULAN[now.getMonth()] + ' · WIB' : now.getDate() + ' ' + BULAN[now.getMonth()]
   countdownTick(s, $('main'))
 }
 
@@ -672,6 +675,9 @@ async function start() {
   $('#btnLayout').addEventListener('click', openLayoutPicker)
   applyHistSize()
   applyIdrMode()
+  // USD/IDR naik ke baris jam, ukurannya setara pil PROMO (tanggal pindah ke bar atas)
+  const usd = $('#chipUsd')
+  if (usd) { usd.classList.add('usd-pill'); $('#clockRow').insertBefore(usd, $('#promoStatus')) }
   applyChipPrefs()
   // ikon pengaturan kotak harga, di baris jam setelah pil PROMO (tidak menimpa kotak Beli/Jual)
   const gear = h('button', { id: 'btnPriceSet', class: 'icon-btn h-7 w-7 shrink-0 text-muted', title: 'Atur kotak harga', 'aria-label': 'Atur kotak harga', html: icon('sliders', 'h-3.5 w-3.5'), onclick: openPriceSettings })
