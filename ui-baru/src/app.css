@@ -852,3 +852,18 @@ button.is-busy { display: inline-flex; align-items: center; justify-content: cen
 .news-card { width: auto; max-width: min(24rem, 100%); }
 #brandBox:has(#newsFloat) > :not(#newsFloat) { visibility: hidden; }
 header > div:has(#newsFloat) > div:first-child { visibility: hidden; }
+
+/* ajakan pasang aplikasi: kartu kecil di bawah tengah layar */
+.install-invite { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 70;
+  display: flex; align-items: center; gap: .6rem; width: min(26rem, calc(100% - 20px)); padding: .55rem .6rem; border-radius: 1rem;
+  border: 1px solid rgb(var(--line) / .12); background: rgb(var(--card)); box-shadow: 0 14px 40px rgb(0 0 0 / .45); }
+.install-invite.anim-pop { animation: invitePop .38s cubic-bezier(.2, .9, .3, 1.15); }
+@keyframes invitePop { from { opacity: 0; transform: translate(-50%, 16px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0); } }
+.install-invite.anim-fade-out { animation: invitePop .2s ease reverse forwards; }
+
+/* goyang layar hitung mundur (detik 55-59): ayunan halus yang meredam */
+@keyframes softShake { 0% { translate: 0; } 18% { translate: -3px 0; } 36% { translate: 2.5px 0; } 54% { translate: -1.5px 0; } 72% { translate: .8px 0; } 100% { translate: 0; } }
+@keyframes softShakeFinal { 0% { translate: 0; rotate: 0deg; } 15% { translate: -5px 0; rotate: -.25deg; } 30% { translate: 4px 0; rotate: .2deg; } 45% { translate: -3px 0; rotate: -.12deg; } 62% { translate: 1.8px 0; } 80% { translate: -.8px 0; } 100% { translate: 0; rotate: 0deg; } }
+.soft-shake { animation: softShake .42s cubic-bezier(.36, .07, .19, .97); }
+.soft-shake-final { animation: softShakeFinal .6s cubic-bezier(.36, .07, .19, .97); }
+@media (prefers-reduced-motion: reduce) { .soft-shake, .soft-shake-final { animation: none; } }

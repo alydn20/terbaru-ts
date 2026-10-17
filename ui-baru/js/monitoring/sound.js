@@ -117,8 +117,11 @@ export function countdownTick(sec, shakeEl) {
   lastSec = sec
   const final = sec === 59
   if (settings.countdown) tones(final ? [[1500, 0, 0.09], [1500, 0.13, 0.09]] : [[1000, 0, 0.09]], 'square', 0.25)
-  if (settings.vibrate && interacted && navigator.vibrate) { try { navigator.vibrate(final ? [90, 50, 90] : 60) } catch (e) {} }
+  // getar HP: denyut pendek & lembut tiap detik, detik terakhir dua denyut
+  if (settings.vibrate && interacted && navigator.vibrate) { try { navigator.vibrate(final ? [45, 70, 45] : 30) } catch (e) {} }
+  // goyang layar: ayunan kecil yang meredam (bukan goyang kasar kiri-kanan), detik terakhir sedikit lebih terasa
   if (settings.shake && shakeEl) {
-    shakeEl.classList.remove('animate-shake'); void shakeEl.offsetWidth; shakeEl.classList.add('animate-shake')
+    shakeEl.classList.remove('soft-shake', 'soft-shake-final'); void shakeEl.offsetWidth
+    shakeEl.classList.add(final ? 'soft-shake-final' : 'soft-shake')
   }
 }

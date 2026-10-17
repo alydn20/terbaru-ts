@@ -8,6 +8,7 @@ import { initHistory, onNewPrice, onUsdIdr, loadHistory, histRowsSetting, setHis
 import { initChart, loadChart } from './monitoring/chart.js'
 import { loadNews, openNews, loadPromos, setPromos, openPromos } from './monitoring/news.js'
 import { startTour, tourDone } from './monitoring/tour.js'
+import { scheduleInstallInvite, isInstalled } from './monitoring/install.js'
 import { openMore, openRenew, openIndicators, openNominalSettings, openPriceBox, joinGroup, subscribePush, setMenuHooks } from './monitoring/menu.js'
 
 applyTheme()
@@ -865,6 +866,19 @@ async function start() {
     fitChart()
     setTimeout(renewReminder, 2500)
     // Pengguna baru: panduan penggunaan wajib tampil dulu, baru pertanyaan gabung grup WA
+    // ajakan pasang aplikasi (maks. sekali tiap 3 hari, tidak muncul bila sudah terpasang / saat panduan)
+    scheduleInstallInvite(tourDone() ? 40000 : 90000)
+    // baru dipasang & dibuka dari layar utama: tawarkan notifikasi harga sekali
+    if (isInstalled() && 'Notification' in window && Notification.permission === 'default') {
+      let asked = false
+      try { asked = localStorage.getItem('pushAskInstalled') === '1' } catch (e) {}
+      if (!asked) setTimeout(async () => {
+        try { localStorage.setItem('pushAskInstalled', '1') } catch (e) {}
+        const ok = await confirmDialog('Aplikasi sudah terpasang. Aktifkan notifikasi supaya mendapat kabar harga naik/turun & promo walau aplikasi ditutup?', { title: 'Notifikasi harga', ok: 'Aktifkan', cancel: 'Nanti' })
+        if (!ok) return
+        if ((await Notification.requestPermission()) === 'granted') toast((await subscribePush()) ? 'Notifikasi harga aktif' : 'Notifikasi aktif di perangkat ini', 'success')
+      }, 8000)
+    }
     if (tourDone()) setTimeout(() => joinGroup(true), 6000)
     else setTimeout(() => startTour(true).then(() => setTimeout(() => joinGroup(true), 1500)), 1500)
     getJSON('/api/check-pin-status').then(p => { if (p && p.requirePinChange) location.replace('/login') }).catch(() => {})

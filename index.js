@@ -2961,8 +2961,18 @@ setTimeout(() => {
 // Cooldown TERPISAH untuk price dan promo agar tidak saling blocking
 let lastPricePushTime = 0
 let lastPromoPushTime = 0
-const PRICE_PUSH_COOLDOWN = 60000 // 1 menit untuk price
+const PRICE_PUSH_COOLDOWN = 40000 // 40 dtk: harga berubah ~tiap menit; 60 dtk dulu membuat notif terlewat
 const PROMO_PUSH_COOLDOWN = 300000 // 5 menit untuk promo (karena hanya saat status berubah)
+
+// Isi notifikasi harga yang sama di semua jalur: "Harga emas NAIK ▲ +312" / isi "Beli Rp2.470.021 (+312)
+// · Jual Rp2.386.288 (+366)". Notifikasi baru menggantikan yang lama (tag sama), jadi yang tampil selalu terbaru.
+function pricePushText(price, change) {
+  const b = Math.round(change.buyChange || 0), s = Math.round(change.sellChange || 0)
+  const sign = v => (v > 0 ? '+' : v < 0 ? '−' : '') + formatRupiah(Math.abs(v))
+  const title = 'Harga emas ' + (b > 0 ? 'NAIK ▲ ' : b < 0 ? 'TURUN ▼ ' : 'tetap ') + (b ? sign(b) : '')
+  const body = 'Beli Rp' + formatRupiah(price.buy) + ' (' + sign(b) + ')\nJual Rp' + formatRupiah(price.sell) + ' (' + sign(s) + ')'
+  return { title: title.trim(), body }
+}
 
 async function sendPushToAll(title, body, type = 'price') {
   pushLog(`📱 PUSH | Attempting: "${title}" (type: ${type})`)
@@ -3002,8 +3012,8 @@ async function sendPushToAll(title, body, type = 'price') {
     const payload = JSON.stringify({
       title,
       body,
-      icon: '/icon.png?v=2',
-      badge: '/icon.png?v=2',
+      icon: '/icon-192.png?v=4',
+      badge: '/badge-96.png?v=4', // ikon kecil bilah status Android: P putih transparan (dulu kotak putih polos)
       type,
       url: '/monitoring'
     })
@@ -3063,7 +3073,7 @@ async function sendRenewReminders() {
       const payload = JSON.stringify({
         title: hari <= 1 ? 'Masa aktif habis besok' : 'Masa aktif tinggal ' + hari + ' hari',
         body: 'Ketuk untuk perpanjang: bayar QRIS lalu upload bukti, langsung dari website.',
-        icon: '/icon.png?v=2', badge: '/icon.png?v=2', type: 'info', url: '/monitoring?perpanjang=1'
+        icon: '/icon-192.png?v=4', badge: '/badge-96.png?v=4', type: 'info', url: '/monitoring?perpanjang=1'
       })
       const subscription = typeof subRaw === 'string' ? JSON.parse(subRaw) : subRaw
       await webpush.sendNotification(subscription, payload).then(() => { n++ }).catch(async e => {
@@ -3401,11 +3411,8 @@ async function checkPriceUpdate() {
     doBroadcastInstant(message)
 
     // 📱 PUSH NOTIFICATION - Kirim ke HP walaupun browser tertutup
-    const buyDir = finalPriceChange.buyChange > 0 ? '📈' : '📉'
-    const sellDir = finalPriceChange.sellChange > 0 ? '📈' : '📉'
-    const pushTitle = `${buyDir} Harga Emas Update`
-    const pushBody = `Beli: Rp ${currentPrice.buy.toLocaleString('id-ID')} (${finalPriceChange.buyChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.buyChange)})\nJual: Rp ${currentPrice.sell.toLocaleString('id-ID')} (${finalPriceChange.sellChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.sellChange)})`
-    sendPushToAll(pushTitle, pushBody, 'price').catch(() => {})
+    const pp = pricePushText(currentPrice, finalPriceChange)
+    sendPushToAll(pp.title, pp.body, 'price').catch(() => {})
 
   } catch (e) {
     // Track error per interval
@@ -3630,10 +3637,9 @@ async function fastPoll(treasuryData, _fetchMs) {
           doBroadcastInstant(waMessage)
 
           // Push notification ke HP
-          const buyDir = finalPriceChange.buyChange > 0 ? '📈' : '📉'
-          const pushTitle = `${buyDir} Harga Emas Update`
-          const pushBody = `Beli: Rp ${currentPrice.buy.toLocaleString('id-ID')} (${finalPriceChange.buyChange > 0 ? '+' : ''}${formatRupiah(finalPriceChange.buyChange)})`
-          sendPushToAll(pushTitle, pushBody, 'price').catch(() => {})
+          // sama dengan jalur utama: Beli & Jual lengkap (dulu jalur ini hanya Beli)
+          const pp = pricePushText(currentPrice, finalPriceChange)
+          sendPushToAll(pp.title, pp.body, 'price').catch(() => {})
         }
       }
     } else {
@@ -5212,6 +5218,20 @@ try {
 } catch (e) {
 }
 
+// Ikon aplikasi terpasang (PWA): 192/512 sudut membulat ('any'), maskable kotak penuh (Android memotong
+// sendiri bentuknya), apple-touch-icon kotak penuh tanpa transparansi (iPhone membulatkan sendiri).
+const APP_ICONS = {}
+for (const f of ['icon-192.png', 'icon-512.png', 'icon-maskable.png', 'apple-touch-icon.png', 'badge-96.png']) {
+  try { APP_ICONS[f] = readFileSync(join(__dirname, f)) } catch (e) {}
+}
+app.get(['/icon-192.png', '/icon-512.png', '/icon-maskable.png', '/apple-touch-icon.png', '/badge-96.png'], (req, res) => {
+  const buf = APP_ICONS[req.path.slice(1)]
+  if (!buf) return res.status(404).send('Icon not found')
+  res.setHeader('Content-Type', 'image/png')
+  res.setHeader('Cache-Control', 'public, max-age=86400')
+  res.send(buf)
+})
+
 app.get('/icon.png', (_req, res) => {
   if (iconBuffer) {
     res.setHeader('Content-Type', 'image/png')
@@ -5255,25 +5275,13 @@ app.get('/manifest.json', (req, res) => {
     display: 'standalone',
     background_color: '#0f1419',
     theme_color: '#f7931a',
+    // ikon terpisah per keperluan (dulu satu file 512px dipakai untuk semua & ditandai 'any maskable',
+    // sehingga logo terpotong / sudut berwarna aneh saat dipasang di sebagian HP)
     icons: [
-      {
-        src: '/icon-rounded.svg?v=3',
-        sizes: 'any',
-        type: 'image/svg+xml',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icon.png?v=3',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any maskable'
-      },
-      {
-        src: '/icon.png?v=3',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any maskable'
-      }
+      { src: '/icon-192.png?v=4', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable.png?v=4', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/icon-rounded.svg?v=4', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
     ],
     related_applications: [
       {
@@ -5402,8 +5410,8 @@ app.get('/sw.js', (_req, res) => {
 
       const options = {
         body: data.body,
-        icon: data.icon || '/icon.png?v=2',
-        badge: data.badge || '/icon.png?v=2',
+        icon: data.icon || '/icon-192.png?v=4',
+        badge: data.badge || '/badge-96.png?v=4',
         vibrate: [200, 100, 200],
         tag: data.type || 'notification',
         renotify: true,

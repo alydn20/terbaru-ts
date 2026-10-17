@@ -5,6 +5,7 @@ import { state, setNominalVisible, isNominalVisible } from './state.js'
 import { settings as sound, setSetting, SOUND_TYPES, SHAKE_TYPES } from './sound.js'
 import { INDICATORS, indicatorDef, activeIndicators, saveIndicators, loadChart } from './chart.js'
 import { mountPayment } from '../payment.js'
+import { openInstall, isInstalled } from './install.js'
 
 let hooks = {}
 /** main.js memberi fungsi yang dibutuhkan menu (render ulang nominal/riwayat, sisa hari) */
@@ -25,7 +26,8 @@ export function openMore() {
       ['sound', 'Suara & notifikasi', openSound],
       hooks.openPromos ? ['tag', 'Promo aktif', () => hooks.openPromos()] : null,
       ['calc', 'Kalkulator emas', openCalc],
-      isInstalled() ? null : ['download', 'Install aplikasi', install]
+      // selalu ada: belum terpasang -> pasang / panduan; sudah terpasang -> keterangan
+      ['download', isInstalled() ? 'Aplikasi terpasang' : 'Install aplikasi', openInstall]
     ]],
     ['Akun', [
       state.user && state.user.expired ? ['calendar', 'Perpanjang masa aktif', openRenew, 'border-gold/40 bg-gold/10 text-gold', 'text-gold'] : null,
@@ -239,19 +241,6 @@ async function enablePush() {
   const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
   if (p !== 'granted') return
   toast((await subscribePush()) ? 'Notifikasi HP aktif' : 'Notifikasi aktif di browser ini', 'success')
-}
-
-// ===================================================================== INSTALL
-let deferredPrompt = null
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e })
-const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
-async function install() {
-  closeAllSheets()
-  if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; return }
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  await confirmDialog(ios
-    ? 'Di Safari: ketuk tombol Bagikan (kotak dengan panah ke atas), lalu pilih "Tambahkan ke Layar Utama".'
-    : 'Buka menu browser (⋮), lalu pilih "Install aplikasi" atau "Tambahkan ke Layar Utama".', { title: 'Cara install', ok: 'Mengerti', cancel: null })
 }
 
 // ===================================================================== PERPANJANG
