@@ -382,6 +382,8 @@ function openHistSize() {
       note ? h('span', { class: 'block text-[11px] text-muted' }, note) : null))
   const cur = histSize(), im = idrMode()
   const sheet = openSheet('Pengaturan riwayat', h('div', { class: 'flex flex-col gap-1.5' },
+    // posisi riwayat juga bisa diatur dari sini (tablet & desktop)
+    histSideControl('mb-2'),
     h('div', { class: 'label px-0.5 text-[10px]' }, 'Ukuran teks'),
     HIST_SIZES.map(([v, label]) => opt(v === cur, label, '', () => { try { localStorage.setItem('histTextSize', v) } catch (e) {} applyHistSize() }, 'font-size:' + Math.round(14 * Number(v)) + 'px', 'size')),
     h('div', { class: 'label mt-3 px-0.5 text-[10px]' }, 'Jumlah baris'),
@@ -494,22 +496,25 @@ export function openLayoutPicker() {
       h('button', { class: 'tile mt-2 flex w-full items-center gap-3 px-3 py-2.5 text-left', onclick: fn,
         html: icon(ic, 'h-4 w-4 shrink-0 text-gold') + '<span class="min-w-0"><span class="block text-sm font-bold">' + label + '</span><span class="block text-[11px] text-muted">' + note + '</span></span>' })),
     // posisi riwayat saat grafik & riwayat tampil sekaligus (desktop / tablet)
-    wide() ? (() => {
-      const side = histSide()
-      const pick = (v, e) => {
-        try { localStorage.setItem('histSide', v ? '1' : '0') } catch (x) {}
-        const seg = e.currentTarget.parentElement
-        ;[...seg.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === (v ? 0 : 1))))
-        smoothLayout(() => { applyLayout(); fitChart() })
-      }
-      return h('div', { class: 'tile mt-2 flex items-center justify-between gap-3 px-3 py-2.5' },
-        h('span', { class: 'min-w-0' },
-          h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
-          h('span', { class: 'block text-[11px] text-muted' }, 'Saat grafik & riwayat tampil sekaligus')),
-        h('div', { class: 'seg shrink-0' },
-          h('button', { 'aria-pressed': String(side), onclick: e => pick(true, e) }, 'Di samping'),
-          h('button', { 'aria-pressed': String(!side), onclick: e => pick(false, e) }, 'Di bawah')))
-    })() : null), { peek: true })
+    histSideControl()), { peek: true })
+}
+// Posisi riwayat (samping / bawah grafik) — dipakai di Tata letak dan Pengaturan riwayat (tablet & desktop)
+function histSideControl(extraClass = 'mt-2') {
+  if (!wide()) return null
+  const side = histSide()
+  const pick = (v, e) => {
+    try { localStorage.setItem('histSide', v ? '1' : '0') } catch (x) {}
+    const seg = e.currentTarget.parentElement
+    ;[...seg.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === (v ? 0 : 1))))
+    smoothLayout(() => { applyLayout(); fitChart() })
+  }
+  return h('div', { class: 'tile flex items-center justify-between gap-3 px-3 py-2.5 ' + extraClass },
+    h('span', { class: 'min-w-0' },
+      h('span', { class: 'block text-sm font-bold' }, 'Posisi riwayat'),
+      h('span', { class: 'block text-[11px] text-muted' }, 'Saat grafik & riwayat tampil sekaligus')),
+    h('div', { class: 'seg shrink-0' },
+      h('button', { 'aria-pressed': String(side), onclick: e => pick(true, e) }, 'Di samping'),
+      h('button', { 'aria-pressed': String(!side), onclick: e => pick(false, e) }, 'Di bawah')))
 }
 function fitChart() { fitClock(); fitPriceOnly(); fitChartBox(); fitHist() }
 // Jam (kotak PROMO + jam di baris bawah) membesar mengisi ruang kosong di kiri-kanannya, tetap
@@ -863,6 +868,40 @@ async function start() {
   fitChart()
   setMenuHooks({ openPromos, refreshNominals: () => { renderNominals(); loadHistory() }, renderSisaHari, openLayoutPicker, startTour, chipSection, canJoinGroup: () => canJoin, setCanJoinGroup: v => { canJoin = v } })
 
+  // data — dimuat BERSAMAAN dengan cek sesi (tidak menunggu): harga dulu, lalu grafik, riwayat,
+  // nominal & info lain masing-masing tampil begitu datang (sebelumnya berurutan: sesi -> markup ->
+  // harga -> riwayat & grafik, sehingga grafik baru mulai dimuat setelah semuanya selesai)
+  const pricesReady = fetchPrices()
+  syncTime(); setInterval(syncTime, 5 * 60 * 1000)
+  tick(); setInterval(tick, 250)
+  // batas markup dari admin; 0 adalah nilai sah (jangan diganti nilai bawaan)
+  getJSON('/api/markup-settings').then(m => {
+    if (m.success && m.settings) {
+      if (m.settings.minMargin != null && !isNaN(parseFloat(m.settings.minMargin))) state.markupMin = parseFloat(m.settings.minMargin)
+      if (m.settings.maxMargin != null && !isNaN(parseFloat(m.settings.maxMargin))) state.markupMax = parseFloat(m.settings.maxMargin)
+      renderMarkup()
+    }
+  }).catch(() => {})
+  getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
+  getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
+  getJSON('/api/lowest-on-price').then(d => {
+    state.titikOn = d.price ?? null
+    if (d.lastOnAt) state.lastOnAt = d.lastOnAt
+    if (d.lastOnPrice) state.lastOnPrice = d.lastOnPrice
+    if (d.status && !state.promo) setPromoStatus(d.status, false)
+    renderTitikOn()
+  }).catch(() => {})
+  getJSON('/api/daily-highlow').then(d => {
+    if (d.high != null) { state.high = Math.max(state.high ?? d.high, d.high); $('#dayHigh').textContent = num(state.high) }
+    if (d.low != null) { state.low = Math.min(state.low ?? d.low, d.low); $('#dayLow').textContent = num(state.low) }
+  }).catch(() => {})
+  connect()
+  initHistory()
+  initChart()
+  loadCustomSounds()
+  loadPromos()
+  setTimeout(loadNews, 2000)
+
   // sesi
   const v = await verify()
   if (v && !v.valid) {
@@ -900,37 +939,6 @@ async function start() {
     if (x.valid) { markOk(); state.user = x.user || state.user; renderSisaHari() } else handleInvalid(x)
   }, 30000)
 
-  // data
-  syncTime(); setInterval(syncTime, 5 * 60 * 1000)
-  tick(); setInterval(tick, 250)
-  // batas markup dari admin; 0 adalah nilai sah (jangan diganti nilai bawaan)
-  try {
-    const m = await getJSON('/api/markup-settings')
-    if (m.success && m.settings) {
-      if (m.settings.minMargin != null && !isNaN(parseFloat(m.settings.minMargin))) state.markupMin = parseFloat(m.settings.minMargin)
-      if (m.settings.maxMargin != null && !isNaN(parseFloat(m.settings.maxMargin))) state.markupMax = parseFloat(m.settings.maxMargin)
-    }
-  } catch (e) {}
-  getJSON('/api/nominal-settings').then(d => { if (d.success) { state.nominals = d.nominals || []; renderNominals(); loadHistory() } }).catch(() => {})
-  getJSON('/api/promo-limit').then(d => setChip('chipLimit', 'limitVal', d.limit)).catch(() => {})
-  getJSON('/api/lowest-on-price').then(d => {
-    state.titikOn = d.price ?? null
-    if (d.lastOnAt) state.lastOnAt = d.lastOnAt
-    if (d.lastOnPrice) state.lastOnPrice = d.lastOnPrice
-    if (d.status && !state.promo) setPromoStatus(d.status, false)
-    renderTitikOn()
-  }).catch(() => {})
-  getJSON('/api/daily-highlow').then(d => {
-    if (d.high != null) { state.high = Math.max(state.high ?? d.high, d.high); $('#dayHigh').textContent = num(state.high) }
-    if (d.low != null) { state.low = Math.min(state.low ?? d.low, d.low); $('#dayLow').textContent = num(state.low) }
-  }).catch(() => {})
-  await fetchPrices()
-  connect()
-  initHistory()
-  initChart()
-  loadCustomSounds()
-  loadPromos()
-  setTimeout(loadNews, 2000)
 
   // notifikasi HP: daftar ulang kalau izin sudah diberikan
   if ('serviceWorker' in navigator) {

@@ -1,4 +1,6 @@
-// Halaman login (tampilan baru): nomor -> PIN -> (wajib ganti PIN awal) -> monitoring.
+// Halaman login (tampilan baru): nomor -> PIN -> monitoring.
+// Belum punya PIN (akun baru / PIN direset admin) atau lupa PIN -> verifikasi nomor lewat WhatsApp
+// (user mengirim "VERIFIKASI 123456" ke nomor bot) -> buat PIN baru -> monitoring.
 // Nomor belum terdaftar / masa aktif habis -> pembayaran QRIS di halaman ini juga.
 import { $, session, getJSON, applyTheme } from './api.js'
 import { mountPayment } from './payment.js'
@@ -22,7 +24,7 @@ function busy(btn, on, text) {
 }
 function show(step) {
   // langkah berganti (nomor -> PIN -> pembayaran) dengan geser + memudar
-  ;[['#phoneForm', 'phone'], ['#pinForm', 'pin'], ['#payWrap', 'pay']].forEach(([sel, k]) => {
+  ;[['#phoneForm', 'phone'], ['#pinForm', 'pin'], ['#verifyWrap', 'verify'], ['#newPinForm', 'newpin'], ['#payWrap', 'pay']].forEach(([sel, k]) => {
     const el = $(sel)
     const on = step === k
     if (on && el.classList.contains('hidden')) { el.classList.remove('hidden', 'anim-step'); void el.offsetWidth; el.classList.add('anim-step') }
@@ -30,6 +32,7 @@ function show(step) {
   })
   $('#step2').className = 'h-1.5 flex-1 rounded-full ' + (step === 'phone' ? 'bg-line/15' : 'bg-gold')
   if (step !== 'pay' && stopPay) { stopPay(); stopPay = null }
+  if (step !== 'verify') stopVerifyPoll()
 }
 
 // ---------------------------------------------------------------- sesi lama
@@ -44,7 +47,13 @@ async function checkExisting() {
     const v = await getJSON('/api/verify-session')
     if (v.valid) {
       const p = await getJSON('/api/check-pin-status')
-      if (p.requirePinChange) { openChangePin(); return true }
+      if (p.requirePinChange && v.phone && /^62[0-9]+$/.test(v.phone)) {
+        phone = v.phone.slice(2)
+        $('#loading').remove()
+        loadTurnstile()
+        startVerify('setup')
+        return false
+      }
       location.replace('/monitoring')
       return false
     }
@@ -107,7 +116,15 @@ async function checkUser() {
   try {
     const res = await fetch('/api/check-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: p, 'cf-turnstile-response': token }) })
     const d = await res.json()
-    if (d.success) {
+    if (d.success && d.needPinSetup && d.adminReset) {
+      // PIN baru direset admin / akun baru: langsung buat PIN baru (tanpa verifikasi)
+      tsReset(); busy(btn, false)
+      return openNewPin(false)
+    } else if (d.success && d.needPinSetup) {
+      // belum punya PIN dan bukan reset admin: verifikasi nomor lewat WhatsApp lalu buat PIN
+      tsReset(); busy(btn, false)
+      return startVerify('setup')
+    } else if (d.success) {
       $('#userName').textContent = (d.user && d.user.name) || 'Member'
       $('#userPhone').textContent = '+62' + p
       show('pin')
@@ -138,7 +155,7 @@ async function startPayment(p, expired) {
   $('#payTitle').textContent = expired ? 'Masa aktif habis' : 'Nomor belum terdaftar'
   $('#payDesc').textContent = expired
     ? 'Perpanjang lewat QRIS: ' + 'Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, masuk dengan PIN lama Anda.'
-    : 'Daftar lewat QRIS: Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, masuk dengan PIN awal 000000.'
+    : 'Daftar lewat QRIS: Rp' + cfg.price.toLocaleString('id-ID') + ' untuk ' + cfg.days + ' hari. Setelah diterima, verifikasi nomor lewat WhatsApp lalu buat PIN Anda.'
   show('pay')
   stopPay = mountPayment($('#payBox'), {
     phone: '62' + p,
@@ -161,31 +178,129 @@ async function submitPin() {
     if (d.success) {
       session.set(d.sessionId)
       try { localStorage.setItem('gold_sess_ok_at', String(Date.now())) } catch (e) {}
-      if (d.requirePinChange) openChangePin()
-      else { msg('Berhasil masuk. Mengalihkan...', 'success'); location.replace('/monitoring') }
-    } else { msg(d.error || 'Login gagal.', 'error'); $('#pin').value = ''; $('#pin').focus() }
+      msg('Berhasil masuk. Mengalihkan...', 'success'); location.replace('/monitoring')
+    } else if (d.needPinSetup) { busy(btn, false); $('#pin').value = ''; return startVerify('setup') }
+    else { msg(d.error || 'Login gagal.', 'error'); $('#pin').value = ''; $('#pin').focus() }
   } catch (e) { msg('Terjadi kesalahan. Coba lagi.', 'error') }
   busy(btn, false)
 }
 
-// ---------------------------------------------------------------- ganti PIN awal
-function openChangePin() {
-  $('#changePin').classList.remove('hidden'); $('#changePin').classList.add('flex')
+// ---------------------------------------------------------------- 3. verifikasi nomor lewat WhatsApp
+// mode 'setup' = belum punya PIN (akun baru / PIN direset admin), 'forgot' = lupa PIN
+let vToken = ''
+let vPoll = null
+let vTick = null
+let vUntil = 0
+function stopVerifyPoll() { clearInterval(vPoll); clearInterval(vTick); vPoll = vTick = null }
+function vStatus(text, kind) {
+  const el = $('#vStatus')
+  el.classList.remove('v-ok', 'v-bad')
+  if (kind) el.classList.add(kind)
+  el.querySelector('.spinner').classList.toggle('hidden', !!kind)
+  $('#vStatusText').textContent = text
+}
+async function startVerify(mode) {
+  msg('')
+  const btn = $('#vRetry')
+  btn.classList.add('hidden')
+  $('#vTitle').textContent = mode === 'forgot' ? 'Lupa PIN' : 'Buat PIN'
+  $('#vDesc').textContent = (mode === 'forgot' ? 'Untuk membuat PIN baru, ' : 'Akun ini belum punya PIN. Untuk membuatnya, ') +
+    'buktikan nomor +62' + phone + ' milik Anda dengan mengirim satu pesan dari WhatsApp nomor tersebut.'
+  $('#vText').textContent = 'VERIFIKASI ------'
+  $('#vBot').textContent = ''
+  $('#vTimer').textContent = ''
+  vStatus('Menyiapkan kode...')
+  show('verify')
+  let d = null
+  try { d = await (await fetch('/api/pin/verify-start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: '62' + phone }) })).json() } catch (e) {}
+  if (!d || !d.success) {
+    if (d && (d.expired || d.needRegister)) { show('phone'); return startPayment(phone, !!d.expired) }
+    vStatus((d && d.error) || 'Gagal membuat kode. Periksa sinyal lalu coba lagi.', 'v-bad')
+    btn.classList.remove('hidden')
+    return
+  }
+  vToken = d.token
+  $('#vText').textContent = d.waText
+  $('#vBot').textContent = '+' + d.bot
+  $('#vWa').href = d.waLink
+  vStatus('Menunggu pesan dari WhatsApp Anda...')
+  vUntil = Date.now() + d.expiresIn * 1000
+  const tick = () => {
+    const left = Math.max(0, Math.round((vUntil - Date.now()) / 1000))
+    $('#vTimer').textContent = 'Kode berlaku ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0')
+  }
+  tick()
+  stopVerifyPoll()
+  vTick = setInterval(tick, 1000)
+  vPoll = setInterval(checkVerify, 2500)
+}
+let vChecking = false
+async function checkVerify() {
+  if (!vToken || vChecking) return
+  vChecking = true
+  try {
+    const d = await (await fetch('/api/pin/verify-status?token=' + encodeURIComponent(vToken), { cache: 'no-store' })).json()
+    if (d.verified) {
+      stopVerifyPoll()
+      vStatus('Nomor terverifikasi', 'v-ok')
+      setTimeout(() => openNewPin(true), 500)
+    } else if (d.expired) {
+      stopVerifyPoll(); vToken = ''
+      $('#vTimer').textContent = ''
+      vStatus('Kode sudah tidak berlaku. Buat kode baru.', 'v-bad')
+      $('#vRetry').classList.remove('hidden')
+    } else if (d.mismatch === 'other') {
+      vStatus('Pesan masuk dari nomor lain. Kirim dari WhatsApp nomor +62' + phone + '.', 'v-bad')
+    } else if (d.mismatch === 'hidden') {
+      vStatus('Nomor pengirim tidak terbaca WhatsApp. Coba kirim sekali lagi, atau hubungi admin.', 'v-bad')
+    }
+  } catch (e) {}
+  vChecking = false
+}
+// kembali dari WhatsApp: langsung cek tanpa menunggu jadwal berikutnya
+document.addEventListener('visibilitychange', () => { if (!document.hidden && vPoll) checkVerify() })
+$('#vCopy').addEventListener('click', async () => {
+  const t = $('#vText').textContent
+  try { await navigator.clipboard.writeText(t) } catch (e) { return }
+  $('#vCopy').classList.add('copied')
+  setTimeout(() => $('#vCopy').classList.remove('copied'), 1200)
+})
+$('#vRetry').addEventListener('click', () => startVerify('forgot'))
+$('#vBack').addEventListener('click', () => { vToken = ''; msg(''); show('phone') })
+
+// ---------------------------------------------------------------- 4. buat PIN baru
+// verified = true: lewat verifikasi WhatsApp (pakai token). false: setelah reset admin / akun baru.
+function openNewPin(verified) {
+  if (!verified) vToken = ''
+  $('#npVerified').classList.toggle('hidden', !verified)
+  $('#npDesc').textContent = verified ? '6 digit angka. Hindari angka sama atau berurutan (mis. 111111, 123456).'
+    : 'PIN akun +62' + phone + ' belum dibuat. Buat PIN 6 digit (hindari angka sama atau berurutan).'
+  $('#newPin').value = $('#newPin2').value = ''
+  show('newpin')
   setTimeout(() => $('#newPin').focus(), 50)
 }
+const weakPin = p => /^(\d)\1{5}$/.test(p) || '0123456789012345'.includes(p) || '9876543210987654'.includes(p)
 async function saveNewPin() {
   const a = $('#newPin').value.replace(/\D/g, '')
   const b = $('#newPin2').value.replace(/\D/g, '')
-  if (a.length !== 6) return msg('PIN baru harus 6 digit.', 'error', '#cpMsg')
-  if (a !== b) { $('#newPin2').value = ''; return msg('Ulangi PIN tidak cocok.', 'error', '#cpMsg') }
-  if (a === '000000') return msg('PIN baru tidak boleh 000000.', 'error', '#cpMsg')
+  if (a.length !== 6) return msg('PIN baru harus 6 digit.', 'error')
+  if (weakPin(a)) { $('#newPin').value = $('#newPin2').value = ''; $('#newPin').focus(); return msg('PIN terlalu mudah ditebak (angka sama / berurutan). Pilih PIN lain.', 'error') }
+  if (a !== b) { $('#newPin2').value = ''; $('#newPin2').focus(); return msg('Ulangi PIN tidak cocok.', 'error') }
   const btn = $('#btnSavePin')
   busy(btn, true, 'Menyimpan...')
   try {
-    const d = await (await fetch('/api/change-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session: session.get(), newPin: a }) })).json()
-    if (d.success) { msg('PIN tersimpan. Mengalihkan...', 'success', '#cpMsg'); setTimeout(() => location.replace('/monitoring'), 700) }
-    else msg(d.error || 'Gagal mengubah PIN.', 'error', '#cpMsg')
-  } catch (e) { msg('Terjadi kesalahan. Coba lagi.', 'error', '#cpMsg') }
+    const d = await (await fetch(vToken ? '/api/pin/set' : '/api/pin/set-after-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: vToken || undefined, phone: '62' + phone, pin: a, oldSession: session.get() || undefined }) })).json()
+    if (d.success) {
+      session.set(d.sessionId)
+      try { localStorage.setItem('gold_sess_ok_at', String(Date.now())) } catch (e) {}
+      msg('PIN tersimpan. Mengalihkan...', 'success')
+      setTimeout(() => location.replace('/monitoring'), 600)
+      return
+    }
+    if (d.expired || d.needVerify) { busy(btn, false); return startVerify('setup') }
+    msg(d.error || 'Gagal menyimpan PIN.', 'error')
+  } catch (e) { msg('Terjadi kesalahan. Coba lagi.', 'error') }
   busy(btn, false)
 }
 
@@ -195,7 +310,9 @@ $('#pinForm').addEventListener('submit', e => { e.preventDefault(); submitPin() 
 $('#pin').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6) submitPin() })
 $('#btnBack').addEventListener('click', () => { $('#pin').value = ''; msg(''); show('phone') })
 $('#btnPayBack').addEventListener('click', () => { msg(''); show('phone') })
-$('#changePinForm').addEventListener('submit', e => { e.preventDefault(); saveNewPin() })
+$('#btnForgot').addEventListener('click', () => { $('#pin').value = ''; startVerify('forgot') })
+$('#newPinForm').addEventListener('submit', e => { e.preventDefault(); saveNewPin() })
+;['#newPin', '#newPin2'].forEach(id => $(id).addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6) }))
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {})
 
 checkExisting().then(stay => {

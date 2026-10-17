@@ -10,9 +10,25 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4">
   <meta name="apple-mobile-web-app-title" content="Harga PemulaOLD">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://s3.tradingview.com" crossorigin>
+  <link rel="preconnect" href="https://www.tradingview-widget.com" crossorigin>
+  <link rel="dns-prefetch" href="https://data.tradingview.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap">
   <link rel="stylesheet" href="/ui-baru/dist/app.css?v={{VER}}">
+  <!-- semua modul diunduh sekaligus sejak awal (tidak menunggu berantai) -->
+  <link rel="modulepreload" href="/ui-baru/js/monitoring.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/api.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/defaults.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/state.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/sound.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/history.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/chart.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/news.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/tour.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/install.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/monitoring/menu.js?v={{VER}}">
+  <link rel="modulepreload" href="/ui-baru/js/payment.js?v={{VER}}">
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('goldmonitor_theme')||'dark'}catch(e){}</script>
   <!--SESSION_BOOT-->
 </head>
