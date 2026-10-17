@@ -204,8 +204,7 @@ async function startVerify(mode) {
   const btn = $('#vRetry')
   btn.classList.add('hidden')
   $('#vTitle').textContent = mode === 'forgot' ? 'Lupa PIN' : 'Buat PIN'
-  $('#vDesc').textContent = (mode === 'forgot' ? 'Untuk membuat PIN baru, ' : 'Akun ini belum punya PIN. Untuk membuatnya, ') +
-    'buktikan nomor +62' + phone + ' milik Anda dengan mengirim satu pesan dari WhatsApp nomor tersebut.'
+  $('#vDesc').textContent = 'Verifikasi nomor +62' + phone + ' lewat WhatsApp untuk membuat PIN baru.'
   $('#vText').textContent = 'VERIFIKASI ------'
   $('#vBot').textContent = ''
   $('#vTimer').textContent = ''
@@ -223,11 +222,11 @@ async function startVerify(mode) {
   $('#vText').textContent = d.waText
   $('#vBot').textContent = '+' + d.bot
   $('#vWa').href = d.waLink
-  vStatus('Menunggu pesan dari WhatsApp Anda...')
+  vStatus('Menunggu verifikasi...')
   vUntil = Date.now() + d.expiresIn * 1000
   const tick = () => {
     const left = Math.max(0, Math.round((vUntil - Date.now()) / 1000))
-    $('#vTimer').textContent = 'Kode berlaku ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0')
+    $('#vTimer').textContent = 'Berlaku ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0')
   }
   tick()
   stopVerifyPoll()
@@ -247,12 +246,12 @@ async function checkVerify() {
     } else if (d.expired) {
       stopVerifyPoll(); vToken = ''
       $('#vTimer').textContent = ''
-      vStatus('Kode sudah tidak berlaku. Buat kode baru.', 'v-bad')
+      vStatus('Kode kedaluwarsa.', 'v-bad')
       $('#vRetry').classList.remove('hidden')
     } else if (d.mismatch === 'other') {
       vStatus('Pesan masuk dari nomor lain. Kirim dari WhatsApp nomor +62' + phone + '.', 'v-bad')
     } else if (d.mismatch === 'hidden') {
-      vStatus('Nomor pengirim tidak terbaca WhatsApp. Coba kirim sekali lagi, atau hubungi admin.', 'v-bad')
+      vStatus('Nomor pengirim tidak terbaca. Kirim sekali lagi atau hubungi admin.', 'v-bad')
     }
   } catch (e) {}
   vChecking = false
