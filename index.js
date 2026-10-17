@@ -5011,6 +5011,7 @@ app.get('/sse', async (req, res) => {
   // data, lalu server memberi tampilan baru. Tampilan baru menandai koneksinya dengan ui=2.
   if (req.query.ui !== '2') return
 
+  touchSession(session)
   // Build user info from validated session
   let userInfo = { phone: phone, name: 'Member', connectedAt: new Date().toISOString(), lastActivity: Date.now() }
 
@@ -6184,6 +6185,35 @@ app.post('/api/verify-otp', rateLimit(10, 10 * 60000), express.json(), async (re
 })
 
 // API: Login user
+// ==================== Sesi: kapan terakhir aktif ====================
+// Dipakai saat batas perangkat penuh: yang dikeluarkan adalah sesi yang PALING LAMA tidak aktif
+// (dulu urutan acak dari Redis, sehingga sesi yang sedang dipakai sering ikut ditendang).
+const _sessSeen = new Map()        // sessionId -> terakhir aktif (ms), di memori
+const _sessSeenSaved = new Map()   // sessionId -> terakhir disimpan ke Redis
+function touchSession(sid) {
+  if (!sid) return
+  const now = Date.now()
+  _sessSeen.set(sid, now)
+  if (now - (_sessSeenSaved.get(sid) || 0) < 30 * 60000) return
+  _sessSeenSaved.set(sid, now)
+  if (_sessSeen.size > 20000) for (const [k, t] of _sessSeen) if (now - t > 86400000) { _sessSeen.delete(k); _sessSeenSaved.delete(k) }
+  redis.hget(REDIS_KEYS.SESSION_META, sid).then(raw => {
+    let m = {}
+    try { m = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {} } catch (e) {}
+    m.seen = now
+    return redis.hset(REDIS_KEYS.SESSION_META, { [sid]: JSON.stringify(m) })
+  }).catch(() => {})
+}
+async function sessionLastSeen(sid) {
+  let t = _sessSeen.get(sid) || 0
+  try {
+    const raw = await redis.hget(REDIS_KEYS.SESSION_META, sid)
+    const m = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}
+    t = Math.max(t, +m.seen || 0, +m.at || 0)
+  } catch (e) {}
+  return t
+}
+
 // Helper: Get default PIN (000000 for all users)
 function getDefaultPin(phone) {
   return '000000'
@@ -6224,22 +6254,201 @@ app.post('/api/check-user', rateLimit(10, 60000), express.json(), async (req, re
     return res.json({ success: false, error: 'Terjadi kesalahan' })
   }
 
-  // Check if user has PIN set
-  const pinData = await redis.hget(REDIS_KEYS.USER_PINS, normalizedPhone)
-  let pinChanged = false
-  if (pinData) {
-    try {
-      const parsed = typeof pinData === 'string' ? JSON.parse(pinData) : pinData
-      pinChanged = parsed.pinChanged || false
-    } catch (e) {}
-  }
-
+  const needPinSetup = await needsPinSetup(normalizedPhone)
   res.json({
     success: true,
     user: { name: check.user.name },
-    pinChanged // true if user already changed default PIN
+    pinChanged: !needPinSetup,
+    needPinSetup   // true = belum punya PIN sendiri -> verifikasi WhatsApp lalu buat PIN
   })
 })
+
+// Buat sesi login baru (dipakai login PIN dan pembuatan PIN lewat verifikasi WhatsApp).
+// Mengurus batas perangkat, catatan login, dan cookie sesi. Mengembalikan sessionId.
+async function issueLoginSession(req, res, normalizedPhone, check) {
+  const _clientIp = getClientIp(req)
+  const _clientUa = parseBrowser(req.headers['user-agent'])
+
+  // Login ulang dari device yang sama: ganti session lama milik device ini,
+  // JANGAN menendang device lain (mencegah ping-pong logout antar device user sendiri)
+  const { oldSession } = req.body
+  if (oldSession) {
+    try {
+      const oldPhone = await redis.hget(REDIS_KEYS.SESSIONS, oldSession)
+      if (oldPhone === normalizedPhone) {
+        await redis.hdel(REDIS_KEYS.SESSIONS, oldSession)
+        await redis.hdel(REDIS_KEYS.SESSION_META, oldSession)
+      }
+    } catch (e) {}
+  }
+
+  // Batasi jumlah perangkat (diatur admin di panel). SEMUA nomor admin (utama + yang ditambahkan
+  // di panel) tidak dibatasi. Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
+  if (normalizedPhone !== ADMIN_PHONE && !ADMIN_PHONES.includes(normalizedPhone)) {
+    const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
+    const userSessions = []
+    for (const [sessId, sessPhone] of Object.entries(allSessions)) {
+      if (sessPhone === normalizedPhone) userSessions.push(sessId)
+    }
+    const _maxDev = await getMaxDevices()   // batas perangkat (diatur admin)
+    // urutkan dari yang paling lama tidak aktif; sesi > 7 hari tidak aktif dibuang diam-diam (bukan "ditendang")
+    if (userSessions.length >= _maxDev) {
+      const seen = {}
+      for (const sid of userSessions) seen[sid] = await sessionLastSeen(sid)
+      userSessions.sort((a, b) => seen[a] - seen[b])
+      while (userSessions.length && Date.now() - seen[userSessions[0]] > 7 * 86400000) {
+        const stale = userSessions.shift()
+        await redis.hdel(REDIS_KEYS.SESSIONS, stale)
+        await redis.hdel(REDIS_KEYS.SESSION_META, stale)
+      }
+    }
+    while (userSessions.length >= _maxDev) {
+      const oldSess = userSessions.shift()
+      const _kickedMetaRaw = await redis.hget(REDIS_KEYS.SESSION_META, oldSess)
+      const _kickedMeta = _kickedMetaRaw ? JSON.parse(_kickedMetaRaw) : {}
+      await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
+      await redis.hdel(REDIS_KEYS.SESSION_META, oldSess)
+      await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
+      const _kickName = check.user?.name || '-'
+      pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
+      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks ' + _maxDev + ')' })
+    }
+  }
+
+  // Create new session
+  const sessionId = generateSessionId()
+  await redis.hset(REDIS_KEYS.SESSIONS, { [sessionId]: normalizedPhone })
+  const _sessAt = Date.now()
+  _sessSeen.set(sessionId, _sessAt)
+  await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: '', at: _sessAt, seen: _sessAt }) })
+
+  // Catat ke login history (LOGIN di-push setelah KICKED agar saat .reverse() LOGIN muncul di atas)
+  const _loginName = check.user?.name || '-'
+  pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName}) — ${_clientIp} — ${_clientUa}`)
+  // Lookup lokasi async — update entry & session meta tanpa blokir response
+  const _locP = getIpLocation(_clientIp).catch(() => '-')
+  recordAuthEvent(normalizedPhone, 'login', { name: _loginName, ip: _clientIp, ua: _clientUa, locationPromise: _locP })
+  _locP.then(loc => {
+    redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: loc, at: _sessAt, seen: _sessSeen.get(sessionId) || _sessAt }) }).catch(() => {})
+  })
+
+  // Cookie sesi tahan lama (di-set server) — jauh lebih awet di Safari iOS daripada localStorage.
+  const _sessMaxAge = 90 * 24 * 60 * 60 // 90 hari (detik)
+  res.setHeader('Set-Cookie', `gold_sess=${encodeURIComponent(sessionId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${_sessMaxAge}; Path=/`)
+  return sessionId
+}
+
+// ==================== Verifikasi nomor lewat WhatsApp (buat PIN pertama / lupa PIN / PIN direset) ====================
+// User mengirim pesan "VERIFIKASI 123456" dari WhatsApp-nya ke nomor bot. Bot hanya MENERIMA pesan itu
+// dan mencocokkan nomor pengirim dengan nomor akun, lalu menandai sudah dibaca. Bot TIDAK membalas atau
+// mengirim pesan apa pun (aman dari pembekuan nomor bot). Setelah cocok, halaman login meminta PIN baru.
+const PIN_VERIFY_TTL = 10 * 60000
+const _pinVerify = new Map()        // token -> { phone, code, mode, created, verified, verifiedAt, mismatch }
+const _pinVerifyByCode = new Map()  // kode -> token
+async function needsPinSetup(phone) {
+  try {
+    const raw = await redis.hget(REDIS_KEYS.USER_PINS, phone)
+    if (!raw) return true
+    const p = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return !p.pin || p.pin === hashPin(getDefaultPin(phone))
+  } catch (e) { return true }
+}
+function pinVerifyCleanup() {
+  const now = Date.now()
+  for (const [tok, v] of _pinVerify) {
+    if (now - v.created > PIN_VERIFY_TTL + 10 * 60000) { _pinVerify.delete(tok); _pinVerifyByCode.delete(v.code) }
+  }
+}
+function weakPin(pin) {
+  if (/^(\d)\1{5}$/.test(pin)) return true
+  return '0123456789012345'.includes(pin) || '9876543210987654'.includes(pin)
+}
+const botWaNumber = () => String(sock?.user?.id || '').split(':')[0].split('@')[0]
+
+app.post('/api/pin/verify-start', rateLimit(6, 10 * 60000), express.json(), async (req, res) => {
+  const phone = normalizePhone(String((req.body && req.body.phone) || ''))
+  if (!/^62[0-9]{8,13}$/.test(phone)) return res.json({ success: false, error: 'Nomor HP tidak valid.' })
+  const check = await isUserValid(phone)
+  if (!check.valid) {
+    if (check.reason === 'expired') return res.json({ success: false, expired: true, error: 'Masa aktif akun sudah habis. Perpanjang dulu untuk masuk.' })
+    if (check.reason === 'not_found') return res.json({ success: false, needRegister: true, error: 'Nomor tidak terdaftar.' })
+    return res.json({ success: false, error: 'Terjadi kesalahan. Coba lagi.' })
+  }
+  const bot = botWaNumber()
+  if (!sock || !isReady || !bot) {
+    return res.json({ success: false, waDown: true, error: 'Verifikasi WhatsApp sedang gangguan. Coba lagi beberapa menit lagi atau hubungi admin.' })
+  }
+  pinVerifyCleanup()
+  for (const [tok, v] of _pinVerify) if (v.phone === phone) { _pinVerify.delete(tok); _pinVerifyByCode.delete(v.code) }
+  let code = ''
+  for (let i = 0; i < 20 && (!code || _pinVerifyByCode.has(code)); i++) code = String(crypto.randomInt(100000, 1000000))
+  const token = crypto.randomBytes(24).toString('hex')
+  const mode = (await needsPinSetup(phone)) ? 'setup' : 'forgot'
+  _pinVerify.set(token, { phone, code, mode, created: Date.now(), verified: false })
+  _pinVerifyByCode.set(code, token)
+  const waText = 'VERIFIKASI ' + code
+  pushLog(`PIN | Kode verifikasi dibuat untuk +${phone} (${mode})`)
+  res.json({ success: true, token, code, mode, bot, waText, waLink: 'https://wa.me/' + bot + '?text=' + encodeURIComponent(waText), expiresIn: PIN_VERIFY_TTL / 1000 })
+})
+
+app.get('/api/pin/verify-status', rateLimit(120, 60000), (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const v = _pinVerify.get(String(req.query.token || ''))
+  if (!v) return res.json({ success: false, expired: true })
+  const expired = !v.verified && Date.now() - v.created > PIN_VERIFY_TTL
+  res.json({ success: true, verified: !!v.verified, expired, mismatch: v.mismatch || '' })
+})
+
+app.post('/api/pin/set', rateLimit(10, 60000), express.json(), async (req, res) => {
+  const token = String((req.body && req.body.token) || '')
+  const pin = String((req.body && req.body.pin) || '')
+  const v = _pinVerify.get(token)
+  if (!v || !v.verified) return res.json({ success: false, error: 'Verifikasi WhatsApp belum selesai.' })
+  if (Date.now() - v.verifiedAt > PIN_VERIFY_TTL) {
+    _pinVerify.delete(token); _pinVerifyByCode.delete(v.code)
+    return res.json({ success: false, expired: true, error: 'Waktu habis. Ulangi verifikasi.' })
+  }
+  if (!/^[0-9]{6}$/.test(pin)) return res.json({ success: false, error: 'PIN harus 6 digit angka.' })
+  if (weakPin(pin)) return res.json({ success: false, error: 'PIN terlalu mudah ditebak (angka sama / berurutan). Pilih PIN lain.' })
+  const check = await isUserValid(v.phone)
+  if (!check.valid) return res.json({ success: false, expired: check.reason === 'expired', error: check.reason === 'expired' ? 'Masa aktif akun sudah habis.' : 'Akun tidak ditemukan.' })
+  await redis.hset(REDIS_KEYS.USER_PINS, { [v.phone]: JSON.stringify({ pin: hashPin(pin), pinChanged: true }) })
+  _pinVerify.delete(token); _pinVerifyByCode.delete(v.code)
+  _pinFails.delete(v.phone)
+  pushLog(`Auth | +${v.phone} membuat PIN baru lewat verifikasi WhatsApp (${v.mode === 'forgot' ? 'lupa PIN' : 'PIN pertama'})`)
+  const sessionId = await issueLoginSession(req, res, v.phone, check)
+  res.json({ success: true, sessionId, user: check.user })
+})
+
+// Pesan "VERIFIKASI 123456" yang masuk ke nomor bot (dipanggil dari penerima pesan WA)
+async function handlePinVerifyMessage(msg, code) {
+  const tok = _pinVerifyByCode.get(code)
+  const v = tok && _pinVerify.get(tok)
+  if (!v || v.verified || Date.now() - v.created > PIN_VERIFY_TTL) {
+    pushLog('PIN | Pesan verifikasi dengan kode tidak dikenal / kedaluwarsa')
+    return
+  }
+  const key = msg.key || {}
+  // nomor pengirim: dari alamat chat, atau dari keterangan nomor yang disertakan WhatsApp (format @lid)
+  let sender = phoneFromWaJid(key.remoteJid) || phoneFromWaJid(key.senderPn) || phoneFromWaJid(key.participantPn)
+  const lidOf = j => String(j || '').split('@')[0].split(':')[0]
+  if (!sender && String(key.remoteJid || '').endsWith('@lid')) {
+    try {
+      const r = await sock.onWhatsApp(v.phone)
+      if (r && r[0] && r[0].lid && lidOf(r[0].lid) === lidOf(key.remoteJid)) sender = v.phone
+    } catch (e) {}
+  }
+  if (sender !== v.phone) {
+    v.mismatch = sender ? 'other' : 'hidden'
+    pushLog(`PIN | Verifikasi +${v.phone} DITOLAK: ${sender ? 'dikirim dari nomor lain (+' + sender + ')' : 'nomor pengirim tidak terbaca'}`)
+    return
+  }
+  v.verified = true
+  v.verifiedAt = Date.now()
+  v.mismatch = ''
+  try { await sock.readMessages([key]) } catch (e) {}
+  pushLog(`PIN | +${v.phone} terverifikasi lewat WhatsApp (${v.mode === 'forgot' ? 'lupa PIN' : 'PIN pertama'})`)
+}
 
 // API: Login with PIN (step 2 of login)
 const _pinFails = new Map()   // nomor -> { count, first, lockedUntil }
@@ -6274,15 +6483,9 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
     } catch (e) {}
   }
 
-  // If no PIN set, use default PIN (first 6 digits of phone)
-  if (!storedPin) {
-    const defaultPin = getDefaultPin(normalizedPhone)
-    storedPin = hashPin(defaultPin)
-    // Save default PIN to database
-    await redis.hset(REDIS_KEYS.USER_PINS, {
-      [normalizedPhone]: JSON.stringify({ pin: storedPin, pinChanged: false })
-    })
-    pinChanged = false
+  // Belum punya PIN sendiri (PIN bawaan 000000 tidak berlaku lagi): buat PIN lewat verifikasi WhatsApp
+  if (!storedPin || storedPin === hashPin(getDefaultPin(normalizedPhone))) {
+    return res.json({ success: false, needPinSetup: true, error: 'Akun ini belum punya PIN. Verifikasi nomor lewat WhatsApp untuk membuat PIN.' })
   }
 
   // KEAMANAN: 8 kali salah PIN untuk satu nomor -> nomor itu dikunci 15 menit, dari alamat IP mana pun
@@ -6301,69 +6504,14 @@ app.post('/api/login', rateLimit(5, 60000), express.json(), async (req, res) => 
   }
   _pinFails.delete(normalizedPhone)
 
-  const _clientIp = getClientIp(req)
-  const _clientUa = parseBrowser(req.headers['user-agent'])
+  const sessionId = await issueLoginSession(req, res, normalizedPhone, check)
 
-  // Login ulang dari device yang sama: ganti session lama milik device ini,
-  // JANGAN menendang device lain (mencegah ping-pong logout antar device user sendiri)
-  const { oldSession } = req.body
-  if (oldSession) {
-    try {
-      const oldPhone = await redis.hget(REDIS_KEYS.SESSIONS, oldSession)
-      if (oldPhone === normalizedPhone) {
-        await redis.hdel(REDIS_KEYS.SESSIONS, oldSession)
-        await redis.hdel(REDIS_KEYS.SESSION_META, oldSession)
-      }
-    } catch (e) {}
-  }
-
-  // Batasi jumlah perangkat (diatur admin di panel). SEMUA nomor admin (utama + yang ditambahkan
-  // di panel) tidak dibatasi. Device lama ditendang dan ditandai agar dapat notif "login di perangkat lain".
-  if (normalizedPhone !== ADMIN_PHONE && !ADMIN_PHONES.includes(normalizedPhone)) {
-    const allSessions = await redis.hgetall(REDIS_KEYS.SESSIONS) || {}
-    const userSessions = []
-    for (const [sessId, sessPhone] of Object.entries(allSessions)) {
-      if (sessPhone === normalizedPhone) userSessions.push(sessId)
-    }
-    const _maxDev = await getMaxDevices()   // batas perangkat (diatur admin)
-    while (userSessions.length >= _maxDev) {
-      const oldSess = userSessions.shift()
-      const _kickedMetaRaw = await redis.hget(REDIS_KEYS.SESSION_META, oldSess)
-      const _kickedMeta = _kickedMetaRaw ? JSON.parse(_kickedMetaRaw) : {}
-      await redis.hdel(REDIS_KEYS.SESSIONS, oldSess)
-      await redis.hdel(REDIS_KEYS.SESSION_META, oldSess)
-      await redis.hset(REDIS_KEYS.KICKED_SESSIONS, { [oldSess]: Date.now().toString() })
-      const _kickName = check.user?.name || '-'
-      pushLog(`Auth | KICKED +${normalizedPhone} (${_kickName}) — sesi lama ditendang (login perangkat baru)`)
-      recordAuthEvent(normalizedPhone, 'kicked', { name: _kickName, ip: _kickedMeta.ip, ua: _kickedMeta.ua, location: _kickedMeta.location, note: 'login di perangkat lain (maks ' + _maxDev + ')' })
-    }
-  }
-
-  // Create new session
-  const sessionId = generateSessionId()
-  await redis.hset(REDIS_KEYS.SESSIONS, { [sessionId]: normalizedPhone })
-  await redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: '' }) })
-
-  // Catat ke login history (LOGIN di-push setelah KICKED agar saat .reverse() LOGIN muncul di atas)
-  const _loginName = check.user?.name || '-'
-  pushLog(`Auth | LOGIN +${normalizedPhone} (${_loginName}) — ${_clientIp} — ${_clientUa}`)
-  // Lookup lokasi async — update entry & session meta tanpa blokir response
-  const _locP = getIpLocation(_clientIp).catch(() => '-')
-  recordAuthEvent(normalizedPhone, 'login', { name: _loginName, ip: _clientIp, ua: _clientUa, locationPromise: _locP })
-  _locP.then(loc => {
-    redis.hset(REDIS_KEYS.SESSION_META, { [sessionId]: JSON.stringify({ ip: _clientIp, ua: _clientUa, location: loc }) }).catch(() => {})
-  })
-
-  // Cookie sesi tahan lama (di-set server) — jauh lebih awet di Safari iOS daripada localStorage.
-  const _sessMaxAge = 90 * 24 * 60 * 60 // 90 hari (detik)
-  res.setHeader('Set-Cookie', `gold_sess=${encodeURIComponent(sessionId)}; HttpOnly; Secure; SameSite=Lax; Max-Age=${_sessMaxAge}; Path=/`)
 
   res.json({
     success: true,
     sessionId,
     user: check.user,
-    // Nomor admin tidak pernah dipaksa ganti PIN
-    requirePinChange: normalizedPhone === ADMIN_PHONE ? false : !pinChanged
+    requirePinChange: false
   })
 })
 
@@ -6392,12 +6540,14 @@ app.post('/api/change-pin', express.json(), async (req, res) => {
     } catch (e) {}
   }
 
-  // If PIN already changed, verify old PIN
-  if (pinChanged && oldPin) {
-    if (!verifyPin(oldPin, storedPin)) {
-      return res.json({ success: false, error: 'PIN lama salah' })
-    }
+  // PIN sendiri sudah ada: wajib PIN lama. Belum punya PIN: harus lewat verifikasi WhatsApp (bukan dari sesi)
+  if (!storedPin || storedPin === hashPin(getDefaultPin(phone))) {
+    return res.json({ success: false, needPinSetup: true, error: 'Buat PIN lewat verifikasi WhatsApp di halaman login.' })
   }
+  if (!oldPin || !verifyPin(String(oldPin), storedPin)) {
+    return res.json({ success: false, error: 'PIN lama salah' })
+  }
+  if (weakPin(newPin)) return res.json({ success: false, error: 'PIN terlalu mudah ditebak (angka sama / berurutan). Pilih PIN lain.' })
 
   // Save new PIN
   const newPinHash = hashPin(newPin)
@@ -6432,7 +6582,8 @@ app.get('/api/check-pin-status', async (req, res) => {
     } catch (e) {}
   }
 
-  res.json({ success: true, pinChanged, requirePinChange: !pinChanged })
+  const _need = await needsPinSetup(phone)
+  res.json({ success: true, pinChanged: !_need, requirePinChange: _need })
 })
 
 // API: Verify session
@@ -6476,6 +6627,7 @@ app.get('/api/verify-session', async (req, res) => {
       return res.json({ valid: false, reason: check.reason })
     }
 
+    touchSession(sessionId)
     // Check if user is admin (akun internal 'admin' ATAU nomor admin)
     const isAdmin = phone === 'admin' || ADMIN_PHONES.includes(phone)
 
@@ -6515,7 +6667,7 @@ app.post('/api/logout', express.json(), async (req, res) => {
   res.json({ success: true })
 })
 
-// API: Admin Reset User PIN to default (000000)
+// API: Admin Reset User PIN (PIN dihapus, user membuat PIN baru lewat verifikasi WhatsApp)
 app.post('/api/admin/reset-pin', express.json(), async (req, res) => {
   const { password, phone } = req.body
   if (password !== ADMIN_PASSWORD) {
@@ -6533,14 +6685,12 @@ app.post('/api/admin/reset-pin', express.json(), async (req, res) => {
     return res.json({ success: false, error: 'User tidak ditemukan' })
   }
 
-  // Reset PIN to default (000000)
-  const defaultPinHash = hashPin('000000')
-  await redis.hset(REDIS_KEYS.USER_PINS, {
-    [normalizedPhone]: JSON.stringify({ pin: defaultPinHash, pinChanged: false })
-  })
+  // PIN dihapus: saat login berikutnya user memverifikasi nomor lewat WhatsApp lalu membuat PIN baru
+  await redis.hdel(REDIS_KEYS.USER_PINS, normalizedPhone)
+  _pinFails.delete(normalizedPhone)
 
   pushLog(`Admin | Reset PIN for user +${normalizedPhone}`)
-  res.json({ success: true, message: 'PIN berhasil direset ke 000000' })
+  res.json({ success: true, message: 'PIN direset. User membuat PIN baru lewat verifikasi WhatsApp saat login.' })
 })
 
 // Helper: Generate login token
@@ -8677,7 +8827,7 @@ app.get('/login', async (req, res) => {
           </div>
           <div class="pin-hint">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            PIN default: <strong>000000</strong>
+            Lupa PIN? Buka halaman login terbaru
           </div>
         </div>
 
@@ -9163,7 +9313,7 @@ app.get('/login', async (req, res) => {
       _forgetPayOrder();
       document.getElementById('payForm').style.display = 'none';
       document.getElementById('phoneForm').style.display = 'block';
-      showMessage(_payOrderRenew ? 'Pembayaran diterima! Masa aktif diperpanjang. Masuk dengan PIN Anda.' : 'Pembayaran diterima! Akun aktif. PIN awal: 000000', 'success');
+      showMessage(_payOrderRenew ? 'Pembayaran diterima! Masa aktif diperpanjang. Masuk dengan PIN Anda.' : 'Pembayaran diterima! Akun aktif. Masuk lalu buat PIN lewat verifikasi WhatsApp.', 'success');
       setTimeout(function() { checkUser(); }, 1500);
     }
 
@@ -13733,8 +13883,8 @@ ${authScript}
 
             const expDate = u.expired ? new Date(u.expired).toLocaleDateString('id-ID') : '-';
             const pinStatus = u.pinChanged
-              ? '<span class="pin-badge pin-changed">Changed</span>'
-              : '<span class="pin-badge pin-default">Default</span>';
+              ? '<span class="pin-badge pin-changed">Sudah</span>'
+              : '<span class="pin-badge pin-default" title="User membuat PIN lewat verifikasi WhatsApp saat login">Belum</span>';
             const blockBtn = u.isBlocked
               ? '<button class="action-btn unblock" onclick="unblockUser(&apos;' + u.phone + '&apos;)">Unblock</button>'
               : '<button class="action-btn block" onclick="blockUser(&apos;' + u.phone + '&apos;)">Block</button>';
@@ -13808,9 +13958,9 @@ ${authScript}
       .catch(e => showAlert('Gagal: ' + e.message, 'danger'));
     }
 
-    // Reset PIN user ke default (000000)
+    // Reset PIN user (user membuat PIN baru lewat verifikasi WA)
     async function resetPin(phone) {
-      const confirmed = await showConfirm('Reset PIN user +62' + phone + ' ke default (000000)?', { title: 'Reset PIN', type: 'warning' });
+      const confirmed = await showConfirm('Reset PIN user +62' + phone + '? Saat login berikutnya user membuat PIN baru lewat verifikasi WhatsApp.', { title: 'Reset PIN', type: 'warning' });
       if (!confirmed) return;
 
       adminFetch('/api/admin/reset-pin', {
@@ -13821,7 +13971,7 @@ ${authScript}
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          showAlert('PIN berhasil direset ke 000000', 'success');
+          showAlert('PIN direset. User membuat PIN baru lewat verifikasi WhatsApp saat login.', 'success');
           loadUsers();
         } else {
           showAlert('Error: ' + data.error, 'danger');
@@ -23076,7 +23226,8 @@ async function tgRemoveSessions(phone) {
 
 async function tgResetPin(phone, via) {
   if (!(await redis.hget(REDIS_KEYS.USERS, phone))) return false
-  await redis.hset(REDIS_KEYS.USER_PINS, { [phone]: JSON.stringify({ pin: hashPin(getDefaultPin(phone)), pinChanged: false }) })
+  await redis.hdel(REDIS_KEYS.USER_PINS, phone)
+  _pinFails.delete(phone)
   pushLog(`Admin | Reset PIN for user +${phone} (Telegram${via ? ' ' + via : ''})`)
   return true
 }
@@ -23261,7 +23412,7 @@ async function tgUserCard(phone, note) {
   const left = u.expired ? tgDaysLeft(u.expired) : null
   const text = head + 'Nama: ' + tgEsc(u.name || '-') +
     '\nMasa aktif: ' + (u.expired ? 'sampai ' + tgDate(u.expired) + ' (' + (left > 0 ? 'sisa ' + left + ' hari' : 'sudah habis') + ')' : 'Lifetime') +
-    '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'masih bawaan (000000)') +
+    '\nPIN: ' + (pinChanged ? 'sudah diganti user' : 'belum dibuat (dibuat lewat verifikasi WA)') +
     '\nGrup WA: ' + GROUP_STATUS_LABEL[grupStatus] +
     (grupStatus === 'tidak_mau' ? (grupPref.askAgainAt > 0 ? ' (ditanya lagi ' + tgDate(grupPref.askAgainAt) + ')' : ' (jangan ditanya lagi)') : '') +
     (grupStatus !== 'masuk' && grupPref.adminMark && grupPref.adminMark.reason ? '\nCatatan admin: tidak dimasukkan - ' + tgEsc(grupPref.adminMark.reason) : '') +
@@ -23280,7 +23431,7 @@ async function tgUserCard(phone, note) {
 // Aksi pada satu user. Mengembalikan catatan singkat yang ditampilkan di atas kartu user.
 async function tgUserAction(act, phone) {
   const isAdminNumber = phone === ADMIN_PHONE || ADMIN_PHONES.includes(phone)
-  if (act === 'rp') return (await tgResetPin(phone)) ? 'PIN direset ke 000000.' : 'User tidak ditemukan, PIN tidak diubah.'
+  if (act === 'rp') return (await tgResetPin(phone)) ? 'PIN direset. User membuat PIN baru lewat verifikasi WA saat login.' : 'User tidak ditemukan, PIN tidak diubah.'
   if (act === 'ex') {
     const s = await getPaymentSettings()
     const u = await activateUserFromPayment(phone, '', s.days)
@@ -23642,8 +23793,8 @@ async function handleTelegramCallback(tg, cq) {
   // Tombol Reset PIN dari versi lama
   if ((m = /^pin:reset:(62[0-9]{8,13})$/.exec(data))) {
     const ok = await tgResetPin(m[1])
-    await setButton(ok ? 'PIN sudah direset ke 000000' : 'User tidak ditemukan')
-    return toast(ok ? 'PIN +' + m[1] + ' direset ke 000000.' : 'User tidak ditemukan.', true)
+    await setButton(ok ? 'PIN direset (user buat PIN baru lewat WA)' : 'User tidak ditemukan')
+    return toast(ok ? 'PIN +' + m[1] + ' direset. User membuat PIN baru lewat verifikasi WA saat login.' : 'User tidak ditemukan.', true)
   }
 
   // --- menu utama ---
@@ -23717,7 +23868,7 @@ async function handleTelegramCallback(tg, cq) {
   }
   if (data === 'u:pin') {
     tgSetAwait('pin')
-    await show({ text: '<b>Reset PIN</b>\n\nKirim nomor HP-nya sekarang (format bebas). PIN langsung direset ke 000000.', kb: [[{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
+    await show({ text: '<b>Reset PIN</b>\n\nKirim nomor HP-nya sekarang (format bebas). PIN langsung direset; user membuat PIN baru lewat verifikasi WA saat login.', kb: [[{ text: '« User', callback_data: 'm:usr' }, TG_HOME_ROW[0]]] })
     return toast('')
   }
   if (data === 'u:add') {
@@ -23911,7 +24062,7 @@ async function handleTelegramMessage(tg, msg) {
     if (targets.length === 0) { tgSetAwait('pin'); return say('Kirim nomor HP yang mau direset PIN-nya (format bebas: 0851..., +62851..., 62851...).') }
     tgSetAwait('')
     const out = []
-    for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset ke <b>000000</b>.' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
+    for (const phone of targets) out.push((await tgResetPin(phone, '/reset-pin')) ? 'PIN <code>+' + phone + '</code> direset (user membuat PIN baru lewat verifikasi WA).' : '<code>+' + phone + '</code> tidak ditemukan. PIN tidak diubah.')
     return say(out.join('\n'))
   }
 
@@ -23986,7 +24137,7 @@ async function handleTelegramMessage(tg, msg) {
       out.push('<code>+' + phone + '</code> ' + (u.expired ? 'aktif sampai ' + tgDate(u.expired) : 'Lifetime (tidak diubah)'))
     }
     tgSetAwait('')
-    return send({ text: '<b>Tambah user</b>\n\n' + (out.join('\n') || 'Tidak ada nomor yang terbaca.') + '\n\nPIN awal user baru: 000000', kb: [[{ text: 'Tambah lagi', callback_data: 'u:add' }, { text: '« User', callback_data: 'm:usr' }], TG_HOME_ROW] })
+    return send({ text: '<b>Tambah user</b>\n\n' + (out.join('\n') || 'Tidak ada nomor yang terbaca.') + '\n\nUser membuat PIN sendiri lewat verifikasi WA saat login pertama.', kb: [[{ text: 'Tambah lagi', callback_data: 'u:add' }, { text: '« User', callback_data: 'm:usr' }], TG_HOME_ROW] })
   }
 
   // Nomor ditempel begitu saja: tampilkan kartu user dengan tombol aksinya
@@ -24004,7 +24155,7 @@ async function telegramPollLoop() {
       if (!tg.token) { await _tgSleep(5000); continue }
       if (tg.token !== _tgPollToken) {
         _tgPollToken = tg.token; _tgOffset = 0; _tgLastChat = null
-        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'menu', description: 'Buka panel admin' }, { command: 'resetpin', description: 'Reset PIN user ke 000000 (isi nomor HP)' }] }).catch(() => {})
+        telegramApi(tg.token, 'setMyCommands', { commands: [{ command: 'menu', description: 'Buka panel admin' }, { command: 'resetpin', description: 'Reset PIN user (isi nomor HP)' }] }).catch(() => {})
       }
       const res = await fetch(`https://api.telegram.org/bot${tg.token}/getUpdates`, {
         method: 'POST',
@@ -26343,6 +26494,12 @@ ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`
 
         const sendTarget = msg.key.remoteJid
         const isGroup = sendTarget.endsWith('@g.us')
+        // Verifikasi nomor untuk membuat PIN (bot hanya membaca, tidak membalas)
+        const _pv = !isGroup && /^verifikasi\s*([0-9]{6})$/.exec(text)
+        if (_pv) {
+          handlePinVerifyMessage(msg, _pv[1]).catch(e => pushLog('PIN | Verifikasi error - ' + (e && e.message ? e.message : e)))
+          continue
+        }
         // Pesan dari tombol "Chat Admin" di website: cocokkan nomornya dan laporkan ke admin
         if (!isGroup && /mau gabung grup/.test(text)) {
           reportGroupJoinRequest(msg, text).catch(e => pushLog('AUTO | Grup: cek permintaan gabung error - ' + (e && e.message ? e.message : e)))

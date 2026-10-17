@@ -867,3 +867,13 @@ header > div:has(#newsFloat) > div:first-child { visibility: hidden; }
 .soft-shake { animation: softShake .42s cubic-bezier(.36, .07, .19, .97); }
 .soft-shake-final { animation: softShakeFinal .6s cubic-bezier(.36, .07, .19, .97); }
 @media (prefers-reduced-motion: reduce) { .soft-shake, .soft-shake-final { animation: none; } }
+
+/* ---------------- verifikasi nomor lewat WhatsApp (halaman login) ---------------- */
+.btn-wa { @apply btn text-white; background: #1fa855; }
+.btn-wa:hover { background: #1b9a4d; }
+.btn-wa:active { transform: scale(.98); }
+.v-num { @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gold/15 text-xs font-extrabold text-gold; }
+#vStatus .spinner-sm { border-color: rgb(var(--line) / .18); border-top-color: currentColor; }
+#vStatus.v-ok { color: rgb(var(--up)); }
+#vStatus.v-bad { color: rgb(var(--down)); }
+#vCopy.copied { color: rgb(var(--up)); }
